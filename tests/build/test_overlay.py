@@ -1,33 +1,27 @@
-"""Verify the actual patch series against original files at the engine pin."""
+"""Verify the committed engine fork and its generated resources."""
 from pathlib import Path
 import subprocess
-import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 ENGINE = ROOT / 'vendor/ladybird'
 
 
-class EngineOverlayTest(unittest.TestCase):
-    def test_patch_series_reconstructs_deployed_sources(self):
-        patches = sorted((ROOT / 'patches').glob('*.patch'))
-        paths = {
-            line.removeprefix('--- a/')
-            for patch in patches
-            for line in patch.read_text().splitlines()
-            if line.startswith('--- a/')
-        }
-        with tempfile.TemporaryDirectory(prefix='derpbird-overlay-') as directory:
-            target = Path(directory)
-            for path in paths:
-                file = target / path
-                file.parent.mkdir(parents=True, exist_ok=True)
-                file.write_bytes(subprocess.check_output(['git', '-C', str(ENGINE), 'show', f'HEAD:{path}']))
-            for patch in patches:
-                subprocess.run(['git', 'apply', '--check', str(patch)], cwd=target, check=True, capture_output=True)
-                subprocess.run(['git', 'apply', str(patch)], cwd=target, check=True, capture_output=True)
-            for path in paths:
-                self.assertEqual((target / path).read_bytes(), (ENGINE / path).read_bytes(), path)
+class EngineSourceTest(unittest.TestCase):
+    @unittest.skipUnless((ROOT / 'dist/index.html').is_file(), 'Build the UI before testing preparation')
+    def test_preparation_preserves_git_state(self):
+        def status(path):
+            return subprocess.check_output(['git', '-C', str(path), 'status', '--porcelain', '--untracked-files=all'])
+        before = (status(ROOT), status(ENGINE))
+        subprocess.run(['python3', str(ROOT / 'scripts/prepare-engine.py')], check=True, capture_output=True)
+        self.assertEqual((status(ROOT), status(ENGINE)), before,
+                         'Preparing the engine must not modify committed sources or create untracked files')
+
+    def test_engine_sources_are_committed(self):
+        for name in ['UI/Qt/DerpBirdChrome.cpp', 'Libraries/LibWeb/Page/DerpBirdCredentialFields.h',
+                     'Base/res/ladybird/about-pages/downloads.html']:
+            committed = subprocess.check_output(['git', '-C', str(ENGINE), 'show', f'HEAD:{name}'])
+            self.assertEqual(committed, (ENGINE / name).read_bytes(), name)
 
     def test_deployed_content_blocker_dependency_matches_source(self):
         source = ROOT / 'third_party/adblock'

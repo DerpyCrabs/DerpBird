@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""Apply the versioned DerpBird overlay to the pinned engine; never update upstream."""
-from engine_overlay import apply_series
+"""Prepare generated resources for the committed DerpBird engine fork."""
 import os
 import shutil
 import subprocess
@@ -8,11 +7,10 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 source = root / 'vendor/ladybird'
-expected = '2919bf87a5e5dfc49a210a70bda079afa411c6c5'
+expected = subprocess.check_output(['git', '-C', str(root), 'rev-parse', ':vendor/ladybird'], text=True).strip()
 actual = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
 if actual != expected:
     raise SystemExit(f'Engine pin mismatch: expected {expected}, found {actual}')
-apply_series(source, sorted((root / 'patches').glob('*.patch')))
 subprocess.run(['python3', str(root / 'scripts/generate-json-response-runtime.py')], check=True)
 for directory, destination in [('WebUI', 'Libraries/LibWebView/WebUI'), ('Qt', 'UI/Qt'), ('Tests', 'Tests/LibWebView'), ('EngineTests', 'Tests/LibWeb'), ('WebContent', 'Libraries/LibWeb/Page')]:
     for file in (root / 'native' / directory).glob('*'):
@@ -47,7 +45,7 @@ html = (dist / 'index.html').read_text().replace('./assets/', 'resource://ladybi
 page = source / 'Base/res/ladybird/about-pages/derpbird.html'
 if not page.exists() or page.read_text() != html:
     page.write_text(html)
-print('DerpBird engine overlay and trusted UI resources prepared.')
+print('DerpBird engine sources and trusted UI resources prepared.')
 
 # Only this generated directory is owned by DerpBird. Retire obsolete hashes.
 for file in assets.iterdir():

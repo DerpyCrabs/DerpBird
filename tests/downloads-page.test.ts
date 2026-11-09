@@ -1,23 +1,10 @@
 import { test, expect } from 'bun:test';
 import { Window, type HTMLButtonElement, type HTMLElement } from 'happy-dom';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 function downloadPage(): string {
-  // Frontend tests also run before prepare:engine on a fresh checkout.
-  const repo = resolve(import.meta.dir, '..');
-  const path = 'Base/res/ladybird/about-pages/downloads.html';
-  const directory = mkdtempSync(join(tmpdir(), 'derpbird-download-page-'));
-  try {
-    const file = join(directory, path);
-    mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, execFileSync('git', ['-C', join(repo, 'vendor/ladybird'), 'show', `HEAD:${path}`]));
-    for (const patch of ['0070-persist-terminal-download-history.patch', '0071-page-download-history-rendering.patch'])
-      execFileSync('git', ['apply', `--include=${path}`, join(repo, 'patches', patch)], { cwd: directory });
-    return readFileSync(file, 'utf8');
-  } finally { rmSync(directory, { recursive: true, force: true }); }
+  return readFileSync(resolve(import.meta.dir, '../vendor/ladybird/Base/res/ladybird/about-pages/downloads.html'), 'utf8');
 }
 
 test('download history bounds rendered rows, pages and coalesces updates', async () => {
