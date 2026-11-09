@@ -29,7 +29,8 @@
     "less": "4.9.1",
     "postcss": "8.5.32",
     "stylus-lang-bundle": "github:openstyles/stylus-lang-bundle#ad941359ffd800eb6a16fa8459902573e7d5e240",
-    "usercss-meta": "0.12.0"
+    "usercss-meta": "0.12.0",
+    "@effectweb/base-ui": "0.15.0"
   },
   "devDependencies": {
     "@effectweb/compiler": "file:../EffectWeb/packages/compiler",
@@ -39,5 +40,8 @@
     "typescript": "7.0.2",
     "vite": "8.3.5",
     "happy-dom": "21.0.4"
+  },
+  "patchedDependencies": {
+    "@effectweb/base-ui@0.15.0": "patches/@effectweb%2Fbase-ui@0.15.0.patch"
   }
 }

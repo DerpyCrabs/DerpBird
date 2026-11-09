@@ -5,9 +5,21 @@ import { strict as assert } from 'node:assert';
 import type { Command } from '../src/browser/protocol';
 
 const window = new Window({ url: 'http://127.0.0.1/' });
-for (const key of ['window', 'document', 'location', 'HTMLElement', 'HTMLInputElement', 'Element', 'Node', 'Text', 'Comment', 'Event', 'CustomEvent', 'MutationObserver', 'DocumentFragment', 'CSSStyleDeclaration', 'SVGElement']) {
-  Object.defineProperty(globalThis, key, { configurable: true, value: key === 'window' ? window : (window as unknown as Record<string, unknown>)[key] });
+for (const key of ['window', 'document', 'location', 'HTMLElement', 'HTMLInputElement', 'HTMLDialogElement', 'DOMRect', 'PointerEvent', 'MouseEvent', 'KeyboardEvent', 'ResizeObserver', 'getComputedStyle', 'Element', 'Node', 'Text', 'Comment', 'Event', 'CustomEvent', 'MutationObserver', 'DocumentFragment', 'CSSStyleDeclaration', 'SVGElement']) {
+  Object.defineProperty(globalThis, key, { configurable: true, value: key === 'window' ? window : key === 'getComputedStyle' ? window.getComputedStyle.bind(window) : (window as unknown as Record<string, unknown>)[key] });
 }
+// happy-dom lacks the Popover API; real top-layer and focus behavior is covered
+// by TestDerpBirdShell and the Wayland input test.
+const shownPopovers = new WeakSet<Element>();
+const nativeMatches = window.Element.prototype.matches;
+window.Element.prototype.matches = function(selector: string) {
+  return selector === ':popover-open' ? shownPopovers.has(this as unknown as Element) : nativeMatches.call(this, selector);
+};
+Object.assign(window.HTMLElement.prototype, {
+  showPopover() { shownPopovers.add(this as unknown as Element); },
+  hidePopover() { shownPopovers.delete(this as unknown as Element); },
+  getAnimations() { return []; },
+});
 const commands: Command[] = [];
 let notify: ((snapshot: unknown) => void) | undefined;
 let unsubscribed = false;
@@ -92,7 +104,7 @@ const toggleLayout = async () => {
   button('Menu').click(); await settle();
   const item = Array.from(document.querySelectorAll('.browser-menu button')).find(item => /^(Horizontal|Vertical) tabs$/.test(item.textContent ?? '')) as unknown as HTMLButtonElement;
   assert(item); item.click(); await settle();
-  document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await settle();
+  (document.activeElement ?? document).dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await settle();
 };
 preferences = { ...preferences, compact: true }; notify?.(state()); await settle();
 assert(!document.querySelector('.shell.compact'), 'legacy compact preference is ignored');
@@ -118,7 +130,7 @@ assert.deepEqual(lastCommand(), { type: 'shell.set-wrap-tabs', value: true });
 assert(document.querySelector('.shell.wrap-tabs'));
 wrapControl.click(); await settle();
 assert(!document.querySelector('.shell.wrap-tabs'));
-document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await settle();
+(document.activeElement ?? document).dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await settle();
 
 assert.equal(document.querySelector('[role=tab]'), original, 'layout changes must retain tab DOM');
 notify?.(state()); await settle();
@@ -219,12 +231,12 @@ assert.equal(document.querySelector('.browser-menu')!==null,true,'autoClose=fals
 document.querySelector('.browser-menu')!.dispatchEvent(new window.KeyboardEvent('keydown',{key:'r',bubbles:true,cancelable:true}));await settle();
 assert.deepEqual(lastCommand(),{type:'script.command',tabId:'a',id:'menu1',event:{keyboard:true,key:'r',ctrlKey:false,altKey:false,shiftKey:false,metaKey:false}});
 
-document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await settle();
+(document.activeElement ?? document).dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await settle();
 assert.equal(document.querySelector('.browser-menu'), null);
-document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 't', ctrlKey: true, bubbles: true, cancelable: true })); await settle();
+(document.activeElement ?? document).dispatchEvent(new window.KeyboardEvent('keydown', { key: 't', ctrlKey: true, bubbles: true, cancelable: true })); await settle();
 assert.deepEqual(lastCommand(), { type: 'tab.create', private: false });
 for (const isPrivate of [false, true]) {
-  document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'n', ctrlKey: true, shiftKey: isPrivate, bubbles: true, cancelable: true })); await settle();
+  (document.activeElement ?? document).dispatchEvent(new window.KeyboardEvent('keydown', { key: 'n', ctrlKey: true, shiftKey: isPrivate, bubbles: true, cancelable: true })); await settle();
   assert.deepEqual(lastCommand(), { type: 'window.new', private: isPrivate });
   button('Menu').click(); await settle();
   button(isPrivate ? 'Private window' : 'New window').click(); await settle();
@@ -236,13 +248,14 @@ for (const [label, page] of [['History', 'history'], ['Downloads', 'downloads'],
   assert.deepEqual(lastCommand(), { type: 'browser.open-page', page });
   assert.equal(document.querySelector('.browser-menu'), null);
 }
-document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'h', ctrlKey: true, bubbles: true, cancelable: true })); await settle();
+(document.activeElement ?? document).dispatchEvent(new window.KeyboardEvent('keydown', { key: 'h', ctrlKey: true, bubbles: true, cancelable: true })); await settle();
 assert.deepEqual(lastCommand(), { type: 'browser.open-page', page: 'history' });
 const reloadKey = new window.KeyboardEvent('keydown', { key: 'r', ctrlKey: true, bubbles: true, cancelable: true });
 document.getElementById('location')!.dispatchEvent(reloadKey); await settle();
 assert.equal(reloadKey.defaultPrevented, true);
 assert.deepEqual(lastCommand(), { type: 'tab.reload', tabId: state().activeTabId });
 const context = async () => {
+  document.querySelectorAll('[role=tab]')[1]!.dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true, button: 2 }));
   document.querySelectorAll('[role=tab]')[1]!.dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 100, clientY: 150 }));
   await new Promise(resolve => setTimeout(resolve, 30));
 };
@@ -256,6 +269,7 @@ document.activeElement!.dispatchEvent(new window.KeyboardEvent('keydown', { key:
 assert.equal(document.activeElement?.textContent, 'Close tab', 'ArrowUp enters the menu at the last action');
 window.dispatchEvent(new window.Event('blur')); await settle();
 assert.equal(document.querySelector('.tab-menu'), null, 'moving focus to the native page closes the tab menu');
+button('Menu').dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true }));
 button('Menu').click(); await settle();
 window.dispatchEvent(new window.Event('blur')); await settle();
 assert.equal(document.querySelector('.browser-menu'), null, 'moving focus to the native page closes the browser menu');
@@ -272,7 +286,7 @@ assert.deepEqual(lastCommand(), { type: 'tab.move', tabId: 'b', index: 0 });
 notify?.({ ...state(), tabs: [{ ...tab('a'), pinned: true }, tab('b')] }); await settle();
 assert.equal(document.querySelector('[aria-label="Close Site a"]'), null);
 await context(); assert.equal(menuItem('Move left').disabled, true);
-document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await settle();
+(document.activeElement ?? document).dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await settle();
 assert.equal(document.querySelector('.tab-menu'), null);
 await new Promise(resolve => setTimeout(resolve, 30));
 assert.equal((document.activeElement as unknown as HTMLElement)?.dataset.tabId, 'b');
@@ -308,9 +322,10 @@ const cssInput = document.querySelector('[aria-label="CSS style"]') as unknown a
 assert(cssInput, 'style editor textarea missing');
 cssInput.value = '@-moz-document domain("example.com") { body { color: red } }';
 cssInput.dispatchEvent(new window.Event('input', { bubbles: true })); await settle();
-styleButton('Close').click(); await settle();
+(document.querySelector('[aria-label="Close styles"]') as unknown as HTMLButtonElement).click(); await settle();
 assert(document.querySelector('[role=dialog]'), 'close must preserve a dirty draft');
-assert(document.querySelector('[role=alert]')?.textContent?.includes('Save or discard'));
+assert(document.querySelector('[role=alert]')?.textContent?.includes('Discard unsaved changes'));
+styleButton('Keep editing').click(); await settle();
 styleButton('Save').click();
 for (let attempt = 0; attempt < 100; attempt++) {
   await settle();
@@ -325,7 +340,7 @@ assert(cssInput.isConnected, 'cancelling deletion must retain the editor');
 styleButton('Delete').click(); await settle();
 styleButton('Delete permanently').click(); await settle();
 assert.equal(document.querySelector('[aria-label="CSS style"]'), null, 'deleted style must leave the editor');
-styleButton('Close').click(); await settle();
+(document.querySelector('[aria-label="Close styles"]') as unknown as HTMLButtonElement).click(); await settle();
 assert.equal(document.querySelector('[role=dialog]'), null);
 button('Menu').click(); await settle(); button('Passwords').click(); await settle();
 assert(document.querySelector('[aria-label="Passwords"][role=dialog]'));
@@ -333,7 +348,7 @@ styleButton('Show saved password').click(); await settle();
 assert.equal((document.querySelector('[aria-label="Saved password"]') as unknown as HTMLInputElement).value, 'fixture-only');
 // The focused control can disappear during rendering; document-level Escape
 // still hides the secret instead of depending on a dialog descendant target.
-document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); await settle();
+(document.activeElement ?? document).dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); await settle();
 assert.equal(document.querySelector('[aria-label="Saved password"]'), null);
 assert(document.querySelector('[role=dialog]'));
 styleButton('Copy password').click(); await settle();
@@ -346,7 +361,7 @@ assert(document.querySelector('[role=status]')?.textContent?.includes('Login fil
 assert.equal(document.querySelector('[aria-label="Saved password"]'), null);
 styleButton('Generate password').click(); await settle();
 assert.match((document.querySelector('[aria-label="Password"]') as unknown as HTMLInputElement).value, /^[A-Za-z0-9_-]{24}$/);
-document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); await settle();
+(document.activeElement ?? document).dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); await settle();
 assert(document.querySelector('[role=dialog]'), 'dirty generated draft must not be discarded by Escape');
 styleButton('Discard changes').click(); await settle();
 assert.equal((document.querySelector('[aria-label="Password"]') as unknown as HTMLInputElement).value, '');
@@ -359,7 +374,7 @@ styleButton('Save from tab').click(); await settle();
 styleButton('Update password for test').click(); await settle();
 assert.equal(captureSaves, 1);
 assert.equal(document.querySelector('[aria-label="Save login confirmation"]'), null);
-document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); await settle();
+(document.activeElement ?? document).dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); await settle();
 assert.equal(document.querySelector('[role=dialog]'), null);
 const submitted = { token: '00000000-0000-4000-8000-000000000002', origin: 'https://example.com', username: 'test' };
 notify?.({ ...state(), credentialProposal: submitted }); await settle();
@@ -371,9 +386,9 @@ assert(document.querySelector('[aria-label="Save login confirmation"]'));
 assert.equal(document.querySelector('[aria-label="Password"]'), null);
 assert.equal(captureReads, priorReads, 'submitted values must not be recaptured from destination page');
 assert.equal(captureSaves, 1, 'opening suggestion must not save');
-document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); await settle();
+(document.activeElement ?? document).dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); await settle();
 assert.equal(document.querySelector('[aria-label="Save login confirmation"]'), null);
-document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); await settle();
+(document.activeElement ?? document).dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); await settle();
 assert.equal(document.querySelector('[role=dialog]'), null);
 notify?.({ ...state(), credentialProposal: null }); await settle();
 assert(!Array.from(document.querySelectorAll('button')).some(button => button.textContent === 'Save password?'));
@@ -393,7 +408,7 @@ const exceptionSearch = document.querySelector<HTMLInputElement>('[aria-label="S
 exceptionSearch.value = 'site4095.example'; exceptionSearch.dispatchEvent(new window.Event('input', { bubbles: true })); await settle();
 assert.equal(document.querySelectorAll('.credential-exceptions button').length, 1);
 assert(document.querySelector('[aria-label="Allow prompts for https://site4095.example"]'));
-document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await settle();
+(document.activeElement ?? document).dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await settle();
 button('Menu').click(); await settle();
 const journal = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Request log');
 assert(journal); journal.click(); await settle();
@@ -429,7 +444,8 @@ notify?.({ ...state(), credentialAutofill: { token: '7', origin: 'https://a.exam
 assert(document.querySelector('.credential-autofill')?.textContent?.includes('alice'));
 (document.querySelector('.credential-autofill button[data-credential-id]') as HTMLButtonElement).click(); await settle();
 assert.deepEqual(autofillActions.at(-1), { token: '7', id: 'imported' });
-button('Dismiss login suggestions').click(); await settle();
+document.querySelector('.credential-autofill button')!.focus();
+(document.activeElement ?? document).dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await settle();
 assert.deepEqual(autofillActions.at(-1), { token: '7', id: undefined });
 notify?.({ ...state(), credentialAutofill: null }); await settle();
 assert(!document.querySelector('.credential-autofill'));

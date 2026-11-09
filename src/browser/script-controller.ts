@@ -8,6 +8,7 @@ import type { ScriptSnapshot, UserScript, UserScriptPort } from './script-protoc
 
 type Draft = Pick<UserScript, 'id' | 'name' | 'source' | 'sourceURL' | 'dependencyRevision' | 'checkUpdates' | 'checkedAt' | 'pendingUpdate' | 'updateError' | 'enabled'>;
 export interface ScriptModel {
+  readonly confirmingClose?: boolean;
   readonly updateReview: string | null;
   readonly directories: readonly string[];
   readonly snapshot: ScriptSnapshot | null;
@@ -46,7 +47,7 @@ export function createScriptController(port: UserScriptPort) {
   const draftOf = (item: UserScript): Draft => ({ id: item.id, name: item.name, source: item.source, sourceURL: item.sourceURL, dependencyRevision: item.dependencyRevision, checkUpdates: item.checkUpdates, checkedAt: item.checkedAt, pendingUpdate: item.pendingUpdate, updateError: item.updateError, enabled: item.enabled });
   const accept = (snapshot: ScriptSnapshot, selectedId?: string) => {
     const item = snapshot.items.find(item => item.id === selectedId) ?? snapshot.items[0];
-    patch({ updateReview: null, snapshot, draft: item ? draftOf(item) : null, dirty: false, conflict: false, confirmingRemoval: false });
+    patch({ updateReview: null, snapshot, draft: item ? draftOf(item) : null, dirty: false, conflict: false, confirmingClose: false, confirmingRemoval: false });
   };
   return {
     source: owner.source,
@@ -183,6 +184,8 @@ export function createScriptController(port: UserScriptPort) {
     requestRemove() {
       if (state.draft && canLeaveDraft()) patch({ confirmingRemoval: true });
     },
+    requestClose() { patch({ confirmingClose: true }); },
+    cancelClose() { patch({ confirmingClose: false }); },
     cancelRemove() { if (!state.busy) patch({ confirmingRemoval: false }); },
     remove() {
       const { draft, snapshot } = state;

@@ -1,8 +1,10 @@
+import type { PageSources } from './page-sources';
 import { Effect } from 'effect';
 import { modelOwner } from 'effectweb';
 import { decodeSnapshot, navigationTarget, type ScriptCommand, type BrowserPage, type BrowserSnapshot, type Command, type NativePort } from './protocol';
 export type Panel = 'menu' | 'blocking' | null;
 export interface ShellModel {
+  readonly pageSources?: PageSources;
   readonly sidebarWidth: number;
   readonly sidebarResizeWidth: number | null;
   readonly wrapTabs: boolean;
@@ -80,6 +82,7 @@ export function createController(port?: NativePort) {
     source: owner.source,
     reportError: report,
     state: () => state,
+    setPageSources: (pageSources?: PageSources) => patch({ pageSources }),
     send,
     openTabMenu(tabId: string, x: number, y: number) {
       if (!state.browser.tabs.some(tab => tab.id === tabId)) return;
@@ -152,8 +155,6 @@ export function createController(port?: NativePort) {
     setPanel(panel: Panel) {
       if (panel === 'blocking' || state.panel === 'blocking') send({ type: 'blocking.log', visible: panel === 'blocking' });
       patch({ panel, dynamicDraft: panel === 'blocking' ? state.dynamicDraft : null, tabMenu: null, blockingSearch: panel === 'blocking' ? state.blockingSearch : '' });
-      if (panel === 'menu' && typeof window !== 'undefined') window.requestAnimationFrame(() => { if (state.panel === 'menu') document.querySelector<HTMLButtonElement>('.browser-menu button:not(:disabled)')?.focus(); });
-      if (panel === 'blocking' && typeof window !== 'undefined') window.requestAnimationFrame(() => document.querySelector<HTMLInputElement>('[aria-label="Search requests"]')?.focus());
     },
     setDynamicDraft: (dynamicDraft: string) => patch({ dynamicDraft }),
     setBlockingSearch: (blockingSearch: string) => patch({ blockingSearch: blockingSearch.slice(0, 512) }),

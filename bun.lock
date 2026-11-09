@@ -5,6 +5,7 @@
     "": {
       "name": "derpbird",
       "dependencies": {
+        "@effectweb/base-ui": "0.15.0",
         "@effectweb/lucide": "file:../EffectWeb/packages/lucide",
         "@effectweb/shadcn": "file:../EffectWeb/packages/shadcn",
         "colorjs.io": "0.7.1",
@@ -25,6 +26,9 @@
         "vite": "8.3.5",
       },
     },
+  },
+  "patchedDependencies": {
+    "@effectweb/base-ui@0.15.0": "patches/@effectweb%2Fbase-ui@0.15.0.patch",
   },
   "packages": {
     "@effectweb/base-ui": ["@effectweb/base-ui@0.15.0", "", { "peerDependencies": { "effect": "^4.0.0", "effectweb": "0.15.0" } }, "sha512-9ZbXJvNJERMp93BgYADRTxQGdcDgL2Otk89UIQcZgCSEcRlMEXYRoTOHHOtU5Z3hs+R/iNIn3ORPDAkB6TPo1A=="],

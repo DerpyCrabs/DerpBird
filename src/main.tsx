@@ -1,3 +1,8 @@
+import { observeShellDismissal } from './browser/shell-interaction';
+import { openPageSources } from './ui/PageSources';
+import type { PageSourcesPort, SourceKind } from './browser/page-sources';
+import { openProxyManager } from './ui/ProxyManager';
+import type { ProxyPort } from './browser/proxy-protocol';
 import type { ImportPort } from './browser/import-protocol';
 import { openImportManager } from './ui/ImportManager';
 import { observeSidebarResize } from './browser/sidebar-resize';
@@ -25,43 +30,83 @@ const stylePort = (window.derpbird as (NativePort & { styles?: UserStylePort }) 
 const scriptPort = (window.derpbird as (NativePort & { scripts?: UserScriptPort }) | undefined)?.scripts ?? webui?.scripts;
 const credentialPort = (window.derpbird as (NativePort & { credentials?: CredentialPort }) | undefined)?.credentials ?? webui?.credentials;
 const importPort = (window.derpbird as (NativePort & { importer?: ImportPort }) | undefined)?.importer ?? webui?.importer;
+const proxyPort = (window.derpbird as (NativePort & { proxy?: ProxyPort }) | undefined)?.proxy ?? webui?.proxy;
+let pageSourcePopup: ReturnType<typeof openPageSources> | undefined;
+let proxyManager: ReturnType<typeof openProxyManager> | undefined;
 let importManager: ReturnType<typeof openImportManager> | undefined;
 let credentialManager: ReturnType<typeof openCredentialManager> | undefined;
 let scriptManager: ReturnType<typeof openScriptManager> | undefined;
 let backgroundSources: AbortController | undefined;
 let styleManager: ReturnType<typeof openStyleManager> | undefined;
 const showStyles = stylePort ? () => {
-  if (styleManager || scriptManager || credentialManager || importManager) return;
+  if (styleManager || scriptManager || credentialManager || importManager || proxyManager || pageSourcePopup) return;
   if (backgroundSources) { foldersPending = true; backgroundSources.abort(); }
   styleManager = openStyleManager(document.getElementById('style-manager-host')!, stylePort, () => {
     styleManager = undefined;
+    void refreshPageSources();
     if (foldersPending) { foldersPending = false; void syncFolders(); }
-    document.querySelector<HTMLElement>('[aria-label="Menu"]')?.focus();
   });
 } : undefined;
 const showScripts = scriptPort ? () => {
-  if (styleManager || scriptManager || credentialManager || importManager) return;
+  if (styleManager || scriptManager || credentialManager || importManager || proxyManager || pageSourcePopup) return;
   if (backgroundSources) { foldersPending = true; backgroundSources.abort(); }
   scriptManager = openScriptManager(document.getElementById('style-manager-host')!, scriptPort, () => {
     scriptManager = undefined;
+    void refreshPageSources();
     if (foldersPending) { foldersPending = false; void syncFolders(); }
-    document.querySelector<HTMLElement>('[aria-label="Menu"]')?.focus();
   });
 } : undefined;
 const showCredentials = credentialPort ? (proposal?: CapturedCredential) => {
-  if (styleManager || scriptManager || credentialManager || importManager) return;
+  if (styleManager || scriptManager || credentialManager || importManager || proxyManager || pageSourcePopup) return;
   credentialManager = openCredentialManager(document.getElementById('style-manager-host')!, credentialPort, () => {
     credentialManager = undefined;
-    document.querySelector<HTMLElement>('[aria-label="Menu"]')?.focus();
   }, proposal);
 } : undefined;
 const showImport = importPort ? (welcome = false) => {
-  if (styleManager || scriptManager || credentialManager || importManager) return;
+  if (styleManager || scriptManager || credentialManager || importManager || proxyManager || pageSourcePopup) return;
   importManager = openImportManager(document.getElementById('style-manager-host')!, importPort, () => {
     importManager = undefined;
-    document.querySelector<HTMLElement>('[aria-label="Menu"]')?.focus();
   }, welcome);
 } : undefined;
+const showProxy = proxyPort ? () => {
+  if (proxyManager) { proxyManager.toggle(); return; }
+  if (styleManager || scriptManager || credentialManager || importManager || proxyManager || pageSourcePopup) return;
+  const browser = controller.state().browser;
+  proxyManager = openProxyManager(document.getElementById('style-manager-host')!, proxyPort, () => {
+    proxyManager = undefined;
+  }, browser.tabs.find(tab => tab.id === browser.activeTabId)?.url);
+} : undefined;
+const pageSourcesPort = (window.derpbird as (NativePort & { pageSources?: PageSourcesPort }) | undefined)?.pageSources ?? webui?.pageSources;
+let sourceRequest = 0;
+const refreshPageSources = async () => {
+  const request = ++sourceRequest, browser = controller.state().browser;
+  const active = browser.tabs.find(tab => tab.id === browser.activeTabId);
+  if (!pageSourcesPort || !active || active.private) { controller.setPageSources(); return; }
+  try {
+    const page = await pageSourcesPort.page();
+    const current = controller.state().browser;
+    if (request === sourceRequest && page.tabId === current.activeTabId && current.tabs.find(t => t.id === page.tabId)?.url === page.url) controller.setPageSources(page);
+  } catch { if (request === sourceRequest) controller.setPageSources(); }
+};
+const showPageSources = pageSourcesPort ? (kind: SourceKind) => {
+  if (pageSourcePopup) { pageSourcePopup.close(); return; }
+  if (styleManager || scriptManager || credentialManager || importManager || proxyManager) return;
+  const tabId = controller.state().browser.activeTabId;
+  pageSourcePopup = openPageSources(document.getElementById('style-manager-host')!, pageSourcesPort, kind,
+    () => { pageSourcePopup = undefined; },
+    page => controller.setPageSources(page), () => kind === 'styles' ? showStyles?.() : showScripts?.(),
+    () => { if (tabId && controller.state().browser.activeTabId === tabId) controller.send({ type: 'tab.reload', tabId }); });
+} : undefined;
+let lastSourcePage = '';
+const stopPageSources = pageSourcesPort ? (window.derpbird ?? webui)?.subscribe(() => {
+  const browser = controller.state().browser, active = browser.tabs.find(t => t.id === browser.activeTabId);
+  const key = `${active?.id}:${active?.url}:${active?.loading}`;
+  if (key === lastSourcePage) return;
+  lastSourcePage = key;
+  pageSourcePopup?.dispose(); pageSourcePopup = undefined;
+  controller.setPageSources(); void refreshPageSources();
+}) : undefined;
+void controller.ready.then(refreshPageSources);
 if (importPort) void controller.ready.then(async () => {
   if (controller.state().browser.tabs.some(tab => tab.private)) return;
   const status = await importPort.status();
@@ -105,30 +150,21 @@ const syncFolders = async () => {
   finally {
     if (backgroundSources === operation) backgroundSources = undefined;
     syncingFolders = false;
+    void refreshPageSources();
     if (foldersPending && !styleManager && !scriptManager) { foldersPending = false; void syncFolders(); }
   }
 };
-const stopSourceChanges = webui?.onSourceChange(() => { void syncFolders(); });
+const stopSourceChanges = webui?.onSourceChange(() => { void syncFolders(); void refreshPageSources(); });
 if (webui) void syncFolders();
 const updateTimer = webui ? setInterval(() => { void syncFolders(); }, 3_600_000) : undefined;
 const autofillPort = (window.derpbird as (NativePort & { autofill?: (token: string, id?: string) => Promise<void> }) | undefined)?.autofill ?? webui?.autofill;
 const autofill = autofillPort ? (token: string, id?: string) => { void autofillPort(token, id).catch(error => controller.reportError(error)); } : undefined;
-const mounted = mount(document.getElementById('app')!, shellView(controller, showStyles, showScripts, showCredentials, showImport, autofill), controller.source);
+const mounted = mount(document.getElementById('app')!, shellView(controller, showStyles, showScripts, showCredentials, showImport, autofill, showProxy, showPageSources), controller.source);
 const stopSidebarResize = observeSidebarResize(document, controller.previewSidebarWidth, controller.setSidebarWidth);
 const stopActiveTab = observeActiveTab(document);
 const stopViewport = observeViewport(document, command => controller.send(command), () => controller.state().connected);
 const onKey = (event: KeyboardEvent) => {
-  if (styleManager || scriptManager || credentialManager || importManager) return;
-  if (event.key === 'Escape') {
-    const tabId = controller.state().tabMenu?.tabId;
-    const hadPanel = !!controller.state().panel;
-    controller.setPanel(null); controller.closeTabMenu();
-    if (tabId) window.requestAnimationFrame(() => {
-      Array.from(document.querySelectorAll<HTMLButtonElement>('[role=tab]')).find(tab => tab.dataset.tabId === tabId)?.focus();
-    });
-    else if (hadPanel) document.querySelector<HTMLButtonElement>('[aria-label="Menu"]')?.focus();
-    return;
-  }
+  if (styleManager || scriptManager || credentialManager || importManager || proxyManager || pageSourcePopup) return;
   if (!event.ctrlKey || event.altKey || event.metaKey) return;
   const key = event.key.toLowerCase();
   if (key === 'r' && !event.shiftKey && controller.state().browser.activeTabId) { event.preventDefault(); controller.send({ type: 'tab.reload', tabId: controller.state().browser.activeTabId! }); }
@@ -139,22 +175,7 @@ const onKey = (event: KeyboardEvent) => {
   if (key === 'w' && controller.state().browser.activeTabId) { event.preventDefault(); controller.send({ type: 'tab.close', tabId: controller.state().browser.activeTabId! }); }
   if (key === 'n') { event.preventDefault(); controller.send({ type: 'window.new', private: event.shiftKey }); }
 };
-const onOutsidePointer = (event: PointerEvent) => {
-  if (event.target instanceof Element && !event.target.closest('.credential-autofill') && controller.state().browser.credentialAutofill) autofill?.(controller.state().browser.credentialAutofill!.token);
-  if (!(event.target instanceof Element) || event.target.closest('.tab-menu, .browser-menu, .blocking-log, [aria-label="Menu"]')) return;
-  if (!event.target.closest('.address')) controller.dismissAddress();
-  if (controller.state().panel) controller.setPanel(null);
-  if (controller.state().tabMenu) controller.closeTabMenu();
-};
-const onShellBlur = () => {
-  const address = document.getElementById('location') as HTMLInputElement | null;
-  if (document.activeElement === address) address?.blur();
-  controller.blurAddress();
-  if (controller.state().panel) controller.setPanel(null);
-  if (controller.state().tabMenu) controller.closeTabMenu();
-};
-window.addEventListener('blur', onShellBlur);
-document.addEventListener('pointerdown', onOutsidePointer);
+const stopShellDismissal = observeShellDismissal({ deactivate: () => controller.blurAddress() });
 document.addEventListener('keydown', onKey);
 window.addEventListener('pagehide', () => {
   foldersDisposed = true;
@@ -162,15 +183,16 @@ window.addEventListener('pagehide', () => {
   clearInterval(updateTimer);
   stopSourceChanges?.();
   document.removeEventListener('keydown', onKey);
-  document.removeEventListener('pointerdown', onOutsidePointer);
+  stopShellDismissal();
   stopViewport();
   stopActiveTab();
   stopSidebarResize();
-  window.removeEventListener('blur', onShellBlur);
   styleManager?.dispose();
   scriptManager?.dispose();
   credentialManager?.dispose();
   importManager?.dispose();
+  proxyManager?.dispose();
+  pageSourcePopup?.dispose(); stopPageSources?.(); ++sourceRequest;
   mounted.dispose();
   webui?.close();
   void controller.close();

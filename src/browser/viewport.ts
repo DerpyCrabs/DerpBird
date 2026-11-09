@@ -23,6 +23,7 @@ export function observeViewport(document: Document, send: (command: Command) => 
     // leaving an uncovered strip between the toolbar and the native surface.
     const rect = surfaceRect(content.getBoundingClientRect(), 0, 'cover');
     const overlays = Array.from(document.querySelectorAll('.address-suggestions, .browser-menu, .tab-menu, .error, .style-manager, .blocking-log, .credential-autofill'), element => surfaceRect(element.getBoundingClientRect()));
+    if (document.querySelector('dialog[open]')) overlays.push(surfaceRect(document.documentElement.getBoundingClientRect(), 0, 'cover'));
     const command = { type: 'shell.viewport', rect, overlays } as const;
     const serialized = JSON.stringify(command);
     if (serialized === previous) return;

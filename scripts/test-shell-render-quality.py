@@ -4,6 +4,8 @@
 Run only in an isolated wlroots test session. Requires Pillow, grim and
 wlr-randr. The output scale itself is changed, not QT_SCALE_FACTOR. Never accepts new goldens:
 the reference is independently rendered by the content view in the same run.
+Use an output mode divisible by every tested scale (e.g. 2400x1200), so grim
+does not resize the captured output itself.
 """
 import argparse
 import json
@@ -102,6 +104,11 @@ def main():
     results=[]
     for scale in args.scales:
         directory=args.output/str(scale);directory.mkdir(exist_ok=True)
+        outputs=json.loads(subprocess.check_output(['wlr-randr','--json'],env=capture_env,text=True))
+        output=next(item for item in outputs if item['name']==args.wayland_output)
+        mode=next(mode for mode in output['modes'] if mode['current'])
+        assert all(abs(mode[axis]/scale-round(mode[axis]/scale))<.001 for axis in ('width','height')), 'Use a mode divisible by the scale, such as 2400x1200; otherwise grim resizes the screenshot'
+
         subprocess.run(['wlr-randr','--output',args.wayland_output,'--scale',str(args.transition_from if args.transition_from is not None else scale)],env=capture_env,check=True,timeout=5)
         def evaluate(code, url='about:derpbird'):
             script=directory/'evaluate.js';script.write_text(code)
@@ -116,6 +123,7 @@ def main():
                 deadline=time.monotonic()+20
                 while True:
                     try:
+                        evaluate('Array.from(document.querySelectorAll("button")).find(b=>b.textContent==="Not now")?.click();true')
                         data=json.loads(evaluate(PROBE));break
                     except (RuntimeError,ValueError):
                         if process.poll() is not None or time.monotonic()>deadline:raise
@@ -149,6 +157,27 @@ def main():
                 protocol=(directory/'browser.log').read_text(errors='replace')
                 assert re.search(r'zwp_linux_buffer_params_v1[#@]\d+\.created\(', protocol), 'GPU page presentation was not exercised'
                 result=compare(path,scale)
+                evaluate(r'''(() => {
+                    const canvas=document.createElement('canvas');canvas.id='pixel-fidelity';
+                    canvas.width=Math.round(100*devicePixelRatio);canvas.height=Math.round(40*devicePixelRatio);
+                    canvas.style.cssText='position:fixed;left:100px;top:100px;width:100px;height:40px;z-index:2147483647';
+                    const context=canvas.getContext('2d');
+                    for(let y=0;y<canvas.height;y++)for(let x=0;x<canvas.width;x++){
+                        context.fillStyle=(y<canvas.height/2 ? x%2 : y%2) ? '#fff' : '#000';context.fillRect(x,y,1,1);
+                    }
+                    document.documentElement.append(canvas);return true;
+                })()''')
+                time.sleep(.2)
+                pixel_path=directory/'pixel-fidelity.png'
+                subprocess.run(['grim','-o',args.wayland_output,str(pixel_path)],env=capture_env,check=True,timeout=10)
+                pixel_image=Image.open(pixel_path).convert('RGB')
+                start=round(100*scale);width=round(100*scale);height=round(40*scale)
+                samples=[pixel_image.getpixel((start+x,start+y))[0]
+                         for y in range(2,height-2) for x in range(2,width-2)]
+                blurred=sum(8<value<247 for value in samples)/len(samples)
+                result['filtered_pixel_fraction']=blurred
+                assert blurred < .01, f'Wayland resampled physical pixels: {blurred:.1%}'
+                evaluate('document.getElementById("pixel-fidelity").remove();true')
                 result['layout'] = args.layout
                 evaluate('document.querySelector("[aria-label=Menu]").click();"open"')
                 time.sleep(.15)

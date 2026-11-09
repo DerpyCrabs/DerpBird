@@ -9,6 +9,7 @@ import type { StyleSnapshot, StyleMatchStatus, UserStyle, UserStylePort } from '
 
 type Draft = Pick<UserStyle, 'id' | 'name' | 'source' | 'sourceURL' | 'sourceBaseURL' | 'dependencyRevision' | 'imports' | 'checkUpdates' | 'checkedAt' | 'pendingUpdate' | 'updateError' | 'enabled' | 'usercss'>;
 export interface StyleModel {
+  readonly confirmingClose?: boolean;
   readonly matchStatus: StyleMatchStatus | null;
   readonly updateReview: string | null;
   readonly directories: readonly string[];
@@ -51,7 +52,7 @@ export function createStyleController(port: UserStylePort, compiler: StyleCompil
   const draftOf = (item: UserStyle): Draft => ({ id: item.id, name: item.name, source: item.source, sourceURL: item.sourceURL, sourceBaseURL: item.sourceBaseURL, dependencyRevision: item.dependencyRevision, imports: item.imports, checkUpdates: item.checkUpdates, checkedAt: item.checkedAt, pendingUpdate: item.pendingUpdate, updateError: item.updateError, enabled: item.enabled, ...(item.usercss ? { usercss: item.usercss } : {}) });
   const accept = (snapshot: StyleSnapshot, selectedId?: string) => {
     const item = snapshot.items.find(item => item.id === selectedId) ?? snapshot.items[0];
-    patch({ matchStatus: null, updateReview: null, configuration: null, snapshot, draft: item ? draftOf(item) : null, dirty: false, conflict: false, confirmingRemoval: false });
+    patch({ matchStatus: null, updateReview: null, configuration: null, snapshot, draft: item ? draftOf(item) : null, dirty: false, conflict: false, confirmingClose: false, confirmingRemoval: false });
   };
   return {
     source: owner.source,
@@ -222,6 +223,8 @@ export function createStyleController(port: UserStylePort, compiler: StyleCompil
     requestRemove() {
       if (state.draft && canLeaveDraft()) patch({ confirmingRemoval: true });
     },
+    requestClose() { patch({ confirmingClose: true }); },
+    cancelClose() { patch({ confirmingClose: false }); },
     cancelRemove() { if (!state.busy) patch({ confirmingRemoval: false }); },
     remove() {
       const { draft, snapshot } = state;

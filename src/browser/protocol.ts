@@ -22,6 +22,7 @@ export interface ScriptCommandEvent { readonly keyboard: boolean; readonly key: 
 export interface BlockingLog { readonly tabId: string; readonly entries: readonly { readonly id: number; readonly url: string; readonly kind: string; readonly rule?: string }[] }
 export interface CredentialAutofill { readonly token: string; readonly origin: string; readonly x: number; readonly y: number; readonly items: readonly Credential[] }
 export interface BrowserSnapshot {
+  readonly proxyProfile?: string;
   readonly credentialAutofill?: CredentialAutofill | null;
   readonly addressSuggestions?: { readonly query: number; readonly items: readonly { readonly text: string; readonly title: string; readonly source?: 'search' | 'history' | 'bookmark' | 'page' | 'settings'; readonly subtitle?: string; readonly favicon?: string }[] };
   readonly dynamicRules?: string;
@@ -159,7 +160,8 @@ export function decodeSnapshot(value: unknown): BrowserSnapshot {
   const credentialProposal = s.credentialProposal == null ? null : decodeCapturedCredential(s.credentialProposal);
   if (credentialProposal && tabs.find(tab => tab.id === s.activeTabId)?.private !== false)
     throw new Error('Credential suggestion requires an ordinary active tab');
-  return Object.freeze({ credentialAutofill, addressSuggestions, dynamicRules: s.dynamicRules as string | undefined, filterProposal, blockingLog, scriptCommands: Object.freeze(scriptCommands), credentialProposal, version: protocolVersion, revision: s.revision as number, preferences, tabs: Object.freeze(tabs), activeTabId: s.activeTabId as string | null });
+  if (s.proxyProfile !== undefined && (typeof s.proxyProfile !== 'string' || s.proxyProfile.length > 256)) throw new Error('Invalid proxy profile');
+  return Object.freeze({ ...(s.proxyProfile === undefined ? {} : { proxyProfile: s.proxyProfile as string }), credentialAutofill, addressSuggestions, dynamicRules: s.dynamicRules as string | undefined, filterProposal, blockingLog, scriptCommands: Object.freeze(scriptCommands), credentialProposal, version: protocolVersion, revision: s.revision as number, preferences, tabs: Object.freeze(tabs), activeTabId: s.activeTabId as string | null });
 }
 
 export function navigationTarget(input: string): string {

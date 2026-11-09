@@ -1,3 +1,4 @@
+import { ShellDialog } from './Overlay';
 import { mount, view, list } from 'effectweb';
 import { Input } from '@effectweb/shadcn/input';
 import { Button } from './button';
@@ -14,7 +15,7 @@ export function openCredentialManager(host: HTMLElement, port: CredentialPort, o
     const query = model.query.toLocaleLowerCase();
     const exceptions = model.exceptions.filter(origin => origin.toLocaleLowerCase().includes(query));
     const matches = (model.items ?? []).filter(item => `${item.origin} ${item.username}`.toLocaleLowerCase().includes(query));
-    return <section class="style-manager credential-manager" role="dialog" aria-modal="true" aria-label="Passwords">
+    return <ShellDialog onDismiss={() => { if (controller.state().revealed !== null) controller.hide(); else if (controller.state().proposal) controller.discardCapture(); else close(); }} trigger={() => document.querySelector('button[aria-label="Menu"]')} class="style-manager credential-manager" aria-label="Passwords">
       <header><h2>Passwords</h2><Button variant="ghost" disabled={model.busy} onClick={close}>Close</Button></header>
       <div class="style-manager-body">
         <aside aria-label="Saved passwords">
@@ -64,19 +65,11 @@ export function openCredentialManager(host: HTMLElement, port: CredentialPort, o
           {model.error ? <p role="alert">{model.error}</p> : null}
         </div>
       </div>
-    </section>;
+    </ShellDialog>;
   });
   const mounted = mount(host, manager, controller.source);
   const onKey = (event: KeyboardEvent) => {
-    if (event.key === 'Escape') { event.preventDefault(); if (controller.state().revealed !== null) controller.hide(); else if (controller.state().proposal) controller.discardCapture(); else close(); }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); controller.save(); }
-    if (event.key === 'Tab') {
-      const elements = Array.from(host.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled)'));
-      const first = elements[0], last = elements.at(-1);
-      if (!host.contains(document.activeElement)) { event.preventDefault(); (event.shiftKey ? last : first)?.focus(); }
-      else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-    }
   };
   document.addEventListener('keydown', onKey);
   const onHidden = () => { if (document.hidden) controller.hide(); };
@@ -85,6 +78,5 @@ export function openCredentialManager(host: HTMLElement, port: CredentialPort, o
   let disposed = false;
   const dispose = () => { if (disposed) return; disposed = true; document.removeEventListener('keydown', onKey); window.removeEventListener('blur', controller.hide); document.removeEventListener('visibilitychange', onHidden); mounted.dispose(); void controller.close(); };
   controller.load(proposal);
-  window.requestAnimationFrame(() => { if (!disposed) host.querySelector<HTMLElement>('input')?.focus(); });
   return { dispose };
 }

@@ -1,3 +1,5 @@
+import { decodePageSources, type PageSourcesPort } from './page-sources';
+import { decodeProxySnapshot, type ProxyPort } from './proxy-protocol';
 import { decodeImportStatus, decodeImportReport, type ImportPort } from './import-protocol';
 import { decodeSourceFolders, decodeDownloadedSource, sourceURL, sourceDownloadError } from './source-files';
 import { decodeCapturedCredential, validateCaptureToken, decodeCredentialExceptions, validateCredentialOrigin } from './credential-protocol';
@@ -8,7 +10,7 @@ import { decodeStyleSnapshot, decodeStyleMatchStatus, type UserStylePort } from 
 
 export interface WebUIChannel { sendMessage(name: string, data: unknown): void }
 interface Response { requestId: number; ok: boolean; value?: unknown; error?: string }
-export interface WebUIPort extends NativePort { autofill(token: string, id?: string): Promise<void>; readonly importer: ImportPort; readonly styles: UserStylePort; readonly scripts: UserScriptPort; readonly credentials: CredentialPort; onSourceChange(listener: () => void): () => void; close(): void }
+export interface WebUIPort extends NativePort { readonly pageSources: PageSourcesPort; autofill(token: string, id?: string): Promise<void>; readonly proxy: ProxyPort; readonly importer: ImportPort; readonly styles: UserStylePort; readonly scripts: UserScriptPort; readonly credentials: CredentialPort; onSourceChange(listener: () => void): () => void; close(): void }
 
 /** Adapter for Ladybird's document-scoped WebUI IPC. Never used on content pages. */
 export function createWebUIPort(
@@ -99,6 +101,10 @@ export function createWebUIPort(
   return {
     version: 1,
     async autofill(token, id) { await rpc(id ? { type: "credentials.autofill", token, id } : { type: "credentials.autofill-dismiss" }); },
+    proxy: {
+      get: async () => decodeProxySnapshot(await rpc({ type: 'proxy.get' })),
+      replace: async snapshot => decodeProxySnapshot(await rpc({ type: 'proxy.replace', ...decodeProxySnapshot(snapshot) })),
+    },
     importer: {
       status: async () => decodeImportStatus(await rpc({ type: 'import.status' })),
       dismiss: async () => { await rpc({ type: 'import.dismiss' }); },
@@ -138,6 +144,10 @@ export function createWebUIPort(
         const { id, origin, revision } = decodeCredential(entry);
         await rpc({ type: 'credentials.remove', id, origin, revision });
       },
+    },
+    pageSources: {
+      page: async () => decodePageSources(await rpc({ type: 'sources.page' })),
+      toggle: async (page, kind, id, enabled) => decodePageSources(await rpc({ type: 'sources.toggle', kind, id, enabled, tabId: page.tabId, url: page.url, revision: kind === 'styles' ? page.styleRevision : page.scriptRevision })),
     },
     styles: {
       status: async () => decodeStyleMatchStatus(await rpc({ type: 'styles.status' })),

@@ -2,13 +2,16 @@
 @source './';
 @import '@effectweb/shadcn/theme.css';
 @source '../node_modules/@effectweb/shadcn/dist';
+/* One keyboard-focus policy for shared components and shell-specific controls. */
+@custom-variant focus-visible (&:focus-visible:where([data-input-method="keyboard"] *));
+:root[data-input-method="pointer"] :focus { outline: none; }
 :root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #e5e5e5; background: transparent; color-scheme: dark; }
 * { box-sizing: border-box; }
 html, body, #app { background: transparent; width: 100%; height: 100%; margin: 0; overflow: hidden; }
 button, input { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: default; opacity: .35; }
-button:focus-visible, input:focus-visible { outline: 2px solid #9cbaad; outline-offset: 2px; }
+button:focus-visible:where([data-input-method="keyboard"] *), input:focus-visible:where([data-input-method="keyboard"] *) { outline: 2px solid #9cbaad; outline-offset: 2px; }
 .shell { position: relative; height: 100vh; display: grid; grid-template: 40px minmax(0, 1fr) / min(var(--sidebar-width, 196px), 50vw) minmax(0, 1fr); padding: 0; gap: 0; }
 .navigation { grid-column: 1 / -1; display: flex; gap: 2px; align-items: center; padding: 4px 6px; background: var(--background); border-bottom: 1px solid #36393d; }
 .address { flex: 1; min-width: 0; margin: 0 4px; }
@@ -22,7 +25,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid #9cbaad; outline-
 .tab-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .close-tab { padding: 4px; opacity: 0; pointer-events: none; }
 .tab:hover .close-tab { opacity: .5; pointer-events: auto; }
-.close-tab:hover, .close-tab:focus-visible { opacity: 1; pointer-events: auto; }
+.close-tab:hover, .close-tab:focus-visible:where([data-input-method="keyboard"] *) { opacity: 1; pointer-events: auto; }
 .new-tab { justify-content: flex-start; font-size: 13px; color: #b4b8bc; flex-shrink: 0; }
 .content-surface { min-width: 0; min-height: 0; background: transparent; border: 0; border-radius: 0; overflow: hidden; }
 .welcome { background: #202224; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 30px; text-align: center; }
@@ -62,7 +65,7 @@ p.subtle { font-size: 12px; color: #7e858b; }
 .style-editor label { display: flex; flex-direction: column; gap: 6px; }
 .style-editor .style-enabled { flex-direction: row; align-items: center; }
 .style-source { flex: 1; min-height: 100px; }
-.style-source textarea { flex: 1; resize: none; font-family: monospace; }
+.style-source textarea { flex: 1; resize: none; font-family: "DejaVu Sans Mono", "Liberation Mono", monospace; }
 .style-editor [role=alert] { color: #fca5a5; }
 /* The modal mount point must not consume a cell in the browser shell grid. */
 #style-manager-host { position: absolute; }
@@ -125,12 +128,12 @@ p.subtle { font-size: 12px; color: #7e858b; }
 .dynamic-rules { padding: 12px; }
 .dynamic-rules summary { cursor: pointer; }
 .dynamic-rules p { font-size: 12px; }
-.dynamic-rules textarea { width: 100%; min-height: 140px; padding: 10px; font: 12px monospace; }
+.dynamic-rules textarea { width: 100%; min-height: 140px; padding: 10px; font: 12px "DejaVu Sans Mono", "Liberation Mono", monospace; }
 .filter-picker { padding: 20px; }
 .filter-picker form { display: flex; flex-wrap: wrap; gap: 12px; }
 
 .address { position: relative; }
-.address-suggestions { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 60; padding: 4px; border-radius: 8px; border: 1px solid #3d4145; background: #222427; box-shadow: 0 8px 24px #0005; max-height: calc(100vh - 56px); overflow-y: auto; }
+.address-suggestions { width: var(--anchor-width); position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 60; padding: 4px; border-radius: 8px; border: 1px solid #3d4145; background: #222427; box-shadow: 0 8px 24px #0005; max-height: calc(100vh - 56px); overflow-y: auto; }
 .address-suggestions button { width: 100%; min-height: 38px; text-align: left; padding: 5px 8px; display: flex; align-items: center; gap: 9px; border: 0; border-radius: 4px; color: #e5e5e5; background: transparent; }
 .address-suggestions button:hover, .address-suggestions button[aria-selected=true] { background: #36393d; }
 .suggestion-icon { width: 18px; height: 18px; flex: 0 0 18px; display: flex; align-items: center; justify-content: center; color: #a4ada9; }
@@ -155,7 +158,7 @@ p.subtle { font-size: 12px; color: #7e858b; }
 .navigation > .credential-suggestion { flex-shrink: 0; width: auto; height: 28px; padding: 4px 8px; font-size: 12px; }
 .menu-tools summary { padding: 6px 8px; font-size: 12px; cursor: pointer; }
 .menu-tools[open] { border-left: 2px solid #59635f; }
-.browser-menu summary:focus-visible, .style-manager summary:focus-visible { outline: 2px solid #9cbaad; outline-offset: -2px; }
+.browser-menu summary:focus-visible:where([data-input-method="keyboard"] *), .style-manager summary:focus-visible:where([data-input-method="keyboard"] *) { outline: 2px solid #9cbaad; outline-offset: -2px; }
 .style-manager header { flex-shrink: 0; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
 .style-manager h2 { margin: 0; font-size: 15px; }
 .style-manager aside { padding-right: 10px; border-right: 1px solid var(--border); }
@@ -186,14 +189,14 @@ p.subtle { font-size: 12px; color: #7e858b; }
 .move-to-group button { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Focus is a single border; it never changes the address field's geometry. */
-.address input:focus, .address input:focus-visible { outline: none; outline-offset: 0; border-color: #9cbaad; box-shadow: none; }
+.address input:focus-visible:where([data-input-method="keyboard"] *) { outline: none; outline-offset: 0; border-color: #9cbaad; box-shadow: none; }
 .vertical .tabs { padding: 0; gap: 0; }
 .vertical .tab-list { gap: 0; }
 .vertical .tab { border-radius: 0; box-shadow: none; }
 .vertical .tree-child > button:first-child { padding-left: 21px; }
 .vertical .new-tab { border-radius: 0; }
 #sidebar-resize { position: absolute; z-index: 3; left: calc(min(var(--sidebar-width, 196px), 50vw) - 5px); top: 40px; bottom: 0; width: 5px; border-right: 1px solid transparent; cursor: col-resize; touch-action: none; user-select: none; }
-#sidebar-resize:hover, #sidebar-resize[data-resizing], #sidebar-resize:focus-visible { border-right-color: #9cbaad; outline: none; }
+#sidebar-resize:hover, #sidebar-resize[data-resizing], #sidebar-resize:focus-visible:where([data-input-method="keyboard"] *) { border-right-color: #9cbaad; outline: none; }
 .horizontal #sidebar-resize { display: none; }
 .horizontal.wrap-tabs { grid-template-rows: auto 40px minmax(0, 1fr); }
 .horizontal.wrap-tabs .tabs { min-height: 34px; max-height: min(180px, 35vh); align-items: flex-start; }
@@ -203,12 +206,12 @@ p.subtle { font-size: 12px; color: #7e858b; }
 /* Menus share a visible selection color above the sidebar resize target. */
 .browser-menu button:not(:disabled):hover, .tab-menu button:not(:disabled):hover,
 .browser-menu summary:hover, .tab-menu summary:hover,
-.browser-menu button:focus-visible, .tab-menu button:focus-visible,
-.browser-menu summary:focus-visible, .tab-menu summary:focus-visible {
+.browser-menu button:focus-visible:where([data-input-method="keyboard"] *), .tab-menu button:focus-visible:where([data-input-method="keyboard"] *),
+.browser-menu summary:focus-visible:where([data-input-method="keyboard"] *), .tab-menu summary:focus-visible:where([data-input-method="keyboard"] *) {
   background: #36393d; color: #fff; box-shadow: none; outline: none; border-color: transparent;
 }
-.browser-menu button:focus-visible, .tab-menu button:focus-visible,
-.browser-menu summary:focus-visible, .tab-menu summary:focus-visible { outline: 1px solid #9cbaad; outline-offset: -1px; }
+.browser-menu button:focus-visible:where([data-input-method="keyboard"] *), .tab-menu button:focus-visible:where([data-input-method="keyboard"] *),
+.browser-menu summary:focus-visible:where([data-input-method="keyboard"] *), .tab-menu summary:focus-visible:where([data-input-method="keyboard"] *) { outline: 1px solid #9cbaad; outline-offset: -1px; }
 
 
 .tabs button { border-radius: 0; }
@@ -243,5 +246,210 @@ p.subtle { font-size: 12px; color: #7e858b; }
 .credential-autofill header button { width: 24px; height: 24px; padding: 4px; }
 .credential-autofill-items { min-height: 0; overflow: auto; }
 .credential-autofill-items button { display: flex; width: 100%; height: 32px; padding: 6px; justify-content: flex-start; font-size: 13px; border-radius: 2px; overflow: hidden; text-overflow: ellipsis; }
-.credential-autofill-items button:hover, .credential-autofill-items button:focus-visible { background: #3b4145; outline: none; }
+.credential-autofill-items button:hover, .credential-autofill-items button:focus-visible:where([data-input-method="keyboard"] *) { background: #3b4145; outline: none; }
 .credential-autofill small { padding: 4px 6px; font-size: 10px; color: #abb3ba; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Proxy controls share the browser menu's compact spacing and palette. */
+.navigation > .proxy-switcher-button { position: relative; flex: 0 0 28px; overflow: visible; }
+.proxy-active-dot { position: absolute; right: 3px; bottom: 3px; width: 5px; height: 5px; border-radius: 50%; background: #a9cab6; box-shadow: 0 0 0 2px var(--background); }
+.proxy-popup, .proxy-manager { color: #e5e7e9; font-size: 13px; line-height: 1.45; outline: none; box-shadow: 0 12px 36px #0006; }
+.proxy-popup { inset: auto 8px auto auto; width: min(292px, calc(100vw - 16px)); padding: 5px; gap: 0; border: 1px solid #3d4145; border-radius: 7px; background: #25272a; overflow: auto; }
+.proxy-popup-heading { display: flex; align-items: center; justify-content: space-between; padding: 8px 9px 10px; }
+.proxy-popup-heading strong { font-size: 13px; font-weight: 600; }
+.proxy-popup-heading > span { font-size: 11px; color: #a3a8ae; }
+.proxy-profile-list { display: flex; flex-direction: column; gap: 2px; }
+.proxy-profile-option { display: flex; align-items: center; width: 100%; min-height: 36px; padding: 7px 9px; gap: 11px; border: 0; border-radius: 4px; text-align: left; background: transparent; color: inherit; }
+.proxy-profile-option > svg, .proxy-profile-option > .proxy-color { flex: 0 0 17px; color: #a7b3ac; }
+.proxy-profile-option > span:not(.proxy-color) { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 1px; }
+.proxy-profile-option strong, .proxy-sidebar-profile strong { font-weight: 500; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proxy-profile-option small, .proxy-sidebar-profile small { color: #a3a8ae; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proxy-profile-option[aria-pressed=true] { background: #343b37; }
+.proxy-profile-option:hover, .proxy-profile-option:focus-visible:where([data-input-method="keyboard"] *), .proxy-popup-settings:hover, .proxy-popup-settings:focus-visible:where([data-input-method="keyboard"] *) { background: #3b4145; outline-offset: -2px; }
+.proxy-popup-divider { height: 1px; background: #3d4145; margin: 5px 7px; flex-shrink: 0; }
+.proxy-popup-settings { display: flex; align-items: center; gap: 11px; border: 0; border-top: 1px solid #3d4145; margin-top: 5px; padding: 10px 9px; width: 100%; background: transparent; color: #d8dcdf; text-align: left; font-size: 12px; }
+.proxy-popup [role=alert] { margin: 8px; font-size: 12px; color: #edb0a6; }
+.proxy-color { display: inline-block; width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.proxy-profile-option > .proxy-color { flex-basis: 9px; margin: 0 4px; }
+
+.proxy-manager { inset: min(80px, 8vh) auto auto 50%; transform: translateX(-50%); width: min(1040px, calc(100vw - 48px)); height: min(740px, calc(100vh - 100px)); padding: 0; gap: 0; background: #202224; border: 1px solid #42464a; border-radius: 8px; overflow: hidden; }
+.proxy-manager.is-empty { width: min(560px, calc(100vw - 32px)); height: auto; max-height: calc(100vh - 96px); }
+.proxy-manager .proxy-settings-header { padding: 18px 22px; margin: 0; border-bottom: 1px solid #36393d; background: #25272a; flex-shrink: 0; }
+.proxy-settings-header h2 { font-size: 16px; font-weight: 600; line-height: 1.4; }
+.proxy-manager .proxy-icon-button { width: 28px; height: 28px; padding: 5px; display: inline-flex; align-items: center; justify-content: center; color: #a9afb5; border-radius: 4px; background: transparent; border: 0; }
+.proxy-manager button:hover:not(:disabled) { background-color: #373d40; }
+.proxy-manager button:focus-visible:where([data-input-method="keyboard"] *), .proxy-manager input:focus-visible:where([data-input-method="keyboard"] *), .proxy-manager select:focus-visible:where([data-input-method="keyboard"] *), .proxy-manager textarea:focus-visible:where([data-input-method="keyboard"] *) { outline: 2px solid #9cbaad; outline-offset: -1px; }
+.proxy-manager .proxy-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 32px; padding: 6px 11px; border: 1px solid #484d51; border-radius: 4px; color: #dfe2e5; background: #2b2e31; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.proxy-manager .proxy-button.primary { background: #b5c9bd; border-color: #b5c9bd; color: #17211c; }
+.proxy-manager .proxy-button.primary:hover:not(:disabled) { background: #c5d7cc; }
+.proxy-manager button:disabled { opacity: .4; }
+.proxy-manager input, .proxy-manager select, .proxy-manager textarea { min-width: 0; padding: 7px 9px; color: #e1e4e6; background: #1b1d20; border: 1px solid #41464b; border-radius: 4px; font: inherit; }
+.proxy-manager input:not([type=file]), .proxy-manager select { height: 33px; }
+.proxy-manager input::placeholder, .proxy-manager textarea::placeholder { color: #818990; }
+.proxy-manager label { display: flex; flex-direction: column; gap: 7px; font-size: 12px; color: #c7cbd0; }
+.proxy-manager label small { color: #939ba3; font-size: 11px; }
+.proxy-manager h3 { margin: 0; font-size: 15px; font-weight: 600; color: #e5e7e9; }
+.proxy-manager p { line-height: 1.5; }
+.proxy-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.proxy-settings-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 22px; border-bottom: 1px solid #36393d; flex-shrink: 0; }
+.proxy-settings-toolbar > label { flex-direction: row; align-items: center; gap: 10px; }
+.proxy-settings-toolbar select { width: 180px; }
+.proxy-backup-actions { display: flex; gap: 7px; }
+.proxy-empty { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 36px 24px 34px; overflow: auto; }
+.proxy-empty-icon { display: flex; align-items: center; justify-content: center; width: 54px; height: 54px; border: 1px solid #49564d; border-radius: 12px; background: #2b3530; color: #b5c9bd; margin-bottom: 20px; }
+.proxy-empty h3 { font-size: 18px; }
+.proxy-empty p { margin: 9px 0 22px; color: #abb2b8; font-size: 13px; }
+.proxy-empty > small { margin-top: 18px; font-size: 11px; color: #8b939b; }
+.proxy-settings-body { display: flex; flex: 1; min-height: 0; }
+.proxy-manager .proxy-settings-body > aside { width: 196px; padding: 12px 8px 10px; border-right: 1px solid #36393d; gap: 4px; background: #232528; overflow: hidden; }
+.proxy-sidebar-heading { display: flex; justify-content: space-between; align-items: center; padding: 4px 9px 10px; font-size: 11px; color: #9ca4ac; }
+.proxy-sidebar-heading > span { color: #7f8991; }
+.proxy-sidebar-list { flex: 1; min-height: 0; overflow: auto; }
+.proxy-manager aside .proxy-sidebar-profile { display: flex; align-items: center; width: 100%; padding: 9px; gap: 9px; border: 1px solid transparent; border-radius: 4px; margin: 0 0 3px; color: #d8dde1; background: transparent; }
+.proxy-sidebar-profile > span:last-child { display: flex; flex-direction: column; min-width: 0; gap: 2px; text-align: left; }
+.proxy-manager aside .proxy-sidebar-profile[aria-pressed=true] { background: #303a34; border-color: #46594b; color: #eef3ef; }
+.proxy-manager aside .proxy-new-profile { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 9px; margin-top: 8px; border: 0; border-radius: 4px; font-size: 12px; background: transparent; color: #c3cbc6; flex-shrink: 0; }
+.proxy-editor { flex: 1; min-width: 0; overflow: auto; padding: 20px 22px; }
+.proxy-editor fieldset { display: flex; flex-direction: column; gap: 12px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.proxy-editor-heading { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 3px; }
+.proxy-editor-heading h3 { overflow-wrap: anywhere; }
+.proxy-editor-heading p { margin: 3px 0 0; color: #949da5; font-size: 11px; }
+.proxy-server-form { display: flex; flex-direction: column; gap: 20px; padding-top: 6px; }
+.proxy-endpoint { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(120px, 1.5fr) 80px; gap: 12px; }
+.proxy-detail { border-top: 1px solid #36393d; padding-top: 14px; }
+.proxy-detail summary { color: #b7bfc6; font-size: 12px; cursor: pointer; }
+.proxy-detail > div { display: flex; flex-direction: column; gap: 16px; margin-top: 14px; }
+.proxy-auth-row { display: grid; grid-template-columns: 100px 1fr 1fr; gap: 12px; align-items: end; }
+.proxy-auth-row > span { font-size: 11px; color: #a5adb4; align-self: center; }
+.proxy-manager .proxy-override-note { margin: -10px 0 0; color: #949da5; font-size: 11px; }
+.proxy-manager textarea { width: 100%; resize: vertical; font: 12px/1.6 "DejaVu Sans Mono", "Liberation Mono", monospace; }
+.proxy-create { max-width: 420px; display: flex; flex-direction: column; gap: 16px; }
+.proxy-create p { margin: -8px 0 3px; font-size: 12px; color: #a3abb2; }
+.proxy-create .proxy-actions { margin-top: 4px; }
+.proxy-rules-tools { display: flex; align-items: center; gap: 8px; }
+.proxy-rules-tools input { flex: 1; }
+.proxy-manager .proxy-rules-help { margin: -3px 0 2px; font-size: 11px; color: #939da5; }
+.proxy-rule, .proxy-rule-head { display: grid; grid-template-columns: 28px minmax(100px, 1fr) minmax(150px, 1.7fr) minmax(100px, 1fr) 72px; gap: 6px; align-items: center; }
+.proxy-rule-head { color: #949da5; font-size: 11px; padding-bottom: 7px; border-bottom: 1px solid #36393d; margin-bottom: -8px; }
+.proxy-rules { display: flex; flex-direction: column; gap: 5px; }
+.proxy-rule input, .proxy-rule select { width: 100%; height: 30px; font-size: 12px; padding: 4px 6px; }
+.proxy-rule-number { color: #89939b; text-align: right; padding-right: 5px; font-size: 11px; }
+.proxy-rule-actions { display: flex; gap: 0; }
+.proxy-rule-actions button { display: flex; align-items: center; justify-content: center; width: 24px; height: 28px; border: 0; border-radius: 3px; color: #8f9aa2; background: transparent; }
+.proxy-rule-actions button:hover { color: #dfe5e9; }
+.proxy-pagination { display: flex; gap: 6px; align-items: center; margin-top: 3px; }
+.proxy-pagination > span { flex: 1; font-size: 11px; color: #949da5; }
+.proxy-pagination .proxy-button { min-height: 27px; padding: 3px 8px; font-size: 11px; }
+.proxy-default-profile { padding-top: 16px; margin-top: 4px; border-top: 1px solid #36393d; }
+.proxy-default-profile select { max-width: 240px; }
+.proxy-no-rules { margin: 18px 0; text-align: center; color: #949da5; font-size: 12px; }
+.proxy-manager .proxy-notice { margin: 0; padding: 10px 22px; background: #29352e; border-bottom: 1px solid #3a4c40; color: #c1d4c7; font-size: 12px; flex-shrink: 0; }
+.proxy-manager .error-notice { background: #3a2c28; color: #efb8ac; border-color: #624a43; }
+.proxy-manager .proxy-settings-footer { padding: 14px 22px; border-top: 1px solid #36393d; background: #25272a; gap: 8px; flex-shrink: 0; }
+.proxy-settings-footer > span { flex: 1; font-size: 12px; color: #a3adb5; }
+@media (max-width: 800px) {
+  .proxy-manager { width: calc(100vw - 24px); }
+  .proxy-manager .proxy-settings-body > aside { width: 155px; }
+  .proxy-editor { padding: 16px 12px; }
+  .proxy-rule, .proxy-rule-head { grid-template-columns: 22px 100px minmax(120px, 1fr) 105px 72px; }
+  .proxy-rules, .proxy-rule-head { min-width: 445px; }
+  .proxy-settings-toolbar { padding: 10px 14px; gap: 8px; flex-wrap: wrap; }
+  .proxy-endpoint { grid-template-columns: 1fr 1fr 70px; }
+}
+@media (max-width: 600px) {
+  .proxy-manager { inset: 46px auto auto 50%; width: calc(100vw - 16px); height: calc(100vh - 58px); }
+  .proxy-manager .proxy-settings-header { padding: 14px; }
+  .proxy-manager .proxy-settings-body > aside { width: 126px; }
+  .proxy-manager .proxy-settings-footer { padding: 10px 14px; }
+  .proxy-endpoint { grid-template-columns: 1fr; }
+  .proxy-auth-row { grid-template-columns: 1fr; }
+  .proxy-empty { padding: 28px 16px; }
+}
+.proxy-editor.is-rules { overflow: hidden; display: flex; flex-direction: column; gap: 8px; padding: 16px 18px; }
+/* Preserve disabled controls without the fieldset anonymous flex box. */
+.proxy-editor.is-rules fieldset { display: contents; }
+.proxy-editor.is-rules .proxy-editor-heading { align-items: center; margin: 0; }
+.proxy-editor.is-rules .proxy-editor-heading > div { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.proxy-editor.is-rules .proxy-editor-heading p { margin: 0; }
+.proxy-editor.is-rules .proxy-rules { flex: 1; min-height: 60px; overflow: auto; padding-right: 12px; }
+.proxy-editor.is-rules .proxy-rule-head { margin: 0; padding: 0 12px 5px 0; }
+.proxy-editor.is-rules .proxy-default-profile { flex-direction: row; align-items: center; justify-content: space-between; padding-top: 10px; margin: 0; flex-shrink: 0; }
+.proxy-editor.is-rules .proxy-default-profile select { width: 210px; }
+@media (max-width: 800px) { .proxy-editor.is-rules { overflow: auto; } }
+
+/* Source editors share a bounded library/editor layout. */
+.source-manager { inset: min(64px, 6vh) 0 auto; margin: 0 auto; width: min(1100px, calc(100vw - 32px)); height: min(790px, calc(100vh - 88px)); padding: 0; gap: 0; overflow: hidden; color: #e1e5e8; background: #202224; border: 1px solid #42464a; border-radius: 8px; box-shadow: 0 18px 48px #0006; outline: none; font-size: 13px; }
+.source-manager .source-manager-header { padding: 18px 22px; border-bottom: 1px solid #36393d; background: #25272a; gap: 12px; }
+.source-heading-icon { display: flex; color: #b5c9bd; }
+.source-manager-header > div { flex: 1; }
+.source-manager .source-manager-header h2 { margin: 0; font-size: 16px; }
+.source-icon-button { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 5px; border: 0; background: transparent; color: #a9afb5; border-radius: 4px; }
+.source-manager button, .page-sources-popup button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 30px; padding: 6px 10px; border: 1px solid #42474b; background: #2b2e31; color: #dfe2e5; border-radius: 4px; font: 500 12px/1.4 Inter, sans-serif; }
+.source-manager button:hover:not(:disabled), .page-sources-popup button:hover:not(:disabled) { background: #373d40; }
+.source-manager button:focus-visible:where([data-input-method="keyboard"] *), .source-manager input:focus-visible:where([data-input-method="keyboard"] *), .source-manager textarea:focus-visible:where([data-input-method="keyboard"] *), .source-manager summary:focus-visible:where([data-input-method="keyboard"] *), .page-sources-popup :focus-visible:where([data-input-method="keyboard"] *) { outline: 2px solid #9cbaad; outline-offset: -2px; }
+.source-manager .source-icon-button, .page-sources-popup .source-icon-button { border: 0; background: transparent; padding: 5px; min-height: 28px; }
+.source-manager .style-manager-body { gap: 0; overflow: hidden; }
+.source-manager aside { width: 224px; padding: 14px 10px; gap: 8px; background: #232528; border-right: 1px solid #36393d; overflow: auto; }
+.source-library-title { display: flex; justify-content: space-between; padding: 0 5px 3px; color: #989fa5; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+.source-manager aside .source-new { justify-content: center; flex-shrink: 0; }
+.source-library-list { flex: 1; min-height: 70px; overflow: auto; }
+.source-manager .source-library-item { width: 100%; padding: 10px 8px; margin-bottom: 3px; border: 1px solid transparent; background: transparent; text-align: left; gap: 9px; }
+.source-manager .source-library-item[aria-pressed=true] { background: #303a34; border-color: #46594b; }
+.source-item-copy { display: flex; flex-direction: column; min-width: 0; gap: 3px; }
+.source-item-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 500; }
+.source-item-copy small { color: #929b9d; font-size: 10px; }
+.source-state-dot { flex: 0 0 6px; height: 6px; border-radius: 50%; background: #656b70; }
+.source-state-dot.enabled { background: #a8c7b3; }
+.source-manager aside details { flex-shrink: 0; padding: 0 3px; color: #adb5bc; }
+.source-manager summary { padding: 7px 2px; cursor: pointer; font-size: 12px; }
+.source-manager .source-url-import { display: flex; flex-direction: column; gap: 7px; padding: 5px 0 8px; }
+.source-manager .source-file-import { display: flex; padding: 0 0 8px; }
+.source-manager .source-file-import button { width: 100%; }
+.source-manager [hidden] { display: none !important; }
+.source-manager input:not([type=checkbox]), .source-manager select { min-width: 0; width: 100%; height: 34px; padding: 7px 9px; border: 1px solid #41464b; border-radius: 4px; background: #1b1d20; color: #e1e4e6; font: inherit; }
+.source-manager .style-editor { padding: 20px 22px 0; gap: 12px; overflow: auto; }
+.source-editor-heading { display: flex; align-items: flex-end; gap: 20px; flex-shrink: 0; }
+.source-editor-heading > label:first-child { flex: 1; color: #aeb6bd; font-size: 11px; }
+.source-editor-heading .style-enabled { height: 34px; margin: 0; font-size: 12px; white-space: nowrap; }
+.source-manager input[type=checkbox], .page-sources-popup input[type=checkbox] { appearance: auto; width: 16px; height: 16px; accent-color: #a8c7b3; flex-shrink: 0; }
+.source-settings { flex-shrink: 0; border-bottom: 1px solid #36393d; }
+.source-settings > div { display: flex; flex-direction: column; gap: 10px; max-height: 190px; overflow: auto; padding: 6px 0 12px; }
+.source-settings p { margin: 0; font-size: 12px; color: #a5afb7; }
+.source-manager .style-source { flex: 1; min-height: 210px; gap: 8px; font-size: 11px; color: #9da6ae; }
+.source-manager .style-source textarea { display: block; width: 100%; min-height: 180px; padding: 14px; border: 1px solid #3b4147; border-radius: 5px; background: #191b1e; color: #dce3e7; font: 12px/1.65 "DejaVu Sans Mono", "Liberation Mono", monospace; tab-size: 2; resize: none; }
+.source-manager .style-editor > p { margin: 0; font-size: 11px; color: #9da6ae; }
+.source-manager .source-editor-footer { position: sticky; bottom: 0; flex-shrink: 0; padding: 14px 0; background: #202224; gap: 7px; border-top: 1px solid #36393d; }
+.source-save-state { margin-right: auto; font-size: 11px; color: #9da6ae; }
+.source-manager .primary { background: #b5c9bd; border-color: #b5c9bd; color: #17211c; }
+.source-empty { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 28px; gap: 16px; }
+.source-empty-icon { display: flex; align-items: center; justify-content: center; width: 62px; height: 62px; color: #b5c9bd; border: 1px solid #45564b; border-radius: 14px; background: #2c3731; }
+.source-empty h3 { margin: 7px 0 0; font-size: 19px; font-weight: 600; }
+.source-empty > div { display: flex; gap: 8px; margin: 8px 0; }
+.source-empty small { font-size: 11px; color: #879099; }
+.source-manager .source-origin { display: flex; align-items: center; gap: 7px; font-size: 11px; }
+.source-origin span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source-manager [role=alert], .source-notice { padding: 10px; background: #382b29; color: #efb8ac; border-radius: 4px; }
+.page-sources-button { position: relative; }
+.source-count { position: absolute; right: -3px; top: -3px; min-width: 13px; height: 13px; padding: 0 2px; border-radius: 5px; color: #17211c; background: #b5c9bd; font: 600 9px/13px Inter,sans-serif; }
+.source-count[hidden] { display: none; }
+.page-sources-popup { inset: 44px 10px auto auto; width: min(370px, calc(100vw - 20px)); max-height: calc(100vh - 58px); padding: 0; gap: 0; background: #25272a; color: #dfe4e8; border: 1px solid #42484c; border-radius: 7px; box-shadow: 0 12px 36px #0006; outline: none; font-size: 12px; }
+.horizontal .page-sources-popup { top: 78px; }
+.page-sources-popup header { padding: 15px 16px; border-bottom: 1px solid #383e42; }
+.page-sources-popup h2 { margin: 0; min-width: 0; font-size: 14px; overflow-wrap: anywhere; }
+.page-sources-popup h2 span { margin-left: 4px; color: #99a3ab; font-weight: 400; font-size: 12px; }
+.page-sources-list { overflow: auto; padding: 6px; }
+.page-source-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 10px; border-radius: 4px; }
+.page-source-row:hover { background: #30363a; }
+.page-source-row > span { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.page-source-row strong { font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
+.page-source-row small { color: #99a4ab; font-size: 11px; }
+.page-sources-empty { padding: 22px 10px; color: #c1c9cf; text-align: center; line-height: 1.6; }
+.page-sources-popup footer { padding: 12px 14px; border-top: 1px solid #383e42; flex-direction: column; align-items: stretch; gap: 9px; }
+.page-sources-reload { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; background: #2c3731; color: #c5d7cc; line-height: 1.5; }
+@media (max-width: 750px) { .source-manager aside { width: 180px; } .source-manager .style-editor { padding: 14px 14px 0; } .source-save-state { display: none; } }
+@media (max-width: 540px) { .source-manager { inset: 8px 0 auto; width: calc(100vw - 16px); height: calc(100vh - 16px); } .source-manager aside { width: 140px; padding: 10px 6px; } .source-manager .source-editor-footer { flex-wrap: wrap; } .source-empty { padding: 14px; } .source-empty > div { flex-direction: column; } }
+
+.source-close-confirm { display:flex; align-items:center; gap:8px; padding:12px 22px; background:#3a3228; color:#e5d4bc; }
+.source-close-confirm span { margin-right:auto; }
+
+/* Native dialog backdrops are covered by the shell viewport mask as well. */
+dialog.style-manager::backdrop, dialog.blocking-log::backdrop { background: #0005; }

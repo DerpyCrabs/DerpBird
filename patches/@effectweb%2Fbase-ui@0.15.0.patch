@@ -1,0 +1,12 @@
+diff --git a/dist/overlay.js b/dist/overlay.js
+index 4dd6a8d5ad4909780ff1ddb08283dfcc671696b5..2459b4ca587364ead2f61fed23fcad945b72e5d6 100644
+--- a/dist/overlay.js
++++ b/dist/overlay.js
+@@ -237,6 +237,7 @@ const acquirePopup = (element, current) => {
+     if (details.isCanceled) returningFocus = previous;
+   };
+   const cancel = (event) => {
++    if (event.target !== element) return;
+     event.preventDefault();
+     if (current().kind !== "alertdialog" && current().dismissible !== false)
+       handle.hide({ reason: "escape-key", event });

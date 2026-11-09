@@ -1,3 +1,4 @@
+import { ShellDialog } from './Overlay';
 import { Effect } from 'effect';
 import { mount, modelOwner, view } from 'effectweb';
 import { Button } from './button';
@@ -15,10 +16,10 @@ export function openImportManager(host: HTMLElement, port: ImportPort, onClosed:
       .pipe(Effect.catch(error => Effect.sync(() => patch({ error: error instanceof Error ? error.message : 'Import failed.' })))), 'queue');
   };
   const close = () => { if (state.busy) return; run(async () => { await port.dismiss(); dispose(); onClosed(); }); };
-  const render = view<Model>(m => <section class="style-manager import-manager" role="dialog" aria-modal="true" aria-label="Import browser data" tabindex={-1}>
+  const render = view<Model>(m => <ShellDialog onDismiss={close} trigger={() => document.querySelector('button[aria-label="Menu"]')} class="style-manager import-manager" aria-label="Import browser data" tabindex={-1}>
     <header><h2>{welcome ? 'Welcome to DerpBird' : 'Import browser data'}</h2><Button variant="ghost" disabled={m.busy} onClick={close}>{m.report ? 'Done' : welcome ? 'Not now' : 'Close'}</Button></header>
     <div class="import-body">
-      <p>Bring your bookmarks, history and tabs from Chrome.</p>
+
       {m.status?.profiles.length ? <>
         <label>Chrome profile<select aria-label="Chrome profile" disabled={m.busy} value={m.profile} onChange={e => patch({ profile: e.currentTarget.value, report: null })}>
           {m.status.profiles.map(profile => <option value={profile.id}>{profile.name}</option>)}
@@ -49,19 +50,9 @@ export function openImportManager(host: HTMLElement, port: ImportPort, onClosed:
       </section> : null}
       {m.error ? <p role="alert">{m.error}</p> : null}
     </div>
-  </section>);
+  </ShellDialog>);
   const mounted = mount(host, render, owner.source);
-  const onKey = (event: KeyboardEvent) => {
-    if (event.key === 'Escape') { event.preventDefault(); close(); }
-    if (event.key === 'Tab') {
-      const nodes = Array.from(host.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled)'));
-      const first = nodes[0], last = nodes.at(-1);
-      if (!host.contains(document.activeElement) || event.shiftKey && document.activeElement === first || !event.shiftKey && document.activeElement === last) { event.preventDefault(); (event.shiftKey ? last : first)?.focus(); }
-    }
-  };
-  document.addEventListener('keydown', onKey);
-  const dispose = () => { if (disposed) return; disposed = true; document.removeEventListener('keydown', onKey); mounted.dispose(); void Effect.runPromise(owner.close()); };
+  const dispose = () => { if (disposed) return; disposed = true; mounted.dispose(); void Effect.runPromise(owner.close()); };
   run(async () => { const status = await port.status(); patch({ status, profile: status.profiles[0]?.id ?? '' }); });
-  window.requestAnimationFrame(() => { if (!disposed) host.querySelector<HTMLElement>('[role=dialog]')?.focus(); });
   return { dispose };
 }

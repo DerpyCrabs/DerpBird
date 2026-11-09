@@ -1,3 +1,7 @@
+import { ShellMenu, ShellPopover, ShellDialog } from './Overlay';
+import Palette from '@effectweb/lucide/icons/palette';
+import CodeXml from '@effectweb/lucide/icons/code-xml';
+import type { SourceKind } from '../browser/page-sources';
 import { canDropTab, tabDropPlacement } from '../browser/tab-tree';
 import type { CapturedCredential } from '../browser/credential-protocol';
 import { list, view } from 'effectweb';
@@ -21,7 +25,7 @@ import LoaderCircle from '@effectweb/lucide/icons/loader-circle';
 import Pin from '@effectweb/lucide/icons/pin';
 import type { ShellController, ShellModel } from '../browser/controller';
 
-export function shellView(controller: ShellController, openStyles?: () => void, openScripts?: () => void, openCredentials?: (proposal?: CapturedCredential) => void, openImport?: () => void, autofill?: (token: string, id?: string) => void) {
+export function shellView(controller: ShellController, openStyles?: () => void, openScripts?: () => void, openCredentials?: (proposal?: CapturedCredential) => void, openImport?: () => void, autofill?: (token: string, id?: string) => void, openProxy?: () => void, openPageSources?: (kind: SourceKind) => void) {
   return view<ShellModel>(model => {
     const login = model.browser.credentialAutofill;
     const active = model.browser.tabs.find(tab => tab.id === model.browser.activeTabId);
@@ -41,15 +45,7 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
     };
     const openTabMenu = (tabId: string, x: number, y: number) => {
       controller.openTabMenu(tabId, Math.max(8, Math.min(x, window.innerWidth - 250)), Math.max(8, Math.min(y, window.innerHeight - 240)));
-      window.requestAnimationFrame(() => {
-        const menu = document.querySelector<HTMLElement>('.tab-menu');
-        if (!menu) return;
-        const rect = menu.getBoundingClientRect();
-        const left = Math.max(8, Math.min(rect.left, window.innerWidth - rect.width - 8));
-        const top = Math.max(8, Math.min(rect.top, window.innerHeight - rect.height - 8));
-        if (left !== rect.left || top !== rect.top) controller.openTabMenu(tabId, left, top);
-        menu.focus();
-      });
+
     };
     const tabCommand = (type: 'tab.back' | 'tab.forward' | 'tab.reload' | 'tab.stop' | 'tab.find' | 'tab.bookmark' | 'tab.site-settings' | 'tab.zoom-in' | 'tab.zoom-out' | 'tab.zoom-reset') => {
       if (active) controller.send({ type, tabId: active.id });
@@ -67,10 +63,16 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
         }}>
           <Button type="button" variant="ghost" size="icon" class="site-settings" aria-label="Site settings" title="Site permissions and security" disabled={!active || !/^https?:/.test(active.url)} onClick={() => tabCommand('tab.site-settings')}><SlidersHorizontal size={15}/></Button>
           <input id="location" name="location" aria-label="Address or search" placeholder="Search or enter address" value={model.addressInput ?? (active?.url === 'about:blank' ? '' : active?.url ?? '')} onFocus={event => controller.focusAddress(event.currentTarget.value)} onInput={event => controller.editAddress(event.currentTarget.value)} onKeyDown={event => { if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); controller.selectAddress(event.key === 'ArrowDown' ? 1 : -1); } if (event.key === 'Escape') { event.preventDefault(); controller.dismissAddress(); } }} role="combobox" aria-expanded={addressSuggestions.length > 0} aria-controls="address-suggestions" aria-activedescendant={model.addressSelection >= 0 ? `address-option-${model.addressSelection}` : undefined} autocomplete="off" spellcheck={false}/>
-          {addressSuggestions.length ? <div id="address-suggestions" class="address-suggestions" role="listbox" aria-label="Address suggestions">{list(addressSuggestions, item => item.text, (item, index) => <button type="button" role="option" id={`address-option-${index}`} aria-selected={model.addressSelection === index} onPointerDown={event => event.preventDefault()} onClick={() => controller.navigate(item.text)}><span class="suggestion-icon" aria-hidden="true">{item.favicon ? <img class="suggestion-favicon" src={item.favicon} alt=""/> : item.source === 'history' ? <History size={16}/> : item.source === 'bookmark' ? <Bookmark size={16}/> : item.source === 'settings' ? <SlidersHorizontal size={16}/> : item.source === 'search' ? <Search size={16}/> : <Globe size={16}/>}</span><span class="suggestion-copy"><strong>{item.title}</strong><small>{suggestionDetails(item)}</small></span><span class="suggestion-enter" aria-hidden="true">↵</span></button>)}</div> : null}
+          {addressSuggestions.length ? <ShellPopover class="address-suggestions" aria-label="Address suggestions" initialFocus={false} trigger={() => document.getElementById('location')} onDismiss={reason => reason === 'escape-key' ? controller.dismissAddress() : controller.blurAddress()}><div id="address-suggestions" role="listbox">{list(addressSuggestions, item => item.text, (item, index) => <button type="button" role="option" id={`address-option-${index}`} aria-selected={model.addressSelection === index} onPointerDown={event => event.preventDefault()} onClick={() => controller.navigate(item.text)}><span class="suggestion-icon" aria-hidden="true">{item.favicon ? <img class="suggestion-favicon" src={item.favicon} alt=""/> : item.source === 'history' ? <History size={16}/> : item.source === 'bookmark' ? <Bookmark size={16}/> : item.source === 'settings' ? <SlidersHorizontal size={16}/> : item.source === 'search' ? <Search size={16}/> : <Globe size={16}/>}</span><span class="suggestion-copy"><strong>{item.title}</strong><small>{suggestionDetails(item)}</small></span><span class="suggestion-enter" aria-hidden="true">↵</span></button>)}</div></ShellPopover> : null}
         </form>
         {model.browser.credentialProposal && openCredentials ? <Button variant="ghost" class="credential-suggestion" title={`Password for ${model.browser.credentialProposal.origin}`} onClick={() => openCredentials(model.browser.credentialProposal!)}>Save password?</Button> : null}
-        <Button variant="ghost" size="icon" aria-label="Menu" aria-controls="browser-menu" aria-expanded={model.panel === 'menu'} onClick={() => controller.setPanel(model.panel ? null : 'menu')}><Menu size={17}/></Button>
+        {(['styles', 'scripts'] as const).map(kind => {
+          const matches = model.pageSources && model.pageSources.tabId === active?.id && model.pageSources.url === active?.url ? model.pageSources[kind] : [];
+          const count = matches.filter(item => item.enabled).length;
+          return <Button variant="ghost" size="icon" class="page-sources-button" aria-label={kind === 'styles' ? 'Styles on this page' : 'Scripts on this page'} aria-haspopup="dialog" title={`${kind === 'styles' ? 'Styles' : 'Scripts'} · ${count} enabled on this page`} disabled={!model.connected || !openPageSources || !active || !!active.private} onClick={() => { controller.setPanel(null); openPageSources?.(kind); }}>{kind === 'styles' ? <Palette size={17}/> : <CodeXml size={17}/>}<span class="source-count" hidden={!count}>{count}</span></Button>;
+        })}
+        <Button variant="ghost" size="icon" class="proxy-switcher-button" aria-label="Proxy switcher" aria-haspopup="dialog" title={`Proxy · ${model.browser.proxyProfile === 'direct' ? 'Direct connection' : model.browser.proxyProfile === 'system' || !model.browser.proxyProfile ? 'System proxy' : model.browser.proxyProfile}`} disabled={!model.connected || !openProxy || !!active?.private} onClick={() => { controller.setPanel(null); openProxy?.(); }}><Globe size={17}/>{model.browser.proxyProfile && !['direct', 'system'].includes(model.browser.proxyProfile) ? <span class="proxy-active-dot"/> : null}</Button>
+        <Button variant="ghost" size="icon" aria-label="Menu" aria-controls="browser-menu-popup" aria-expanded={model.panel === 'menu'} onClick={() => controller.setPanel(model.panel ? null : 'menu')}><Menu size={17}/></Button>
       </header>
       <aside class="tabs" aria-label="Tabs" onDragOver={event => {
         if ((event.target as Element).closest('.tab')) return;
@@ -139,31 +141,15 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
       <section id="content-surface" class="content-surface" aria-label="Page">
         {!model.connected ? <div class="welcome"><div class="mark">d<span>b</span></div><h1>New tab</h1><p>Open the desktop browser.</p><p class="subtle">Browser connection unavailable.</p></div> : null}
       </section>
-      {login && autofill ? <section class="credential-autofill" role="dialog" aria-label="Saved logins" style={{ left: Math.max(8, Math.min(login.x, window.innerWidth - 288)), top: Math.max(8, Math.min(login.y, window.innerHeight - Math.min(login.items.length * 36 + 58, 280))) }}
-        onKeyDown={event => {
-          if (event.key === 'Escape') { event.preventDefault(); autofill(login.token); return; }
-          if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-          event.preventDefault();
-          const nodes = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button'));
-          const index = nodes.indexOf(document.activeElement as HTMLButtonElement);
-          const next = event.key === 'Home' ? 0 : event.key === 'End' ? nodes.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + nodes.length) % nodes.length;
-          nodes[next]?.focus();
-        }}>
-        <header><span>Saved logins</span><Button variant="ghost" aria-label="Dismiss login suggestions" onClick={() => autofill(login.token)}><X size={14}/></Button></header>
-        <div class="credential-autofill-items">{list(login.items, entry => entry.id, entry => <Button variant="ghost" data-credential-id={entry.id} onClick={() => autofill(login.token, entry.id)}>{entry.username || 'No username'}</Button>)}</div>
+      {login && autofill ? <ShellMenu class="credential-autofill" aria-label="Saved logins" initialFocus={false} anchor={{ getBoundingClientRect: () => new DOMRect(login.x, login.y, 280, 0) }} onDismiss={() => autofill(login.token)}>
+        <header><span>Saved logins</span></header>
+        <div class="credential-autofill-items">{list(login.items, entry => entry.id, entry => <Button variant="ghost" role="menuitem" data-credential-id={entry.id} onClick={() => autofill(login.token, entry.id)}>{entry.username || 'No username'}</Button>)}</div>
         <small>{login.origin}</small>
-      </section> : null}
-      {model.tabMenu && contextTab ? <section class="tab-menu" tabindex={-1} role="menu" aria-label="Tab actions" style={{ left: model.tabMenu.x, top: model.tabMenu.y, maxHeight: Math.max(80, window.innerHeight - model.tabMenu.y - 8) }} onKeyDown={event => {
-        if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-        event.preventDefault();
-        const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), summary')).filter(item => { const details = item.closest('details'); return !details || details.open || item === details.querySelector('summary'); });
-        const current = items.indexOf(document.activeElement as HTMLButtonElement);
-        const index = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (current < 0 ? (event.key === 'ArrowDown' ? 0 : items.length - 1) : (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length);
-        items[index]?.focus();
-      }}>
+      </ShellMenu> : null}
+      {model.tabMenu && contextTab ? <ShellMenu class="tab-menu" aria-label="Tab actions" initialFocus="surface" trigger={() => Array.from(document.querySelectorAll<HTMLElement>('[role=tab]')).find(tab => tab.dataset.tabId === contextTab.id)} anchor={{ getBoundingClientRect: () => new DOMRect(model.tabMenu!.x, model.tabMenu!.y, 0, 0) }} onDismiss={() => controller.closeTabMenu()}>
         <Button variant="ghost" role="menuitem" disabled={contextTab.pinned} onClick={() => controller.tabMenuAction('new-child')}>{parents.has(contextTab.id) || contextTab.parentId ? 'New tab in group' : 'Create group with new tab'}</Button>
         {contextTab.parentId || parents.has(contextTab.id) ? <Button variant="ghost" role="menuitem" onClick={() => controller.tabMenuAction('ungroup')}>{contextTab.parentId ? 'Move out of group' : 'Ungroup tabs'}</Button> : null}
-        {!contextTab.pinned && !parents.has(contextTab.id) ? <details class="move-to-group"><summary>Move to group</summary>
+        {!contextTab.pinned && !parents.has(contextTab.id) ? <details class="move-to-group"><summary role="menuitem">Move to group</summary>
           {list(model.browser.tabs.filter(target => !target.parentId && !target.pinned && target.id !== contextTab.id && target.id !== contextTab.parentId), target => target.id, target => <Button variant="ghost" role="menuitem" title={target.title || target.url} onClick={() => { controller.closeTabMenu(); controller.send({ type: 'tab.tree-move', tabId: contextTab.id, targetId: target.id, placement: 'inside' }); }}>{target.title || 'New tab'}</Button>)}
         </details> : null}
         <hr/>
@@ -178,59 +164,48 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
         <Button variant="ghost" role="menuitem" disabled={!model.browser.tabs.slice(contextIndex + 1).some(tab => !tab.pinned)} onClick={() => controller.tabMenuAction('close-right')}>{model.layout === 'vertical' ? 'Close tabs below' : 'Close tabs to the right'}</Button>
         <Button variant="ghost" role="menuitem" onClick={() => controller.tabMenuAction('close')}>{parents.has(contextTab.id) ? 'Close tab · keep children' : 'Close tab'}</Button>
         {parents.has(contextTab.id) ? <Button variant="ghost" role="menuitem" onClick={() => controller.tabMenuAction('close-group')}>Close entire group ({1 + model.browser.tabs.filter(tab => tab.parentId === contextTab.id).length})</Button> : null}
-      </section> : null}
-      {model.panel === 'menu' ? <section id="browser-menu" class="browser-menu" aria-label="Browser menu" onKeyDown={event => {
-        if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
-          event.preventDefault();
-          const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), summary')).filter(item => {
-            const details = item.closest('details');
-            return !details || details.open || item === details.querySelector('summary');
-          });
-          const current = items.indexOf(document.activeElement as HTMLElement);
-          const index = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (current < 0 ? (event.key === 'ArrowDown' ? 0 : items.length - 1) : (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length);
-          items[index]?.focus();
-          return;
-        }
+      </ShellMenu> : null}
+      {model.panel === 'menu' ? <ShellMenu id="browser-menu" class="browser-menu" aria-label="Browser menu" trigger={() => document.querySelector('button[aria-label="Menu"]')} onDismiss={() => controller.setPanel(null)} onKeyDown={event => {
         if(event.ctrlKey || event.altKey || event.metaKey || event.key.length !== 1) return;
         const command=model.browser.scriptCommands?.find(command=>command.accessKey && command.accessKey.toLocaleLowerCase()===event.key.toLocaleLowerCase());
         if(command){event.preventDefault();controller.executeScriptCommand(command,event);}
       }}>
-        <Button variant="ghost" aria-label="New window" disabled={!model.connected} onClick={() => { controller.send({ type: 'window.new', private: false }); controller.setPanel(null); }}>New window <kbd>Ctrl N</kbd></Button>
-        <Button variant="ghost" aria-label="Private window" disabled={!model.connected} onClick={() => { controller.send({ type: 'window.new', private: true }); controller.setPanel(null); }}>Private window <kbd>Ctrl Shift N</kbd></Button>
-        <Button variant="ghost" disabled={!model.connected} onClick={() => { controller.send({ type: 'tab.reopen' }); controller.setPanel(null); }}>Reopen closed tab <kbd>Ctrl Shift T</kbd></Button>
+        <Button role="menuitem" variant="ghost" aria-label="New window" disabled={!model.connected} onClick={() => { controller.send({ type: 'window.new', private: false }); controller.setPanel(null); }}>New window <kbd>Ctrl N</kbd></Button>
+        <Button role="menuitem" variant="ghost" aria-label="Private window" disabled={!model.connected} onClick={() => { controller.send({ type: 'window.new', private: true }); controller.setPanel(null); }}>Private window <kbd>Ctrl Shift N</kbd></Button>
+        <Button role="menuitem" variant="ghost" disabled={!model.connected} onClick={() => { controller.send({ type: 'tab.reopen' }); controller.setPanel(null); }}>Reopen closed tab <kbd>Ctrl Shift T</kbd></Button>
         <hr/>
         <div class="zoom-controls" role="group" aria-label="Page zoom">
-          <Button variant="ghost" disabled={!active} aria-label="Zoom out" onClick={() => tabCommand('tab.zoom-out')}>−</Button>
-          <Button variant="ghost" disabled={!active} title="Reset zoom" onClick={() => tabCommand('tab.zoom-reset')}>{Math.round((active?.zoom ?? 1) * 100)}%</Button>
-          <Button variant="ghost" disabled={!active} aria-label="Zoom in" onClick={() => tabCommand('tab.zoom-in')}>+</Button>
+          <Button role="menuitem" variant="ghost" disabled={!active} aria-label="Zoom out" onClick={() => tabCommand('tab.zoom-out')}>−</Button>
+          <Button role="menuitem" variant="ghost" disabled={!active} title="Reset zoom" onClick={() => tabCommand('tab.zoom-reset')}>{Math.round((active?.zoom ?? 1) * 100)}%</Button>
+          <Button role="menuitem" variant="ghost" disabled={!active} aria-label="Zoom in" onClick={() => tabCommand('tab.zoom-in')}>+</Button>
         </div>
-        <Button variant="ghost" disabled={!active} onClick={() => { controller.setPanel(null); tabCommand('tab.find'); }}>Find in page <kbd>Ctrl F</kbd></Button>
-        <Button variant="ghost" disabled={!active} onClick={() => { controller.setPanel(null); tabCommand('tab.bookmark'); }}>Bookmark page <kbd>Ctrl D</kbd></Button>
-        <details class="menu-tools"><summary>Content blocking</summary>
-        <Button variant="ghost" disabled={!active || !!active.private} onClick={() => { if (active) { controller.setPanel(null); controller.send({ type: 'blocking.pick', tabId: active.id }); } }}>Block element…</Button>
-        <Button variant="ghost" disabled={!active} onClick={() => { if (active) { controller.setPanel(null); controller.send({ type: 'blocking.zap', tabId: active.id }); } }}>Hide element until reload…</Button>
-        <Button variant="ghost" disabled={!model.connected || !active} onClick={() => controller.setPanel('blocking')}>Request log</Button>
+        <Button role="menuitem" variant="ghost" disabled={!active} onClick={() => { controller.setPanel(null); tabCommand('tab.find'); }}>Find in page <kbd>Ctrl F</kbd></Button>
+        <Button role="menuitem" variant="ghost" disabled={!active} onClick={() => { controller.setPanel(null); tabCommand('tab.bookmark'); }}>Bookmark page <kbd>Ctrl D</kbd></Button>
+        <details class="menu-tools"><summary role="menuitem">Content blocking</summary>
+        <Button role="menuitem" variant="ghost" disabled={!active || !!active.private} onClick={() => { if (active) { controller.setPanel(null); controller.send({ type: 'blocking.pick', tabId: active.id }); } }}>Block element…</Button>
+        <Button role="menuitem" variant="ghost" disabled={!active} onClick={() => { if (active) { controller.setPanel(null); controller.send({ type: 'blocking.zap', tabId: active.id }); } }}>Hide element until reload…</Button>
+        <Button role="menuitem" variant="ghost" disabled={!model.connected || !active} onClick={() => controller.setPanel('blocking')}>Request log</Button>
         </details>
         {model.browser.scriptCommands?.length ? <details class="script-command-menu">
-          <summary>Script commands <span>{model.browser.scriptCommands.length}</span></summary>
-          <div>{list(model.browser.scriptCommands,command=>command.id,command=><Button variant="ghost" title={command.title || command.script} onClick={event=>controller.executeScriptCommand(command,event)}>
+          <summary role="menuitem">Script commands <span>{model.browser.scriptCommands.length}</span></summary>
+          <div>{list(model.browser.scriptCommands,command=>command.id,command=><Button role="menuitem" variant="ghost" title={command.title || command.script} onClick={event=>controller.executeScriptCommand(command,event)}>
             <span><strong>{command.label}</strong><small>{command.script}</small></span>{command.accessKey?<kbd>{command.accessKey}</kbd>:null}
           </Button>)}</div>
         </details> : null}
         <hr/>
-        <Button variant="ghost" aria-label="History" disabled={!model.connected} onClick={() => controller.openPage('history')}>History <kbd>Ctrl H</kbd></Button>
-        <Button variant="ghost" aria-label="Downloads" disabled={!model.connected} onClick={() => controller.openPage('downloads')}>Downloads <kbd>Ctrl J</kbd></Button>
-        <Button variant="ghost" aria-label="Bookmarks" disabled={!model.connected} onClick={() => controller.openPage('bookmarks')}>Bookmarks</Button>
-        <Button variant="ghost" disabled={!model.connected || !openImport || !!active?.private} onClick={() => { controller.setPanel(null); openImport?.(); }}>Import browser data</Button>
-        <Button variant="ghost" aria-label="Passwords" disabled={!model.connected || !openCredentials || !!active?.private} onClick={() => { controller.setPanel(null); openCredentials?.(); }}>Passwords</Button>
-        <Button variant="ghost" aria-label="User styles" disabled={!model.connected || !openStyles || !!active?.private} onClick={() => { controller.setPanel(null); openStyles?.(); }}>User styles</Button>
-        <Button variant="ghost" aria-label="Userscripts" disabled={!model.connected || !openScripts || !!active?.private} onClick={() => { controller.setPanel(null); openScripts?.(); }}>Userscripts</Button>
-        <Button variant="ghost" aria-label="Settings" disabled={!model.connected} onClick={() => controller.openPage('settings')}>Settings</Button>
+        <Button role="menuitem" variant="ghost" aria-label="History" disabled={!model.connected} onClick={() => controller.openPage('history')}>History <kbd>Ctrl H</kbd></Button>
+        <Button role="menuitem" variant="ghost" aria-label="Downloads" disabled={!model.connected} onClick={() => controller.openPage('downloads')}>Downloads <kbd>Ctrl J</kbd></Button>
+        <Button role="menuitem" variant="ghost" aria-label="Bookmarks" disabled={!model.connected} onClick={() => controller.openPage('bookmarks')}>Bookmarks</Button>
+        <Button role="menuitem" variant="ghost" disabled={!model.connected || !openImport || !!active?.private} onClick={() => { controller.setPanel(null); openImport?.(); }}>Import browser data</Button>
+        <Button role="menuitem" variant="ghost" aria-label="Passwords" disabled={!model.connected || !openCredentials || !!active?.private} onClick={() => { controller.setPanel(null); openCredentials?.(); }}>Passwords</Button>
+        <Button role="menuitem" variant="ghost" aria-label="User styles" disabled={!model.connected || !openStyles || !!active?.private} onClick={() => { controller.setPanel(null); openStyles?.(); }}>User styles</Button>
+        <Button role="menuitem" variant="ghost" aria-label="Userscripts" disabled={!model.connected || !openScripts || !!active?.private} onClick={() => { controller.setPanel(null); openScripts?.(); }}>Userscripts</Button>
+        <Button role="menuitem" variant="ghost" aria-label="Settings" disabled={!model.connected} onClick={() => controller.openPage('settings')}>Settings</Button>
         <hr/>
-        <Button variant="ghost" onClick={() => controller.setLayout(model.layout === 'vertical' ? 'horizontal' : 'vertical')}>{model.layout === 'vertical' ? 'Horizontal tabs' : 'Vertical tabs'}</Button>
-        {model.layout === 'horizontal' ? <Button variant="ghost" aria-pressed={model.wrapTabs} onClick={() => controller.setWrapTabs(!model.wrapTabs)}>Wrap tabs into rows <span>{model.wrapTabs ? 'On' : 'Off'}</span></Button> : null}
-      </section> : null}
-      {model.panel === 'blocking' ? <section class="blocking-log" role="dialog" aria-label="Request log" onKeyDown={event => { if (event.key === 'Escape') controller.setPanel(null); }}>
+        <Button role="menuitem" variant="ghost" onClick={() => controller.setLayout(model.layout === 'vertical' ? 'horizontal' : 'vertical')}>{model.layout === 'vertical' ? 'Horizontal tabs' : 'Vertical tabs'}</Button>
+        {model.layout === 'horizontal' ? <Button role="menuitem" variant="ghost" aria-pressed={model.wrapTabs} onClick={() => controller.setWrapTabs(!model.wrapTabs)}>Wrap tabs into rows <span>{model.wrapTabs ? 'On' : 'Off'}</span></Button> : null}
+      </ShellMenu> : null}
+      {model.panel === 'blocking' ? <ShellDialog class="blocking-log" aria-label="Request log" onDismiss={() => controller.setPanel(null)} trigger={() => document.querySelector('button[aria-label="Menu"]')}>
         <header><div><h2>Request log</h2><p>{active?.title || 'Active tab'}{active?.private ? ' · Private' : ''}</p></div><Button variant="ghost" size="icon" aria-label="Close log" onClick={() => controller.setPanel(null)}><X size={17}/></Button></header>
         <details class="dynamic-rules"><summary>Dynamic rules</summary>
           <p>Format: source destination type action. Example: <code>* * 3p-script block</code>. Types: *, image, inline-script, 1p-script, 3p-script, 3p-frame, 3p. Actions: block, allow, noop. Changes apply to new requests.</p>
@@ -242,14 +217,14 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
         <div class="blocking-log-tools"><input aria-label="Search requests" placeholder="URL, request type or rule" value={model.blockingSearch} onInput={event => controller.setBlockingSearch(event.currentTarget.value)}/><Button variant="ghost" onClick={() => controller.updateBlockingLog()}>Reload</Button><Button variant="ghost" onClick={() => controller.updateBlockingLog(true)}>Clear</Button></div>
         <p class="blocking-log-hint">Last 128 events. Refresh to update.</p>
         <div class="blocking-log-rows">{blocked.length ? list(blocked, row => `${log?.tabId}:${row.id}`, row => <div class="blocking-log-row"><span>{row.kind}</span><div class="blocking-log-detail"><code title={row.url}>{row.url}</code>{row.rule ? <details><summary>Matched rule</summary><code>{row.rule}</code></details> : <small>{row.kind.startsWith('Request ·') ? 'Resource request' : 'No rule provided'}</small>}</div></div>) : <p class="blocking-log-empty">{query ? 'No matches' : 'No entries. Refresh after the page loads.'}</p>}</div>
-      </section> : null}
-      {model.browser.filterProposal ? <section class="blocking-log filter-picker" role="dialog" aria-label="Block element">
+      </ShellDialog> : null}
+      {model.browser.filterProposal ? <ShellDialog class="blocking-log filter-picker" aria-label="Block element" onDismiss={() => controller.send({ type: 'blocking.picker-cancel', tabId: model.browser.filterProposal!.tabId })}>
         <h2>Block element</h2><p>Applies to this site. Edit it in blocker settings.</p>
         <form onSubmit={event => { event.preventDefault(); const rule = (event.currentTarget.elements.namedItem('rule') as HTMLInputElement).value; controller.send({ type: 'blocking.picker-save', tabId: model.browser.filterProposal!.tabId, rule }); }}>
           <input name="rule" aria-label="Element rule" value={model.browser.filterProposal.rule} maxLength={8192}/>
           <Button type="submit">Save rule</Button><Button type="button" variant="ghost" onClick={() => controller.send({ type: 'blocking.picker-cancel', tabId: model.browser.filterProposal!.tabId })}>Cancel</Button>
         </form>
-      </section> : null}
+      </ShellDialog> : null}
       {model.error ? <div class="error" role="alert"><span>{model.error}</span><button aria-label="Dismiss notification" onClick={controller.dismissError}><X size={15}/></button></div> : null}
     </main>;
   });
