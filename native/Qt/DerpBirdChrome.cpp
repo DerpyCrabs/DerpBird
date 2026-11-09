@@ -10,6 +10,9 @@
 #include <LibWebView/WebContentPage.h>
 #include <LibWebView/WebUI.h>
 #include <UI/Qt/DerpBirdImport.h>
+#include <UI/Qt/DerpBirdFilePicker.h>
+#include <UI/Qt/DerpBirdProxy.h>
+#include <UI/Qt/DerpBirdPageSources.h>
 #include <QFileDialog>
 #include <QRegion>
 #include <QBuffer>
@@ -90,6 +93,10 @@ DerpBirdChrome::DerpBirdChrome(BrowserWindow& window)
     m_shell = new WebContentView(this, {}, initial);
     m_shell->set_transparent_background(true);
     m_shell->installEventFilter(this);
+    m_file_picker = new DerpBirdFilePicker(this);
+    m_shell->on_request_file_picker = [this](auto const& types, auto multiple) {
+        m_file_picker->open(types, multiple, [this](auto files) { m_shell->file_picker_closed(AK::move(files)); });
+    };
     connect(m_shell, &WebContentView::ready_to_paint, this, [this] {
         // Apply the input region with the frame that shows the corresponding controls.
         if (m_pending_surface_state.has_value()) {
@@ -167,6 +174,27 @@ DerpBirdChrome::DerpBirdChrome(BrowserWindow& window)
     m_shell->on_derpbird_request = [this](auto const& data, auto completion) {
         if (data.is_object()) {
             auto type = data.as_object().get_string("type"sv);
+            if (type.has_value() && type->bytes_as_string_view().starts_with("proxy."sv)) {
+                if (m_window.is_private() == WebView::IsPrivate::Yes || Application::profile().is_temporary()) {
+                    completion(Error::from_string_literal("Edit proxy settings in a regular persistent window")); return;
+                }
+                if (type == "proxy.get"sv) {
+                    auto state = DerpBirdProxy::state();
+                    if (state.is_error()) completion(state.release_error());
+                    else completion(JsonValue(state.release_value()));
+                    return;
+                }
+                if (type == "proxy.replace"sv) {
+                    auto result = DerpBirdProxy::replace(data.as_object());
+                    if (!result.is_error()) {
+                        for (auto* widget : QApplication::topLevelWidgets())
+                            if (auto* window = as_if<BrowserWindow>(widget); window && window->derpbird_chrome())
+                                window->derpbird_chrome()->queue_snapshot();
+                    }
+                    completion(AK::move(result)); return;
+                }
+                completion(Error::from_string_literal("Unknown proxy operation")); return;
+            }
             if (type.has_value() && (type->bytes_as_string_view().starts_with("import."sv) || type == "credentials.import-csv"sv)) {
                 if (m_window.is_private() == WebView::IsPrivate::Yes || Application::profile().is_temporary()) {
                     completion(Error::from_string_literal("Import requires a regular persistent profile")); return;
@@ -499,6 +527,7 @@ DerpBirdChrome::DerpBirdChrome(BrowserWindow& window)
         completion(request(data));
     };
     m_shell->on_load_start = [this] {
+        m_file_picker->cancel();
         if (m_source_download) m_source_download->cancel();
         m_credential_proposal.clear();
         m_pending_surface_state.clear();
@@ -507,6 +536,7 @@ DerpBirdChrome::DerpBirdChrome(BrowserWindow& window)
     };
     connect(m_shell, &WebContentView::crash_overlay_changed, this, [this] {
         if (m_shell->crash_overlay_active()) {
+            m_file_picker->dismiss();
             if (m_source_download) m_source_download->cancel();
             m_pending_surface_state.clear();
             m_surface_state.invalidate();
@@ -876,6 +906,8 @@ JsonValue DerpBirdChrome::snapshot()
         log.set("entries"sv, AK::move(entries));
         state.set("blockingLog"sv, AK::move(log));
     }
+    auto const& proxy_profile = Application::request_server_options().proxy_configuration.active_profile();
+    state.set("proxyProfile"sv, proxy_profile.is_empty() ? "system"_string : proxy_profile);
     state.set("version"sv, 1);
     state.set("revision"sv, ++m_revision);
     JsonObject preferences;
@@ -923,9 +955,9 @@ bool DerpBirdChrome::eventFilter(QObject* watched, QEvent* event)
         }
     }
     if (watched == m_shell && event->type() == QEvent::FocusOut && m_shell->page().is_open()) {
-        // Queue the DOM blur before WebContentView defers its system-focus update.
-        // Once system focus is gone, HTML unfocusing steps see an empty focus chain.
-        m_shell->run_javascript("document.getElementById('location')?.blur()"_string);
+        // Release shell interaction state before the deferred system-focus update.
+        // The shell owns DOM focus and popup policy; native code names no controls.
+        m_shell->run_javascript("window.dispatchEvent(new Event('derpbird-shell-deactivate'))"_string);
     }
     return QWidget::eventFilter(watched, event);
 }
@@ -936,7 +968,7 @@ void DerpBirdChrome::focus_address()
     m_shell->setFocus();
     // This constant program only runs in the dedicated shell view.
     m_shell->run_javascript(
-        "document.getElementById('location')?.select()"_string);
+        "window.dispatchEvent(new Event('derpbird-shell-keyboard-focus'));document.getElementById('location')?.select()"_string);
 }
 
 ErrorOr<JsonValue> DerpBirdChrome::request(JsonValue const& data)
@@ -947,6 +979,44 @@ ErrorOr<JsonValue> DerpBirdChrome::request(JsonValue const& data)
     auto type = object.get_string("type"sv);
     if (type == "snapshot"sv)
         return snapshot();
+    if (type == "sources.page"sv || type == "sources.toggle"sv) {
+        auto* tab = m_window.current_tab();
+        if (!tab) return Error::from_string_literal("No active page");
+        auto& styles = *TRY(Application::the().derpbird_style_store());
+        auto& scripts = *TRY(Application::the().derpbird_script_store());
+        if (type == "sources.toggle"sv) {
+            if (m_window.is_private() == WebView::IsPrivate::Yes || m_script_install)
+                return Error::from_string_literal("Change sources in a regular window after installation finishes");
+            if (object.get_string("tabId"sv) != tab_id(*tab) || object.get_string("url"sv) != tab->view().url().serialize())
+                return Error::from_string_literal("The active page changed; reopen the list");
+            auto kind = object.get_string("kind"sv);
+            auto id = object.get_string("id"sv);
+            auto enabled = object.get_bool("enabled"sv);
+            auto revision = object.get_integer<u64>("revision"sv);
+            if (!kind.has_value() || !kind->is_one_of("styles"sv, "scripts"sv) || !id.has_value() || !enabled.has_value() || !revision.has_value())
+                return Error::from_string_literal("Invalid source toggle");
+            bool style = *kind == "styles"sv;
+            if (*revision != (style ? styles.revision() : scripts.revision()))
+                return Error::from_string_literal("Sources changed in another window; refresh the list");
+            auto items = style ? styles.items() : scripts.items();
+            bool found = false;
+            for (auto& raw : items.values()) {
+                if (raw.as_object().get_string("id"sv) != *id) continue;
+                raw.as_object().set("enabled"sv, *enabled);
+                found = true;
+                break;
+            }
+            if (!found) return Error::from_string_literal("Source no longer exists");
+            if (style) {
+                TRY(styles.replace(AK::move(items)));
+                TRY(Application::the().set_derpbird_user_style_sections(styles.enabled_sections()));
+            } else {
+                TRY(scripts.replace(AK::move(items), *revision));
+                TRY(Application::the().set_derpbird_user_scripts(JsonValue { scripts.items() }));
+            }
+        }
+        return JsonValue { TRY(derpbird_page_sources(tab->view().url(), tab_id(*tab), m_window.is_private() == WebView::IsPrivate::Yes, styles, scripts)) };
+    }
     if (type == "styles.list"sv || type == "styles.replace"sv) {
         auto& store = *TRY(Application::the().derpbird_style_store());
         if (type == "styles.replace"sv) {

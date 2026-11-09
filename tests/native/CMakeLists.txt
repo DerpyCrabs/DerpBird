@@ -96,6 +96,30 @@ if(DERPBIRD_ENGINE_BUILD)
         "${DERPBIRD_ENGINE_BUILD}/lib/liblagom-ak.so")
     add_test(NAME userscript-dependency-install COMMAND test-script-install)
     set_tests_properties(userscript-dependency-install PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    add_executable(test-file-picker file-picker.cpp "${ENGINE_SOURCE}/UI/Qt/StringUtils.cpp" "${ENGINE_SOURCE}/Tests/LibWebView/HeadlessTest.cpp")
+    target_include_directories(test-file-picker PRIVATE ../../native/Qt
+        "${ENGINE_SOURCE}/Tests/LibWebView" "${ENGINE_SOURCE}" "${ENGINE_SOURCE}/Libraries"
+        "${ENGINE_SOURCE}/Services" "${DERPBIRD_ENGINE_BUILD}/Services"
+        "${DERPBIRD_ENGINE_BUILD}" "${DERPBIRD_ENGINE_BUILD}/Libraries")
+    target_compile_definitions(test-file-picker PRIVATE LADYBIRD_BINARY_PATH="${DERPBIRD_ENGINE_BUILD}/bin")
+    target_link_libraries(test-file-picker PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets
+        "${DERPBIRD_ENGINE_BUILD}/lib/liblagom-imagedecoderclient.so"
+        "${DERPBIRD_ENGINE_BUILD}/lib/liblagom-database.so"
+        "${DERPBIRD_ENGINE_BUILD}/lib/liblagom-webview.so"
+        "${DERPBIRD_ENGINE_BUILD}/lib/liblagom-webcommon.so"
+        "${DERPBIRD_ENGINE_BUILD}/lib/liblagom-ipc.so"
+        "${DERPBIRD_ENGINE_BUILD}/lib/liblagom-threading.so"
+        "${DERPBIRD_ENGINE_BUILD}/lib/liblagom-gfx.so"
+        "${DERPBIRD_ENGINE_BUILD}/lib/liblagom-gc.so"
+        "${DERPBIRD_ENGINE_BUILD}/lib/liblagom-requests.so"
+        "${DERPBIRD_ENGINE_BUILD}/lib/liblagom-http.so"
+        "${DERPBIRD_ENGINE_BUILD}/lib/liblagom-core.so"
+        "${DERPBIRD_ENGINE_BUILD}/lib/liblagom-filesystem.so"
+        "${DERPBIRD_ENGINE_BUILD}/lib/liblagom-url.so"
+        "${DERPBIRD_ENGINE_BUILD}/lib/liblagom-regex.so"
+        "${DERPBIRD_ENGINE_BUILD}/lib/liblagom-ak.so")
+    add_test(NAME shell-file-picker COMMAND test-file-picker)
+    set_tests_properties(shell-file-picker PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_executable(test-script-values script-values.cpp)
     target_include_directories(test-script-values PRIVATE ../../native/WebUI
         "${ENGINE_SOURCE}" "${ENGINE_SOURCE}/Libraries" "${DERPBIRD_ENGINE_BUILD}"
@@ -269,3 +293,13 @@ else()
 endif()
 target_compile_options(test-chrome-import PRIVATE -Wall -Wextra -Werror -UNDEBUG)
 add_test(NAME chrome-import COMMAND test-chrome-import)
+
+if(DERPBIRD_ENGINE_BUILD)
+    add_executable(test-proxy-routing proxy-routing.cpp)
+    target_include_directories(test-proxy-routing PRIVATE "${ENGINE_SOURCE}" "${ENGINE_SOURCE}/Libraries" "${DERPBIRD_ENGINE_BUILD}" "${DERPBIRD_ENGINE_BUILD}/Libraries")
+    target_link_libraries(test-proxy-routing PRIVATE Qt6::Core
+        "${DERPBIRD_ENGINE_BUILD}/lib/liblagom-http.so"
+        "${DERPBIRD_ENGINE_BUILD}/lib/liblagom-url.so"
+        "${DERPBIRD_ENGINE_BUILD}/lib/liblagom-ak.so")
+    add_test(NAME proxy-routing COMMAND test-proxy-routing)
+endif()

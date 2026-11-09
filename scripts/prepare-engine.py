@@ -12,7 +12,7 @@ actual = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD']
 if actual != expected:
     raise SystemExit(f'Engine pin mismatch: expected {expected}, found {actual}')
 subprocess.run(['python3', str(root / 'scripts/generate-json-response-runtime.py')], check=True)
-for directory, destination in [('WebUI', 'Libraries/LibWebView/WebUI'), ('Qt', 'UI/Qt'), ('Tests', 'Tests/LibWebView'), ('EngineTests', 'Tests/LibWeb'), ('WebContent', 'Libraries/LibWeb/Page')]:
+for directory, destination in [('HTTP', 'Libraries/LibHTTP'), ('WebUI', 'Libraries/LibWebView/WebUI'), ('Qt', 'UI/Qt'), ('Tests', 'Tests/LibWebView'), ('EngineTests', 'Tests/LibWeb'), ('WebContent', 'Libraries/LibWeb/Page')]:
     for file in (root / 'native' / directory).glob('*'):
         target = source / destination / file.name
         if not target.exists() or target.read_bytes() != file.read_bytes():

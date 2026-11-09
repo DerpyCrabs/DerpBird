@@ -35,7 +35,7 @@ class EngineSourceTest(unittest.TestCase):
                        check=True, capture_output=True)
 
     def test_deployed_native_files_match_source(self):
-        for directory, destination in [('WebUI', 'Libraries/LibWebView/WebUI'), ('Qt', 'UI/Qt'), ('Tests', 'Tests/LibWebView'), ('EngineTests', 'Tests/LibWeb'), ('WebContent', 'Libraries/LibWeb/Page')]:
+        for directory, destination in [('HTTP', 'Libraries/LibHTTP'), ('WebUI', 'Libraries/LibWebView/WebUI'), ('Qt', 'UI/Qt'), ('Tests', 'Tests/LibWebView'), ('EngineTests', 'Tests/LibWeb'), ('WebContent', 'Libraries/LibWeb/Page')]:
             for source in (ROOT / 'native' / directory).glob('*'):
                 self.assertEqual(source.read_bytes(), (ENGINE / destination / source.name).read_bytes(), str(source))
 

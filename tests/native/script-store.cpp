@@ -1,4 +1,5 @@
 #include <DerpBirdScriptStore.h>
+#include <DerpBirdPageSources.h>
 #include <QTemporaryDir>
 #include <cstdio>
 
@@ -98,5 +99,26 @@ int main()
     auto revoked = MUST(dependencies.prepare_from_editor(cached, 1));
     VERIFY(!revoked.at(0).as_object().has("requiredSources"sv));
     VERIFY(dependencies.prepare_from_editor(cached, 0).is_error());
+    Ladybird::DerpBirdScriptStore page_scripts(directory.path() + "/page-scripts.json");
+    auto matching = data.as_array();
+    matching.values()[0].as_object().set("enabled"sv, false);
+    auto page_metadata = *matching.at(0).as_object().get_object("metadata"sv);
+    JsonArray exclusions; exclusions.must_append("https://example.com/private/*"sv);
+    page_metadata.set("excludeMatches"sv, move(exclusions));
+    matching.values()[0].as_object().set("metadata"sv, move(page_metadata));
+    MUST(page_scripts.replace(matching, 0));
+    Ladybird::DerpBirdStyleStore page_styles(directory.path() + "/page-styles.json");
+    auto style_items = MUST(JsonValue::from_string(R"([{"id":"style","name":"Site theme","enabled":true,"source":"body{}","sections":[{"css":"body{}","conditions":[{"type":"domain","value":"example.com"}]}]}])"sv));
+    MUST(page_styles.replace(style_items.as_array()));
+    auto status_for = [&](StringView address) { return MUST(Ladybird::derpbird_page_sources(URL::Parser::basic_parse(address).release_value(), "tab"_string, false, page_styles, page_scripts)); };
+    auto status = status_for("https://example.com/watch"sv);
+    VERIFY(status.get_array("styles"sv)->size() == 1);
+    VERIFY(status.get_array("scripts"sv)->size() == 1);
+    VERIFY(status.get_array("scripts"sv)->at(0).as_object().get_bool("enabled"sv) == false);
+    VERIFY(status_for("https://example.com/private/account"sv).get_array("scripts"sv)->is_empty());
+    VERIFY(status_for("https://unrelated.test/"sv).get_array("styles"sv)->is_empty());
+    VERIFY(status_for("https://unrelated.test/"sv).get_array("scripts"sv)->is_empty());
+    VERIFY(status_for("about:blank"sv).get_array("styles"sv)->is_empty());
+    VERIFY(status_for("about:blank"sv).get_array("scripts"sv)->is_empty());
     std::puts("Userscript persistence checks passed");
 }
