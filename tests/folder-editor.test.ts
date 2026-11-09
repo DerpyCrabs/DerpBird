@@ -99,7 +99,7 @@ for (const kind of ['script', 'style'] as const) {
       editor.change({ name: 'Retained draft' });
       present = false;
       editor.save(); await settle(editor);
-      expect(editor.state().error).toContain('Исходный файл больше не подключён');
+      expect(editor.state().error).toContain('Source disconnected');
       expect(editor.state().draft?.name).toBe('Retained draft');
       expect(editor.state().dirty).toBe(true);
       editor.continueDraft(); editor.save(); await settle(editor);

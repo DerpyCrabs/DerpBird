@@ -75,7 +75,7 @@ test('local style dependencies recompile on library changes and retain prior ins
   await syncStyleFolders(port);
   expect(snapshot.items[0].sections[0].css).toContain('green');
   deleted = true; revision = 'c'.repeat(64);
-  await expect(syncStyleFolders(port)).rejects.toThrow('Локальная зависимость отсутствует');
+  await expect(syncStyleFolders(port)).rejects.toThrow('Local dependency missing');
   expect(writes).toBe(2);
   expect(snapshot.items[0].sections[0].css).toContain('green');
 });

@@ -22,7 +22,7 @@ test('worker requests only used directory dependencies, including Stylus index i
     const second = await compiler.compile(header('stylus') + '@import "palette"\nbody\n  color accent', {}, { sourceURL: base, imports });
     expect(second.sections[0].css).toContain('#00f');
     expect(Object.keys(second.imports ?? {})).toEqual([stylus]);
-    await expect(compiler.compile(header('less') + '@import "missing.less";', {}, { sourceURL: base, imports })).rejects.toThrow('Локальная зависимость отсутствует');
+    await expect(compiler.compile(header('less') + '@import "missing.less";', {}, { sourceURL: base, imports })).rejects.toThrow('Local dependency missing');
     expect(network).toBe(0);
     const changed = await compiler.compile(header('less') + '@import "palette.less"; body {color: @accent}', {}, {
       sourceURL: base, imports: { [less]: { url: less, source: '@accent: green;' } },

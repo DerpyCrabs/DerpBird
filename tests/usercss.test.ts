@@ -44,7 +44,7 @@ test('USO expands RGB, alpha, selected snippets and detects substitution cycles'
   expect(result.sections[0].css).toContain('17, 34, 51');
   expect(result.sections[0].css).toContain('#11223388');
   expect(result.sections[0].css).toContain('padding: 4px');
-  await expect(compileStyle(header('uso','@var select a "A" {"cycle":"/*[[a]]*/"}') + '\nbody{/*[[a]]*/}')).rejects.toThrow('Циклическая');
+  await expect(compileStyle(header('uso','@var select a "A" {"cycle":"/*[[a]]*/"}') + '\nbody{/*[[a]]*/}')).rejects.toThrow('Circular UserCSS');
 });
 
 test('compilation cannot execute Less JavaScript or fetch compiler plugins/imports', async () => {
@@ -61,8 +61,8 @@ test('worker compilation is cancellable and does not block a normal browser turn
     expect(result.sections[0].css).toContain('6px');
     const pending = compiler.compile('body{color:red}');
     compiler.close();
-    await expect(pending).rejects.toThrow('отменена');
-    await expect(compiler.compile('body{}')).rejects.toThrow('закрыт');
+    await expect(pending).rejects.toThrow('Compilation cancelled.');
+    await expect(compiler.compile('body{}')).rejects.toThrow('closed');
   } finally { compiler.close(); }
 });
 
@@ -107,7 +107,7 @@ test('a missing local import cannot escape the selected directory snapshot throu
   const source = header('less') + '\n@import "../../outside.less";';
   await expect(compileStyle(source, {}, { sourceURL: 'https://derpbird-source.invalid/root/nested/theme.user.less', imports: {} }, async url => {
     fetched = true; return { url, source: 'body{color:red}' };
-  })).rejects.toThrow('Локальная зависимость отсутствует');
+  })).rejects.toThrow('Local dependency missing');
   expect(fetched).toBe(false);
 });
 
@@ -151,11 +151,11 @@ test('Stylus directory imports reject cycles and missing paths without network f
   let fetched = false;
   await expect(compileStyle(source, {}, { sourceURL: root + 'theme.user.styl' }, async url => {
     fetched = true; return { url, source: '' };
-  })).rejects.toThrow('Локальная зависимость отсутствует');
+  })).rejects.toThrow('Local dependency missing');
   expect(fetched).toBe(false);
   await expect(compileStyle(source, {}, { sourceURL: root + 'theme.user.styl', imports: {
     [root + 'library.styl']: { url: root + 'library.styl', source: '@import "library"' },
-  } })).rejects.toThrow('Циклический импорт');
+  } })).rejects.toThrow('Circular Stylus import');
 });
 
 test('cancelling worker compilation aborts its pending import and permits another compilation', async () => {
@@ -169,7 +169,7 @@ test('cancelling worker compilation aborts its pending import and permits anothe
   try {
     const pending = compiler.compile(header('less') + '\n@import "./slow.less";', {}, { sourceURL: 'https://example.org/theme.less' });
     await started; compiler.cancel();
-    await expect(pending).rejects.toThrow('отменена');
+    await expect(pending).rejects.toThrow('Compilation cancelled.');
     expect(aborted).toBe(true);
     const next = await compiler.compile('body { color: red; }');
     expect(next.sections[0].css).toContain('red');

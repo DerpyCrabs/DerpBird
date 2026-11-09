@@ -117,7 +117,7 @@ test('style status is read-only and stale registry diagnostics are rejected', as
     revision = 4;
     controller.refreshStatus(); await settled(controller);
     expect(controller.state().matchStatus).toBeNull();
-    expect(controller.state().error).toContain('Стили изменились');
+    expect(controller.state().error).toContain('Styles changed');
   } finally { await controller.close(); }
 });
 

@@ -93,7 +93,7 @@ test('script manager recognizes wired request, audio and window grants', () => {
   for (const grant of ['GM_webRequest', 'GM.audio', 'GM_audio', 'window.onurlchange', 'window.close', 'window.focus']) {
     expect(scriptExecutionNotice({ ...item, metadata: { ...item.metadata, grants: [grant] } })).toBeNull();
   }
-  expect(scriptExecutionNotice({ ...item, metadata: { ...item.metadata, runAt: 'context-menu', matches: [], includes: [] } })).toContain('контекстного меню');
+  expect(scriptExecutionNotice({ ...item, metadata: { ...item.metadata, runAt: 'context-menu', matches: [], includes: [] } })).toContain('context menu');
 });
 
 test('script editor preserves external edits until the user resolves a same-source conflict', async () => {
