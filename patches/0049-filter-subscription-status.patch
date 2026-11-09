@@ -1,0 +1,216 @@
+--- a/Base/res/ladybird/about-pages/settings/blocking.js
++++ b/Base/res/ladybird/about-pages/settings/blocking.js
+@@ -20,6 +20,7 @@
+ 
+ let updateTimer;
+ let savedCustomFilters = "";
++const listRows = new Map();
+ 
+ function createListRow(list, removable = false) {
+     const row = document.querySelector("#filter-list-row").content.firstElementChild.cloneNode(true);
+@@ -51,7 +52,26 @@
+         remove.remove();
+     }
+ 
++    const status = document.createElement("span");
++    status.className = "description list-update-status";
++    label.append(status);
++    updateListRow(row, list);
+     return row;
++}
++
++function updateListRow(row, list) {
++    const setText = (element, text) => { if (element.textContent !== text) element.textContent = text; };
++    row.querySelector("input").checked = list.enabled;
++    setText(row.querySelector(".label"), list.name ?? list.url);
++    setText(row.querySelector(".description"), list.description || (list.url ? new URL(list.url).host : "Local file"));
++    const update = list.updateStatus ?? {};
++    const timestamp = Number.isFinite(list.lastUpdatedAt) ? new Date(list.lastUpdatedAt).toLocaleString() : null;
++    const messages = [];
++    if (update.state === "updating") messages.push("Updating…");
++    else if (update.state === "queued") messages.push("Waiting to update…");
++    if (update.error) messages.push(update.error);
++    messages.push(timestamp ? `Last updated: ${timestamp}` : list.url ? "Not downloaded yet" : "No local data");
++    setText(row.querySelector(".list-update-status"), messages.join(" · "));
+ }
+ 
+ function createDisabledSiteRow(site) {
+@@ -95,12 +115,25 @@
+     }
+ 
+     if (Object.hasOwn(settings, "contentBlockerLists")) {
+-        contentBlockerLists.replaceChildren();
+-        languageLists.replaceChildren();
+-
++        const retained = new Set();
++        const positions = new Map([[contentBlockerLists, 0], [languageLists, 0]]);
+         for (const list of settings.contentBlockerLists) {
+             const container = list.builtIn && list.languageSpecific ? languageLists : contentBlockerLists;
+-            container.append(createListRow(list, !list.builtIn));
++            let row = listRows.get(list.identifier);
++            if (!row) {
++                row = createListRow(list, !list.builtIn);
++                listRows.set(list.identifier, row);
++            } else {
++                updateListRow(row, list);
++            }
++            retained.add(list.identifier);
++            const position = positions.get(container);
++            if (container.children[position] !== row)
++                container.insertBefore(row, container.children[position] ?? null);
++            positions.set(container, position + 1);
++        }
++        for (const [identifier, row] of listRows) {
++            if (!retained.has(identifier)) { row.remove(); listRows.delete(identifier); }
+         }
+     }
+ 
+--- a/Libraries/LibWebView/Application.cpp
++++ b/Libraries/LibWebView/Application.cpp
+@@ -952,6 +952,23 @@
+     return true;
+ }
+ 
++JsonObject Application::content_blocker_list_update_status(StringView identifier) const
++{
++    JsonObject status;
++    auto active = m_active_content_blocker_list_update.has_value() && m_active_content_blocker_list_update->identifier == identifier;
++    auto queued = any_of(m_pending_content_blocker_list_updates, [&](auto const& update) { return update.identifier == identifier; });
++    status.set("state"sv, active ? "updating"sv : queued ? "queued"sv : "idle"sv);
++    if (auto error = m_content_blocker_list_update_errors.get(identifier); error.has_value())
++        status.set("error"sv, *error);
++    return status;
++}
++
++void Application::record_content_blocker_list_update_error(StringView message)
++{
++    if (m_active_content_blocker_list_update.has_value())
++        m_content_blocker_list_update_errors.set(m_active_content_blocker_list_update->identifier, MUST(String::from_utf8(message)));
++}
++
+ void Application::start_content_blocker_list_update(ContentBlockerListUpdateTrigger trigger, Optional<StringView> requested_identifier)
+ {
+     if (trigger == ContentBlockerListUpdateTrigger::Automatic && !m_settings->automatic_filter_list_updates_allowed())
+@@ -969,6 +986,7 @@
+         auto updated_at = content_blocker_list_last_updated_at(list.identifier);
+         if (trigger == ContentBlockerListUpdateTrigger::Automatic && updated_at.has_value() && UnixDateTime::now() - *updated_at < AK::Duration::from_seconds(24 * 60 * 60))
+             continue;
++        m_content_blocker_list_update_errors.remove(list.identifier);
+         m_pending_content_blocker_list_updates.append({ list.identifier, list.name, *list.url, content_blocker_list_path(list.identifier), trigger, 0, {}, {} });
+     }
+ 
+@@ -1002,6 +1020,7 @@
+ 
+     auto client = request_server_client();
+     if (client.is_error()) {
++        record_content_blocker_list_update_error("Cannot start the network service."sv);
+         warnln("Unable to launch RequestServer: {}", client.error());
+         finish_current_content_blocker_list_update();
+         return;
+@@ -1010,6 +1029,7 @@
+         "GET"sv, update.url, *request_headers, {}, HTTP::CacheMode::NoStore,
+         HTTP::Cookie::IncludeCredentials::No);
+     if (!m_content_blocker_list_update_request) {
++        record_content_blocker_list_update_error("Cannot start the download."sv);
+         warnln("Unable to start update request for {}", update.name);
+         finish_current_content_blocker_list_update();
+         return;
+@@ -1026,6 +1046,7 @@
+ 
+     auto timeout = Core::Timer::create_single_shot(AK::Duration::from_milliseconds(timeout_ms), [this, is_current] {
+         if (!is_current()) return;
++        record_content_blocker_list_update_error("Download timed out. The previous list is retained."sv);
+         warnln("Content blocker list download timed out");
+         stop_current_content_blocker_list_update_and_continue();
+     });
+@@ -1051,6 +1072,7 @@
+             }
+             m_content_blocker_list_update_response_ok = response_code.has_value() && *response_code >= 200 && *response_code < 300;
+             if (!m_content_blocker_list_update_response_ok) {
++                record_content_blocker_list_update_error("The server returned an unsuccessful response or an invalid redirect."sv);
+                 warnln("Unable to update content blocker list: received HTTP status {} {}", response_code.value_or(0), reason_phrase.value_or(String {}));
+                 stop_current_content_blocker_list_update_and_continue();
+             }
+@@ -1067,6 +1089,7 @@
+             timeout->stop();
+             if (!is_current()) return;
+             if (network_error.has_value()) {
++                record_content_blocker_list_update_error("Network error. The previous list is retained."sv);
+                 warnln("Unable to update content blocker list: {}", Requests::network_error_to_string(*network_error));
+             } else if (!m_content_blocker_list_update_cancelled && m_content_blocker_list_update_response_ok) {
+                 auto expand = [&]() -> ErrorOr<void> {
+@@ -1083,11 +1106,14 @@
+                     }
+                     auto expanded = TRY(update.expansion->finish());
+                     TRY(save_content_blocker_list(update.path, expanded.bytes()));
++                    m_content_blocker_list_update_errors.remove(update.identifier);
+                     m_content_blocker_list_update_had_success = true;
+                     return {};
+                 };
+-                if (auto result = expand(); result.is_error())
++                if (auto result = expand(); result.is_error()) {
++                    record_content_blocker_list_update_error("Cannot parse included lists or save the update. The previous list is retained."sv);
+                     warnln("Unable to expand/save content blocker list update: {}", result.error());
++                }
+             }
+             finish_current_content_blocker_list_update();
+         });
+@@ -1100,12 +1126,14 @@
+ 
+     VERIFY(m_content_blocker_list_update_payload.size() <= maximum_content_blocker_list_size);
+     if (data.size() > maximum_content_blocker_list_size - m_content_blocker_list_update_payload.size()) {
++        record_content_blocker_list_update_error("The downloaded list exceeds the size limit."sv);
+         warnln("Unable to update content blocker list: response exceeds {} bytes", maximum_content_blocker_list_size);
+         stop_current_content_blocker_list_update_and_continue();
+         return;
+     }
+ 
+     if (auto result = m_content_blocker_list_update_payload.try_append(data); result.is_error()) {
++        record_content_blocker_list_update_error("Cannot buffer the downloaded list."sv);
+         warnln("Unable to update content blocker list: {}", result.error());
+         stop_current_content_blocker_list_update_and_continue();
+     }
+@@ -1165,6 +1193,7 @@
+ 
+ void Application::remove_content_blocker_list(Badge<SettingsUI>, StringView identifier)
+ {
++    m_content_blocker_list_update_errors.remove(identifier);
+     if (!m_settings->remove_content_blocker_list(identifier))
+         return;
+     m_pending_content_blocker_list_updates.remove_all_matching([&](auto const& update) { return update.identifier == identifier; });
+--- a/Libraries/LibWebView/Application.h
++++ b/Libraries/LibWebView/Application.h
+@@ -211,6 +211,7 @@
+     ErrorOr<void> import_local_content_blocker_list(String name, String contents);
+     void remove_content_blocker_list(Badge<SettingsUI>, StringView identifier);
+     Optional<UnixDateTime> content_blocker_list_last_updated_at(StringView identifier) const;
++    JsonObject content_blocker_list_update_status(StringView identifier) const;
+ 
+     struct BookmarkID {
+         String id;
+@@ -520,6 +521,7 @@
+     void did_receive_content_blocker_list_update_data(ReadonlyBytes);
+     void stop_current_content_blocker_list_update_and_continue();
+     void finish_current_content_blocker_list_update();
++    void record_content_blocker_list_update_error(StringView);
+     ErrorOr<NonnullRawPtr<Core::GeolocationProvider>> ensure_geolocation_provider();
+     void update_permission_defaults();
+     void update_os_location_authorization();
+@@ -674,6 +676,7 @@
+     ByteString m_content_blocker_lists_directory;
+     Vector<PendingContentBlockerListUpdate> m_pending_content_blocker_list_updates;
+     Optional<PendingContentBlockerListUpdate> m_active_content_blocker_list_update;
++    HashMap<String, String> m_content_blocker_list_update_errors;
+     u64 m_content_blocker_list_update_generation { 0 };
+     ByteBuffer m_content_blocker_list_update_payload;
+     bool m_content_blocker_list_update_response_ok { false };
+--- a/Libraries/LibWebView/WebUI/SettingsUI.cpp
++++ b/Libraries/LibWebView/WebUI/SettingsUI.cpp
+@@ -306,6 +306,7 @@
+         object.set("enabled"sv, list.enabled);
+         auto updated = Application::the().content_blocker_list_last_updated_at(list.identifier);
+         object.set("lastUpdatedAt"sv, updated.has_value() ? JsonValue(updated->milliseconds_since_epoch()) : JsonValue {});
++        object.set("updateStatus"sv, Application::the().content_blocker_list_update_status(list.identifier));
+         lists.must_append(move(object));
+     }
+     settings.as_object().set("contentBlockerLists"sv, move(lists));

@@ -1,0 +1,20 @@
+--- a/Libraries/LibWebView/Application.cpp
++++ b/Libraries/LibWebView/Application.cpp
+@@ -3062,7 +3062,7 @@
+     page.async_debug_request("spoof-user-agent"sv, m_user_agent_string);
+     page.async_debug_request("navigator-compatibility-mode"sv, m_navigator_compatibility_mode);
+     if (m_derpbird_user_scripts.has_value())
+-        page.client().async_set_derpbird_user_scripts(*m_derpbird_user_scripts);
++        page.client().async_set_derpbird_user_scripts(Web::derpbird_scripts_for_context(*m_derpbird_user_scripts, page.client().session().is_private() == IsPrivate::Yes));
+ }
+ 
+ bool Application::sites_can_ask_for_location() const
+@@ -4612,7 +4612,7 @@
+     if (on_derpbird_scripts_changed)
+         on_derpbird_scripts_changed(*m_derpbird_user_scripts);
+     WebContentClient::for_each_client([&](WebContentClient& client) {
+-        client.async_set_derpbird_user_scripts(*m_derpbird_user_scripts);
++        client.async_set_derpbird_user_scripts(Web::derpbird_scripts_for_context(*m_derpbird_user_scripts, client.session().is_private() == IsPrivate::Yes));
+         return IterationDecision::Continue;
+     });
+     return {};

@@ -1,0 +1,12 @@
+--- a/UI/Qt/WebContentView.cpp
++++ b/UI/Qt/WebContentView.cpp
+@@ -772,6 +772,9 @@
+         return true;
+ #endif
+ 
++    if (modifiers == Qt::ControlModifier && (key == Qt::Key_H || key == Qt::Key_D))
++        return true;
++
+     if (modifiers == Qt::ControlModifier && key == Qt::Key_T)
+         return true;
+     if (modifiers == (Qt::ControlModifier | Qt::ShiftModifier) && key == Qt::Key_T)

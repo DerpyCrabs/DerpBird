@@ -1,0 +1,52 @@
+--- a/Libraries/LibWeb/ContentBlocker/Rust/src/lib.rs
++++ b/Libraries/LibWeb/ContentBlocker/Rust/src/lib.rs
+@@ -52,7 +52,7 @@
+ }
+ 
+ pub struct ContentBlockerEngine {
+-    ip_addresses: adblock::ip_address::IpAddressEngine,
++    has_ip_addresses: bool,
+     request_headers: adblock::response_headers::ResponseHeaderEngine,
+     cosmetic_policy: adblock::cosmetic_policy::CosmeticPolicy,
+     modifiers: adblock::response_modifiers::ResponseModifiers,
+@@ -429,7 +429,7 @@
+         let dynamic_text = sources.iter().filter(|s| s.trusted && s.user_owned)
+             .flat_map(|s| s.text.lines().filter_map(|line| line.strip_prefix("!#derpbird-dynamic "))).collect::<Vec<_>>().join("\n");
+         let engine = ContentBlockerEngine {
+-            ip_addresses: adblock::ip_address::IpAddressEngine::new_for_sources(sources.iter().map(|s| (s.text.as_str(), s.name.as_str()))),
++            has_ip_addresses: sources.iter().any(|source| source.text.lines().any(|line| !line.starts_with('!') && (line.contains("$ipaddress=") || line.contains(",ipaddress=")))),
+             request_headers: adblock::response_headers::ResponseHeaderEngine::new_for_sources(sources.iter().map(|s| (s.text.as_str(), s.name.as_str())), true),
+             cosmetic_policy: adblock::cosmetic_policy::CosmeticPolicy::new(rules),
+             modifiers: adblock::response_modifiers::ResponseModifiers::new(sources.iter().map(|s| (s.text.as_str(), s.trusted, s.name.as_str()))),
+@@ -929,7 +929,7 @@
+ 
+ #[unsafe(no_mangle)]
+ pub extern "C" fn rust_content_blocker_has_ip_address_filters(engine: Option<&ContentBlockerEngine>) -> bool {
+-    abort_on_panic(|| engine.is_some_and(|engine| !engine.ip_addresses.is_empty()))
++    abort_on_panic(|| engine.is_some_and(|engine| engine.has_ip_addresses))
+ }
+ 
+ #[unsafe(no_mangle)]
+@@ -937,20 +937,5 @@
+     engine: Option<&ContentBlockerEngine>, url: ak::Span<'_, u8>, source: ak::Span<'_, u8>,
+     kind: ak::Span<'_, u8>, method: ak::Span<'_, u8>, address: ak::Span<'_, u8>, top: ak::Span<'_, u8>,
+ ) -> ContentBlockerDecision {
+-    abort_on_panic(|| {
+-        adblock::regex_manager::reset_host_regex_budget();
+-        let (Some(engine), Some(url), Some(source), Some(kind), Some(method), Some(address)) =
+-            (engine, as_str(url), as_str(source), as_str(kind), as_str(method), as_str(address))
+-        else { return ContentBlockerDecision::allow(); };
+-        if engine.ip_addresses.is_empty() { return ContentBlockerDecision::allow(); }
+-        let top = as_str(top).filter(|value| !value.is_empty()).unwrap_or(source);
+-        let Ok(request) = adblock::request::Request::new(url, source, kind, method).map(|request| request.with_top_url(top))
+-        else { return ContentBlockerDecision::allow(); };
+-        if matches!(engine.dynamic.check(&request, top), Some((adblock::dynamic_filtering::Action::Allow, _))) {
+-            return ContentBlockerDecision::allow();
+-        }
+-        let exempt = engine.engine.check_network_request_subset(&request, false, true).exception.is_some();
+-        let (blocked, rule) = engine.ip_addresses.check(&request, address, exempt);
+-        ContentBlockerDecision { blocked, matched_rule: rule_to_ffi(rule), ..ContentBlockerDecision::allow() }
+-    })
+-}
++    rust_content_blocker_check(engine, url, source, kind, method, top, address)
++}

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<script src="include.js"></script>
+<script>
+test(() => {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const rect = document.createElementNS(svg.namespaceURI, 'rect');
+    rect.style.fill = 'rgb(1, 2, 3)';
+    svg.append(rect);
+    document.body.append(svg);
+    const probe = document.createElement('div');
+    probe.id = 'probe';
+    probe.style.color = 'rgb(1, 2, 3)';
+    document.body.append(probe);
+    const sections = [
+        {conditions: [], css: '#probe { color: rgb(4, 5, 6) !important }'},
+        {conditions: [{type: 'url', value: location.href}], css: '@namespace svg url(http://www.w3.org/2000/svg); svg|rect { fill: rgb(7, 8, 9) !important } #probe { color: rgb(10, 11, 12) !important }'},
+    ];
+    println('install: ' + internals.setDerpbirdUserStyles(JSON.stringify(sections)));
+    println('namespace: ' + getComputedStyle(rect).fill);
+    println('last section: ' + getComputedStyle(probe).color);
+    // Edit in place while the number of matching sections stays the same.
+    sections[1].css = '@namespace svg url(http://www.w3.org/2000/svg); svg|rect { fill: rgb(13, 14, 15) !important }';
+    println('edit: ' + internals.setDerpbirdUserStyles(JSON.stringify(sections)));
+    println('edited namespace: ' + getComputedStyle(rect).fill);
+    println('remaining global: ' + getComputedStyle(probe).color);
+    internals.setDerpbirdUserStyles('[]');
+    println('removed: ' + getComputedStyle(rect).fill + ' / ' + getComputedStyle(probe).color);
+});
+</script>

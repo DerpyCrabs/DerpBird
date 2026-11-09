@@ -1,0 +1,286 @@
+--- a/Libraries/LibRequests/Request.h
++++ b/Libraries/LibRequests/Request.h
+@@ -141,14 +141,14 @@
+     struct ResponseHeaderPolicy final : RefCounted<ResponseHeaderPolicy> {
+         explicit ResponseHeaderPolicy(Function<u8(HTTP::HeaderList const&)> callback) : callback(move(callback)) { }
+         Function<u8(HTTP::HeaderList const&)> callback;
+-        Function<bool(Vector<URL::URL> const&)> canonical_url_callback;
++        Function<bool(Vector<URL::URL> const&, Vector<String> const&)> canonical_url_callback;
+         Function<bool(HTTP::HeaderList const&)> request_header_callback;
+-        bool allow_canonical_urls(Vector<URL::URL> const& aliases) const { return canonical_url_callback && canonical_url_callback(aliases); }
++        bool allow_canonical_urls(Vector<URL::URL> const& aliases, Vector<String> const& addresses) const { return canonical_url_callback && canonical_url_callback(aliases, addresses); }
+         u8 select(HTTP::HeaderList const& headers) const { return callback ? callback(headers) : 24; }
+     };
+     void set_response_header_policy(Function<u8(HTTP::HeaderList const&)> callback) { m_response_policy_context = adopt_ref(*new ResponseHeaderPolicy(move(callback))); }
+     void set_request_header_policy(Function<bool(HTTP::HeaderList const&)> callback) { VERIFY(m_response_policy_context); m_response_policy_context->request_header_callback = move(callback); }
+-    void set_canonical_url_policy(Function<bool(Vector<URL::URL> const&)> callback) { VERIFY(m_response_policy_context); m_response_policy_context->canonical_url_callback = move(callback); }
++    void set_canonical_url_policy(Function<bool(Vector<URL::URL> const&, Vector<String> const&)> callback) { VERIFY(m_response_policy_context); m_response_policy_context->canonical_url_callback = move(callback); }
+     RefPtr<ResponseHeaderPolicy> response_policy_context() const { return m_response_policy_context; }
+     u8 select_response_header_policy(HTTP::HeaderList const& headers) { m_response_header_policy = m_response_policy_context ? m_response_policy_context->select(headers) : 24; return *m_response_header_policy; }
+     Optional<u8> response_header_policy() const { return m_response_header_policy; }
+--- a/Libraries/LibRequests/RequestClient.cpp
++++ b/Libraries/LibRequests/RequestClient.cpp
+@@ -249,13 +249,13 @@
+     IPCProxy::async_resolve_request_header_policy(request_id, generation, allowed, background);
+ }
+ 
+-void RequestClient::query_canonical_url_policy(u64 request_id, u64 generation, bool background, Vector<URL::URL> aliases)
++void RequestClient::query_canonical_url_policy(u64 request_id, u64 generation, bool background, Vector<URL::URL> aliases, Vector<String> addresses)
+ {
+     RefPtr<Request::ResponseHeaderPolicy> context;
+     if (background) context = m_background_response_policies.get(request_id).value_or(nullptr);
+     else if (auto request = m_requests.get(request_id); request.has_value() && *request)
+         context = (*request)->response_policy_context();
+-    bool allowed = context && aliases.size() <= 16 && context->allow_canonical_urls(aliases);
++    bool allowed = context && aliases.size() <= 16 && addresses.size() <= 256 && context->allow_canonical_urls(aliases, addresses);
+     IPCProxy::async_resolve_canonical_url_policy(request_id, generation, allowed, background);
+ }
+ 
+@@ -302,12 +302,12 @@
+     return connection;
+ }
+ 
+-void RequestClient::query_websocket_canonical_policy(u64 websocket_id, u64 generation, Vector<URL::URL> aliases)
++void RequestClient::query_websocket_canonical_policy(u64 websocket_id, u64 generation, Vector<URL::URL> aliases, Vector<String> addresses)
+ {
+     bool allowed = false;
+     if (auto connection = m_websockets.get(websocket_id); connection.has_value()) {
+         auto& policy = (*connection)->canonical_url_policy;
+-        allowed = aliases.size() <= 16 && policy && policy(aliases);
++        allowed = aliases.size() <= 16 && addresses.size() <= 256 && policy && policy(aliases, addresses);
+     }
+     IPCProxy::async_resolve_websocket_canonical_policy(websocket_id, generation, allowed);
+ }
+--- a/Libraries/LibRequests/RequestClient.h
++++ b/Libraries/LibRequests/RequestClient.h
+@@ -82,7 +82,7 @@
+     virtual void request_cached_body_file_available(u64 request_id, IPC::File, u64 offset, u64 size) override;
+     virtual void request_finished(u64 request_id, u64, RequestTimingInfo, Optional<NetworkError>) override;
+     virtual void query_request_header_policy(u64, u64, bool, Vector<HTTP::Header>) override;
+-    virtual void query_canonical_url_policy(u64, u64, bool, Vector<URL::URL>) override;
++    virtual void query_canonical_url_policy(u64, u64, bool, Vector<URL::URL>, Vector<String>) override;
+     virtual void query_response_header_policy(u64, u64, bool, Vector<HTTP::Header>) override;
+     virtual void retain_response_header_policy(u64, u64) override;
+     virtual void release_response_header_policy(u64) override;
+@@ -91,7 +91,7 @@
+     virtual void host_resolved(u64 lookup_id, Vector<ByteString> addresses) override;
+ 
+     virtual void websocket_connected(u64 websocket_id) override;
+-    virtual void query_websocket_canonical_policy(u64, u64, Vector<URL::URL>) override;
++    virtual void query_websocket_canonical_policy(u64, u64, Vector<URL::URL>, Vector<String>) override;
+     virtual void websocket_received(u64 websocket_id, bool, ByteBuffer) override;
+     virtual void websocket_received_shared(u64 websocket_id, bool, Core::AnonymousBuffer) override;
+     virtual void websocket_errored(u64 websocket_id, i32) override;
+--- a/Libraries/LibRequests/WebSocket.h
++++ b/Libraries/LibRequests/WebSocket.h
+@@ -60,7 +60,7 @@
+     void send(StringView text_message);
+     void close(u16 code = 1005, ByteString reason = {});
+ 
+-    Function<bool(Vector<URL::URL> const&)> canonical_url_policy;
++    Function<bool(Vector<URL::URL> const&, Vector<String> const&)> canonical_url_policy;
+     Function<void()> on_open;
+     Function<void(Message)> on_message;
+     Function<void(Error)> on_error;
+--- a/Libraries/LibWeb/Loader/ResourceLoader.cpp
++++ b/Libraries/LibWeb/Loader/ResourceLoader.cpp
+@@ -646,10 +646,18 @@
+         Optional<ContentBlocker::Decision> decision;
+     };
+     auto canonical_action = adopt_ref(*new CanonicalAction);
+-    protocol_request->set_canonical_url_policy([request, canonical_action](Vector<URL::URL> const& aliases) {
++    protocol_request->set_canonical_url_policy([request, canonical_action](Vector<URL::URL> const& aliases, Vector<String> const& addresses) {
+         if (auto page = request.page(); page && !page->content_blocking_enabled_for_url(request.top_level_creation_url())) return true;
+         auto type = ContentBlocker::resource_type_from_fetch_metadata(request.destination(), request.initiator_type(), request.request_mode());
+         if (request.derpbird_subframe_navigation) type = ContentBlocker::ResourceType::Subdocument;
++        for (auto const& address : addresses) {
++            auto decision = ContentBlocker::the().check_ip_address(*request.url(), request.source_url().value_or(*request.url()), type, request.method(), address, request.top_level_creation_url());
++            if (!decision.blocked) continue;
++            if (auto page = request.page()) page->client().page_did_block_resource(*request.url(), "IP address"sv, decision.matched_rule);
++            canonical_action->decision = move(decision);
++            return false;
++        }
++        if (aliases.is_empty()) return true;
+         StringBuilder names;
+         for (auto const& alias : aliases) {
+             if (!names.is_empty()) names.append('\n');
+--- a/Libraries/LibWeb/WebSockets/WebSocket.cpp
++++ b/Libraries/LibWeb/WebSockets/WebSocket.cpp
+@@ -276,10 +276,16 @@
+         }
+     }
+     m_websocket = request_client->websocket_connect(connection_url, move(network_isolation_key), origin_string, protocol_byte_strings, {}, additional_headers, blocking);
+-    m_websocket->canonical_url_policy = [page = GC::Weak<Page> { &page }, source, top_level, connection_url](Vector<URL::URL> const& aliases) {
++    m_websocket->canonical_url_policy = [page = GC::Weak<Page> { &page }, source, top_level, connection_url](Vector<URL::URL> const& aliases, Vector<String> const& addresses) {
+         if (!page) return false;
+         if (!page->content_blocking_enabled_for_url(top_level)) return true;
+         auto& blocker = ContentBlocker::the();
++        for (auto const& address : addresses) {
++            auto decision = blocker.check_ip_address(connection_url, source, ContentBlocker::ResourceType::WebSocket, "GET"sv, address, top_level);
++            if (!decision.blocked) continue;
++            page->client().page_did_block_resource(connection_url, "WebSocket IP address"sv, decision.matched_rule);
++            return false;
++        }
+         if (blocker.canonical_url_exempt(connection_url, source, ContentBlocker::ResourceType::WebSocket, "GET"sv, top_level)) return true;
+         for (auto const& alias : aliases) {
+             auto decision = blocker.check(alias, source, ContentBlocker::ResourceType::WebSocket, "GET"sv, top_level);
+--- a/Services/RequestServer/ConnectionFromClient.cpp
++++ b/Services/RequestServer/ConnectionFromClient.cpp
+@@ -1005,7 +1005,15 @@
+             auto snapshot = make_ref_counted<DNS::LookupResult>(DNS::Messages::DomainName::from_string(host));
+             for (auto const& record : dns_result->records()) snapshot->add_record(record);
+             Vector<URL::URL> aliases;
++            Vector<String> addresses;
+             if (self->m_websocket_policy_enabled.remove(websocket_id)) {
++                for (auto const& address : snapshot->cached_addresses()) {
++                    if (addresses.size() >= 256) {
++                        self->fail_websocket(websocket_id, Requests::WebSocket::Error::CouldNotEstablishConnection);
++                        return;
++                    }
++                    addresses.append(address.visit([](auto const& value) { return MUST(value.to_string()); }));
++                }
+                 for (auto const& owner : snapshot->canonical_address_names()) {
+                     auto text = owner.to_canonical_string();
+                     auto name = text.view();
+@@ -1029,7 +1037,7 @@
+                 if (auto self = weak_self.strong_ref())
+                     self->open_websocket(websocket_id, move(url), move(origin), move(protocols), move(extensions), move(headers), move(proxy), move(snapshot));
+             };
+-            if (aliases.is_empty()) { connect(); return; }
++            if (aliases.is_empty() && addresses.is_empty()) { connect(); return; }
+             self->m_pending_websockets.set(websocket_id);
+             auto generation = ++self->m_next_websocket_policy_generation;
+             auto timer = Core::Timer::create_single_shot(AK::Duration::from_seconds(5), [weak_self, websocket_id, generation] {
+@@ -1037,7 +1045,7 @@
+             });
+             timer->start();
+             self->m_websocket_policies.set(websocket_id, { generation, move(timer), move(connect) });
+-            self->async_query_websocket_canonical_policy(websocket_id, generation, move(aliases));
++            self->async_query_websocket_canonical_policy(websocket_id, generation, move(aliases), move(addresses));
+         });
+ }
+ 
+--- a/Services/RequestServer/Request.cpp
++++ b/Services/RequestServer/Request.cpp
+@@ -1223,6 +1223,8 @@
+     }
+     if (!m_cache_canonical_policy_done) {
+         m_cache_canonical_policy_done = true;
++        // A cached response has no current connection address.
++        m_pending_ip_addresses.clear();
+         m_canonical_host_names = m_cache_entry_reader->canonical_host_names();
+         if (!decode_canonical_hosts(m_canonical_host_names)) {
+             m_network_error = Requests::NetworkError::CacheReadFailed;
+@@ -1383,6 +1385,7 @@
+         return;
+     }
+ 
++    m_pending_ip_addresses.clear();
+     // Avoid leaking hostnames resolved by the proxy.
+     m_proxy = proxy_configuration().proxy_for(m_url).copy();
+     if (m_proxy.has_value() && m_proxy->resolves_hostnames()) {
+@@ -1473,10 +1476,29 @@
+ 
+ void Request::check_canonical_urls_before_connect()
+ {
+-    // Alt-Svc addresses have their own identity; retain the already checked
+-    // origin metadata while resolving that alternative.
+-    if (!m_dns_result || (!m_resolving_canonical_origin && connect_host() != m_url.serialized_host())) {
++    m_pending_ip_addresses.clear();
++    if (!m_dns_result) {
+         continue_after_dns_lookup();
++        return;
++    }
++    // Check every pinned candidate before curl may select it. Do not use
++    // reverse DNS or cache a connection address with response metadata.
++    if (m_query_response_policy & 2) {
++        for (auto const& address : m_dns_result->cached_addresses()) {
++            if (m_pending_ip_addresses.size() >= 256) {
++                m_network_error = Requests::NetworkError::UnableToResolveHost;
++                transition_to_state(State::Error);
++                return;
++            }
++            m_pending_ip_addresses.append(address.visit([](auto const& value) { return MUST(value.to_string()); }));
++        }
++    }
++    // Alt-Svc destination addresses are checked, but its hostname must not
++    // replace the origin CNAME identity or its cached metadata.
++    if (!m_resolving_canonical_origin && connect_host() != m_url.serialized_host()) {
++        m_pending_canonical_urls.clear();
++        if (!m_pending_ip_addresses.is_empty()) query_canonical_urls();
++        else continue_after_dns_lookup();
+         return;
+     }
+     StringBuilder names;
+@@ -1498,7 +1520,7 @@
+         transition_to_state(State::Error);
+         return;
+     }
+-    if (!(m_query_response_policy & 2) || m_pending_canonical_urls.is_empty()) {
++    if (!(m_query_response_policy & 2) || (m_pending_canonical_urls.is_empty() && m_pending_ip_addresses.is_empty())) {
+         m_pending_canonical_urls.clear();
+         continue_after_dns_lookup();
+         return;
+@@ -1513,7 +1535,7 @@
+         self.complete_canonical_url_policy(self.m_canonical_policy_generation, false);
+     }));
+     m_canonical_policy_timer->start();
+-    m_client->async_query_canonical_url_policy(m_request_id, m_canonical_policy_generation, m_type == RequestType::BackgroundRevalidation, m_pending_canonical_urls);
++    m_client->async_query_canonical_url_policy(m_request_id, m_canonical_policy_generation, m_type == RequestType::BackgroundRevalidation, m_pending_canonical_urls, m_pending_ip_addresses);
+ }
+ 
+ void Request::resolve_canonical_url_policy(Badge<ConnectionFromClient>, u64 generation, bool allowed)
+@@ -1523,9 +1545,10 @@
+ 
+ void Request::complete_canonical_url_policy(u64 generation, bool allowed)
+ {
+-    if (generation != m_canonical_policy_generation || m_pending_canonical_urls.is_empty() || (m_state != State::DNSLookup && m_state != State::ReadCache)) return;
++    if (generation != m_canonical_policy_generation || (m_pending_canonical_urls.is_empty() && m_pending_ip_addresses.is_empty()) || (m_state != State::DNSLookup && m_state != State::ReadCache)) return;
+     m_canonical_policy_timer->stop();
+     m_pending_canonical_urls.clear();
++    m_pending_ip_addresses.clear();
+     if (!allowed) {
+         m_network_error = Requests::NetworkError::Unknown;
+         transition_to_state(State::Error);
+@@ -2374,9 +2397,9 @@
+     if (m_state == State::RetrieveCookie)
+         handle_retrieve_cookie_state();
+ 
+-    if (!m_pending_canonical_urls.is_empty()) {
++    if (!m_pending_canonical_urls.is_empty() || !m_pending_ip_addresses.is_empty()) {
+         ++m_canonical_policy_generation;
+-        m_client->async_query_canonical_url_policy(m_request_id, m_canonical_policy_generation, m_type == RequestType::BackgroundRevalidation, m_pending_canonical_urls);
++        m_client->async_query_canonical_url_policy(m_request_id, m_canonical_policy_generation, m_type == RequestType::BackgroundRevalidation, m_pending_canonical_urls, m_pending_ip_addresses);
+     }
+     if (m_request_policy_pending) query_request_headers();
+     if (m_response_policy_continuation) {
+--- a/Services/RequestServer/Request.h
++++ b/Services/RequestServer/Request.h
+@@ -371,6 +371,7 @@
+ 
+     void complete_response_header_policy(u64 generation, u8 policy);
+     Vector<URL::URL> m_pending_canonical_urls;
++    Vector<String> m_pending_ip_addresses;
+     u64 m_canonical_policy_generation { 0 };
+     RefPtr<Core::Timer> m_canonical_policy_timer;
+     u8 m_query_response_policy { 0 };
+--- a/Services/RequestServer/RequestClient.ipc
++++ b/Services/RequestServer/RequestClient.ipc
+@@ -10,7 +10,7 @@
+ {
+     retain_response_header_policy(u64 parent_request_id, u64 background_request_id) =|
+     release_response_header_policy(u64 background_request_id) =|
+-    query_canonical_url_policy(u64 request_id, u64 generation, bool background, Vector<URL::URL> aliases) =|
++    query_canonical_url_policy(u64 request_id, u64 generation, bool background, Vector<URL::URL> aliases, Vector<String> addresses) =|
+     query_request_header_policy(u64 request_id, u64 generation, bool background, Vector<HTTP::Header> request_headers) =|
+     query_response_header_policy(u64 request_id, u64 generation, bool background, Vector<HTTP::Header> response_headers) =|
+     request_requires_network(u64 request_id) =|
+@@ -25,7 +25,7 @@
+ 
+     // Websocket API
+     // FIXME: See if this can be merged with the regular APIs
+-    query_websocket_canonical_policy(u64 websocket_id, u64 generation, Vector<URL::URL> aliases) =|
++    query_websocket_canonical_policy(u64 websocket_id, u64 generation, Vector<URL::URL> aliases, Vector<String> addresses) =|
+     websocket_connected(u64 websocket_id) =|
+     websocket_received(u64 websocket_id, bool is_text, ByteBuffer data) =|
+     websocket_received_shared(u64 websocket_id, bool is_text, Core::AnonymousBuffer data) =|

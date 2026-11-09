@@ -1,0 +1,466 @@
+--- /dev/null
++++ b/Meta/CMake/vcpkg/overlay-ports/fontconfig/dllexport.diff
+@@ -0,0 +1,29 @@
++--- a/fontconfig/fontconfig.h.in
+++++ b/fontconfig/fontconfig.h.in
++@@ -39,7 +39,7 @@
++ #endif
++ 
++ #ifndef FcPublic
++-#  define FcPublic
+++#  define FcPublic @DEFAULT_FCPUBLIC@
++ #endif
++ 
++ typedef unsigned char  FcChar8;
++--- a/fontconfig/meson.build
+++++ b/fontconfig/meson.build
++@@ -3,6 +3,15 @@
++ fontconfig_h_conf.set('CACHE_MIN_COMPAT_VERSION', '@0@'.format(cachemincompat))
++ fontconfig_h_conf.set('CACHE_SNAP_VERSION', '@0@'.format(cachesnapversion))
++ fontconfig_h_conf.set('NEXT_CACHE_VERSION', '@0@'.format(nextcacheversion))
+++default_FcPublic = ''
+++if get_option('default_library') != 'static'
+++  if host_machine.system() == 'windows'
+++    default_FcPublic = '__declspec(dllimport)'
+++  else
+++    default_FcPublic = '__attribute__((visibility("default")))'
+++  endif
+++endif
+++fontconfig_h_conf.set('DEFAULT_FCPUBLIC', default_FcPublic)
++ fontconfig_h = configure_file(
++   output: 'fontconfig.h',
++   input: 'fontconfig.h.in',
+--- /dev/null
++++ b/Meta/CMake/vcpkg/overlay-ports/fontconfig/fix-wasm-shared-memory-atomics.patch
+@@ -0,0 +1,14 @@
++diff --git a/meson.build b/meson.build
++index 8e78700..95bae59 100644
++--- a/meson.build
+++++ b/meson.build
++@@ -112,6 +112,9 @@ check_alignofs = [
++ ]
++ 
++ add_project_arguments('-DHAVE_CONFIG_H', language: 'c')
+++if cc.get_id() == 'clang' and host_machine.cpu_family() == 'wasm'
+++    add_project_arguments('-matomics', '-mbulk-memory', language: 'c')
+++endif
++ 
++ c_args = []
++ 
+--- /dev/null
++++ b/Meta/CMake/vcpkg/overlay-ports/fontconfig/libgetopt.patch
+@@ -0,0 +1,117 @@
++--- a/fc-cache/meson.build
+++++ b/fc-cache/meson.build
++@@ -1,6 +1,6 @@
++ fccache = executable('fc-cache', ['fc-cache.c', fcstdint_h, alias_headers, ft_alias_headers],
++   include_directories: [incbase, incsrc],
++-  dependencies: [libintl_dep],
+++  dependencies: [getopt_dep, libintl_dep],
++   link_with: [libfontconfig],
++   c_args: c_args,
++   install: true,
++--- a/fc-cat/meson.build
+++++ b/fc-cat/meson.build
++@@ -1,6 +1,6 @@
++ fccat = executable('fc-cat', ['fc-cat.c', fcstdint_h, alias_headers, ft_alias_headers],
++   include_directories: [incbase, incsrc],
++-  dependencies: [libintl_dep],
+++  dependencies: [getopt_dep, libintl_dep],
++   link_with: [libfontconfig],
++   c_args: c_args,
++   install: true,
++--- a/fc-conflist/meson.build
+++++ b/fc-conflist/meson.build
++@@ -1,6 +1,6 @@
++ fcconflist = executable('fc-conflist', ['fc-conflist.c', fcstdint_h, alias_headers, ft_alias_headers],
++   include_directories: [incbase, incsrc],
++-  dependencies: [libintl_dep],
+++  dependencies: [getopt_dep, libintl_dep],
++   link_with: [libfontconfig],
++   c_args: c_args,
++   install: true,
++--- a/fc-genconf/meson.build
+++++ b/fc-genconf/meson.build
++@@ -1,6 +1,6 @@
++ fcmatch = executable('fc-genconf', ['fc-genconf.c', fcstdint_h, alias_headers, ft_alias_headers],
++   include_directories: [incbase, incsrc],
++-  dependencies: [libintl_dep],
+++  dependencies: [getopt_dep, libintl_dep],
++   link_with: [libfontconfig],
++   c_args: c_args,
++   install: true,
++--- a/fc-list/meson.build
+++++ b/fc-list/meson.build
++@@ -1,6 +1,6 @@
++ fclist = executable('fc-list', ['fc-list.c', fcstdint_h, alias_headers, ft_alias_headers],
++   include_directories: [incbase, incsrc],
++-  dependencies: [libintl_dep],
+++  dependencies: [getopt_dep, libintl_dep],
++   link_with: [libfontconfig],
++   c_args: c_args,
++   install: true,
++--- a/fc-match/meson.build
+++++ b/fc-match/meson.build
++@@ -1,6 +1,6 @@
++ fcmatch = executable('fc-match', ['fc-match.c', fcstdint_h, alias_headers, ft_alias_headers],
++   include_directories: [incbase, incsrc],
++-  dependencies: [libintl_dep],
+++  dependencies: [getopt_dep, libintl_dep],
++   link_with: [libfontconfig],
++   c_args: c_args,
++   install: true,
++--- a/fc-pattern/meson.build
+++++ b/fc-pattern/meson.build
++@@ -1,6 +1,6 @@
++ fcpattern = executable('fc-pattern', ['fc-pattern.c', fcstdint_h, alias_headers, ft_alias_headers],
++   include_directories: [incbase, incsrc],
++-  dependencies: [libintl_dep],
+++  dependencies: [getopt_dep, libintl_dep],
++   link_with: [libfontconfig],
++   c_args: c_args,
++   install: true,
++--- a/fc-query/meson.build
+++++ b/fc-query/meson.build
++@@ -1,6 +1,6 @@
++ fcquery = executable('fc-query', ['fc-query.c', fcstdint_h, alias_headers, ft_alias_headers],
++   include_directories: [incbase, incsrc],
++-  dependencies: [freetype_dep, libintl_dep],
+++  dependencies: [freetype_dep, getopt_dep, libintl_dep],
++   link_with: [libfontconfig],
++   c_args: c_args,
++   install: true,
++--- a/fc-scan/meson.build
+++++ b/fc-scan/meson.build
++@@ -1,6 +1,6 @@
++ fcscan = executable('fc-scan', ['fc-scan.c', fcstdint_h, alias_headers, ft_alias_headers],
++   include_directories: [incbase, incsrc],
++-  dependencies: [freetype_dep, libintl_dep],
+++  dependencies: [freetype_dep, getopt_dep, libintl_dep],
++   link_with: [libfontconfig],
++   c_args: c_args,
++   install: true,
++--- a/fc-validate/meson.build
+++++ b/fc-validate/meson.build
++@@ -1,6 +1,6 @@
++ fcvalidate = executable('fc-validate', ['fc-validate.c', fcstdint_h, alias_headers, ft_alias_headers],
++   include_directories: [incbase, incsrc],
++-  dependencies: [freetype_dep, libintl_dep],
+++  dependencies: [freetype_dep, getopt_dep, libintl_dep],
++   link_with: [libfontconfig],
++   c_args: c_args,
++   install: true,
++--- a/meson.build
+++++ b/meson.build
++@@ -350,6 +350,14 @@
++ 
++ conf.set('HAVE_C99_VSNPRINTF', 1)
++ 
+++if host_machine.system() == 'windows'
+++  conf.set('HAVE_GETOPT', 1)
+++  conf.set('HAVE_GETOPT_LONG', 1)
+++  getopt_dep = cc.find_library('getopt', required: false)
+++else
+++  getopt_dep = dependency('', required: false)
+++endif
+++
++ prefix = get_option('prefix')
++ 
++ fonts_conf = configuration_data()
+--- /dev/null
++++ b/Meta/CMake/vcpkg/overlay-ports/fontconfig/libintl.diff
+@@ -0,0 +1,21 @@
++diff --git a/meson.build b/meson.build
++index e742ea6..1d795d1 100644
++--- a/meson.build
+++++ b/meson.build
++@@ -200,10 +200,16 @@ gettext_args = [ '--msgid-bugs-address=@0@'.format(conf.get('PACKAGE_BUGREPORT')
++ 
++ # Check for libintl.h
++ opt_nls = get_option('nls')
+++libintl_dep = dependency('', required: false)
+++if opt_nls.allowed()
++ libintl_dep = dependency('intl', required: opt_nls, fallback: ['libintl', 'libintl_dep'])
+++endif
++ if libintl_dep.found()
++   conf.set('ENABLE_NLS', opt_nls.allowed().to_int())
++   deps += [libintl_dep]
+++  if host_machine.system() == 'darwin'
+++    deps += [dependency('CoreFoundation', method: 'extraframework')]
+++  endif
++ else
++   opt_nls = opt_nls.require(false)
++ endif
+--- /dev/null
++++ b/Meta/CMake/vcpkg/overlay-ports/fontconfig/no-etc-symlinks.patch
+@@ -0,0 +1,19 @@
++--- a/conf.d/link_confs.py	2022-03-24 04:13:59.000982000 +0900
+++++ b/conf.d/link_confs.py	2022-03-24 04:14:46.271964000 +0900
++@@ -4,6 +4,7 @@
++ import sys
++ import argparse
++ import platform
+++import shutil
++ from pathlib import PurePath
++ 
++ if __name__=='__main__':
++@@ -32,7 +33,7 @@
++         except FileNotFoundError:
++             pass
++         try:
++-            os.symlink(os.path.relpath(src, start=args.confpath), dst)
+++            shutil.copyfile(src, dst)
++         except NotImplementedError:
++             # Not supported on this version of Windows
++             break
+--- /dev/null
++++ b/Meta/CMake/vcpkg/overlay-ports/fontconfig/portfile.cmake
+@@ -0,0 +1,108 @@
++vcpkg_from_gitlab(
++    GITLAB_URL https://gitlab.freedesktop.org
++    OUT_SOURCE_PATH SOURCE_PATH
++    REPO fontconfig/fontconfig
++    REF ${VERSION}
++    SHA512 b3503cd7d56229ff80accae214b6e39335cb6724a36b28ca357bdd3ca749dcfb6bdda7eafe0a14b68b5fe1878bd1c363ae4526ca2aca00e9d1fb6f8fa7638282
++    HEAD_REF master
++    PATCHES
++        dllexport.diff
++        no-etc-symlinks.patch
++        libgetopt.patch
++        libintl.diff
++        fix-wasm-shared-memory-atomics.patch
++)
++
++set(options "")
++if("iconv" IN_LIST FEATURES)
++    list(APPEND options "-Diconv=enabled")
++else()
++    list(APPEND options "-Diconv=disabled")
++endif()
++if("nls" IN_LIST FEATURES)
++    list(APPEND options "-Dnls=enabled")
++else()
++    list(APPEND options "-Dnls=disabled")
++endif()
++if("tools" IN_LIST FEATURES)
++    list(APPEND options "-Dtools=enabled")
++else()
++    list(APPEND options "-Dtools=disabled")
++endif()
++
++# Fontconfig 2.18 requires Meson 1.11; keep this tool pin local to the port.
++vcpkg_from_github(
++    OUT_SOURCE_PATH MESON_SOURCE_PATH
++    REPO mesonbuild/meson
++    REF 1.11.0
++    SHA512 8c728df3679d71df138c217b1f7fe59fcc451a7f0e873aef3dd4ec2d1b9bed096daee3e55865fe194cbfe30d02acf613c2a9eb0af14e4975f96ca8a072c21c34
++)
++vcpkg_find_acquire_program(PYTHON3)
++set(MESON "${PYTHON3}" -I "${MESON_SOURCE_PATH}/meson.py")
++
++vcpkg_configure_meson(
++    SOURCE_PATH "${SOURCE_PATH}"
++    OPTIONS
++        ${options}
++        -Ddoc=disabled
++        -Dcache-build=disabled
++        -Dxml-backend=expat
++        -Dtests=disabled
++    ADDITIONAL_BINARIES
++        "gperf = ['${CURRENT_HOST_INSTALLED_DIR}/tools/gperf/gperf${VCPKG_HOST_EXECUTABLE_SUFFIX}']"
++)
++
++# https://www.freedesktop.org/software/fontconfig/fontconfig-user.html
++# Adding OPTIONS for e.g. baseconfig-dir etc. won't work since meson will try to install into those dirs!
++# Since adding OPTIONS does not work use a replacement in the generated config.h instead
++set(replacement "")
++if(VCPKG_TARGET_IS_WINDOWS)
++    set(replacement "**invalid-fontconfig-dir-do-not-use**")
++endif()
++set(configfile "${CURRENT_BUILDTREES_DIR}/${TARGET_TRIPLET}-rel/meson-config.h")
++vcpkg_replace_string("${configfile}" "${CURRENT_PACKAGES_DIR}" "${replacement}")
++if(NOT VCPKG_BUILD_TYPE)
++    set(configfile "${CURRENT_BUILDTREES_DIR}/${TARGET_TRIPLET}-dbg/meson-config.h")
++    vcpkg_replace_string("${configfile}" "${CURRENT_PACKAGES_DIR}/debug" "${replacement}")
++endif()
++
++vcpkg_install_meson(ADD_BIN_TO_PATH)
++
++vcpkg_copy_pdbs()
++#Fix missing libintl static dependency
++if("nls" IN_LIST FEATURES AND VCPKG_TARGET_IS_WINDOWS AND NOT VCPKG_TARGET_IS_MINGW)
++    if(NOT VCPKG_BUILD_TYPE)
++        vcpkg_replace_string("${CURRENT_PACKAGES_DIR}/debug/lib/pkgconfig/fontconfig.pc" "-liconv" "-liconv -lintl" IGNORE_UNCHANGED)
++    endif()
++    vcpkg_replace_string("${CURRENT_PACKAGES_DIR}/lib/pkgconfig/fontconfig.pc" "-liconv" "-liconv -lintl" IGNORE_UNCHANGED)
++endif()
++vcpkg_fixup_pkgconfig()
++
++# Fix paths in debug pc file.
++if(NOT VCPKG_BUILD_TYPE)
++    set(fontconfig_pc_debug "${CURRENT_PACKAGES_DIR}/debug/lib/pkgconfig/fontconfig.pc")
++    vcpkg_replace_string("${fontconfig_pc_debug}" "/etc" "/../etc" REGEX)
++    vcpkg_replace_string("${fontconfig_pc_debug}" "/var" "/../var" REGEX)
++endif()
++
++# Make path to cache in fonts.conf relative
++set(_file "${CURRENT_PACKAGES_DIR}/etc/fonts/fonts.conf")
++if(EXISTS "${_file}")
++    vcpkg_replace_string("${_file}" "${CURRENT_PACKAGES_DIR}/var/cache/fontconfig" "./../../var/cache/fontconfig" IGNORE_UNCHANGED)
++endif()
++
++file(REMOVE_RECURSE "${CURRENT_PACKAGES_DIR}/debug/var"
++                    "${CURRENT_PACKAGES_DIR}/debug/share"
++                    "${CURRENT_PACKAGES_DIR}/debug/etc"
++                    "${CURRENT_PACKAGES_DIR}/var")
++
++if("tools" IN_LIST FEATURES)
++    vcpkg_copy_tools(
++        TOOL_NAMES fc-match fc-cat fc-list fc-pattern fc-query fc-scan fc-cache fc-validate fc-conflist
++        AUTO_CLEAN
++    )
++endif()
++
++configure_file("${CMAKE_CURRENT_LIST_DIR}/vcpkg-cmake-wrapper.cmake.in" "${CURRENT_PACKAGES_DIR}/share/${PORT}/vcpkg-cmake-wrapper.cmake" @ONLY)
++file(INSTALL "${CMAKE_CURRENT_LIST_DIR}/usage" DESTINATION "${CURRENT_PACKAGES_DIR}/share/${PORT}")
++vcpkg_install_copyright(FILE_LIST "${SOURCE_PATH}/COPYING")
+--- /dev/null
++++ b/Meta/CMake/vcpkg/overlay-ports/fontconfig/usage
+@@ -0,0 +1,9 @@
++fontconfig is compatible with built-in CMake targets:
++
++  find_package(Fontconfig REQUIRED) # since CMake 3.14
++  target_link_libraries(main PRIVATE Fontconfig::Fontconfig)
++
++fontconfig provides pkg-config modules:
++
++  # Font configuration and customization library
++  fontconfig
+--- /dev/null
++++ b/Meta/CMake/vcpkg/overlay-ports/fontconfig/vcpkg-cmake-wrapper.cmake.in
+@@ -0,0 +1,44 @@
++_find_package(${ARGS})
++if("@VCPKG_LIBRARY_LINKAGE@" STREQUAL "static")
++    if(NOT TARGET Fontconfig::Fontconfig)
++        # Simplify wrapper for case of vendored FindFontconfig.cmake
++        add_library(Fontconfig::Fontconfig UNKNOWN IMPORTED)
++    endif()
++    include(SelectLibraryConfigurations)
++    find_library(Fontconfig_LIBRARY_DEBUG NAMES fontconfig fontconfigd NAMES_PER_DIR PATH_SUFFIXES lib PATHS "${_INSTALLED_DIR}/debug" NO_DEFAULT_PATH)
++    find_library(Fontconfig_LIBRARY_RELEASE NAMES fontconfig NAMES_PER_DIR PATH_SUFFIXES lib PATHS "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}" NO_DEFAULT_PATH)
++    select_library_configurations(Fontconfig)
++    set_target_properties(Fontconfig::Fontconfig PROPERTIES
++        IMPORTED_CONFIGURATIONS "Release"
++        IMPORTED_LOCATION_RELEASE "${Fontconfig_LIBRARY_RELEASE}"
++    )
++    if(Fontconfig_LIBRARY_DEBUG)
++        set_property(TARGET Fontconfig::Fontconfig APPEND PROPERTY IMPORTED_CONFIGURATIONS "Debug")
++        set_target_properties(Fontconfig::Fontconfig PROPERTIES IMPORTED_LOCATION_DEBUG "${Fontconfig_LIBRARY_DEBUG}")
++    endif()
++    find_package(Freetype)
++    if(Freetype_FOUND)
++        list(APPEND Fontconfig_LIBRARIES "${FREETYPE_LIBRARIES}")
++        if(TARGET Freetype::Freetype)
++            set_property(TARGET Fontconfig::Fontconfig APPEND PROPERTY INTERFACE_LINK_LIBRARIES "\$<LINK_ONLY:Freetype::Freetype>")
++        else()
++            # TODO link FREETYPE_LIBRARIES transformed for $<CONFIG:...>.
++        endif()
++    endif()
++    find_package(EXPAT)
++    if(EXPAT_FOUND)
++        list(APPEND Fontconfig_LIBRARIES "${EXPAT_LIBRARIES}")
++        if(TARGET EXPAT::EXPAT)
++            set_property(TARGET Fontconfig::Fontconfig APPEND PROPERTY INTERFACE_LINK_LIBRARIES "\$<LINK_ONLY:EXPAT::EXPAT>")
++        else()
++            # TODO link EXPAT_LIBRARIES transformed for $<CONFIG:...>.
++        endif()
++    endif()
++    if(NOT WIN32)
++        find_package(Iconv)
++        if(Iconv_FOUND)
++            list(APPEND Fontconfig_LIBRARIES "${Iconv_LIBRARIES}")
++            set_property(TARGET Fontconfig::Fontconfig APPEND PROPERTY INTERFACE_LINK_LIBRARIES "\$<LINK_ONLY:Iconv::Iconv>")
++        endif()
++    endif()
++endif()
+--- /dev/null
++++ b/Meta/CMake/vcpkg/overlay-ports/fontconfig/vcpkg.json
+@@ -0,0 +1,67 @@
++{
++  "name": "fontconfig",
++  "version": "2.18.3",
++  "description": "Library for configuring and customizing font access.",
++  "homepage": "https://www.freedesktop.org/wiki/Software/fontconfig",
++  "license": "HPND AND Unicode-DFS-2016",
++  "supports": "!uwp",
++  "dependencies": [
++    "dirent",
++    "expat",
++    {
++      "name": "freetype",
++      "default-features": false
++    },
++    {
++      "name": "gperf",
++      "host": true
++    },
++    {
++      "name": "libuuid",
++      "platform": "!osx & !windows"
++    },
++    {
++      "name": "pthread",
++      "platform": "!emscripten & !windows"
++    },
++    {
++      "name": "vcpkg-tool-meson",
++      "host": true
++    }
++  ],
++  "default-features": [
++    {
++      "name": "iconv",
++      "platform": "!windows"
++    }
++  ],
++  "features": {
++    "iconv": {
++      "description": "Iconv support",
++      "dependencies": [
++        "libiconv"
++      ]
++    },
++    "nls": {
++      "description": "Native languages support",
++      "dependencies": [
++        {
++          "name": "gettext",
++          "host": true,
++          "default-features": false,
++          "features": [
++            "tools"
++          ]
++        },
++        "gettext-libintl"
++      ]
++    },
++    "tools": {
++      "description": "Build tools",
++      "supports": "!emscripten",
++      "dependencies": [
++        "getopt"
++      ]
++    }
++  }
++}
+--- a/vcpkg.json
++++ b/vcpkg.json
+@@ -312,7 +312,7 @@
+     },
+     {
+       "name": "fontconfig",
+-      "version": "2.17.1#2"
++      "version": "2.18.3#0"
+     },
+     {
+       "name": "freetype",

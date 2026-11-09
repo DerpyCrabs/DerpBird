@@ -1,0 +1,5 @@
+before: rgb(1, 2, 3) / rgb(1, 2, 3)
+inside: rgb(1, 2, 3) / rgb(1, 2, 3)
+outside: rgb(1, 2, 3) / rgb(1, 2, 3)
+returned: rgb(1, 2, 3) / rgb(1, 2, 3)
+removed: rgb(1, 2, 3) / rgb(1, 2, 3)

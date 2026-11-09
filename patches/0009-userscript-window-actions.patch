@@ -1,0 +1,10 @@
+--- a/UI/Qt/Application.cpp
++++ b/UI/Qt/Application.cpp
+@@ -734,6 +734,7 @@
+ 
+     m_derpbird_values = make<DerpBirdValueHost>(*this);
+     m_derpbird_values->tabs.on_open = open_derpbird_script_tab;
++    m_derpbird_values->window_action = perform_derpbird_script_window_action;
+     m_derpbird_values->notifications.highlight = [](WebView::WebContentPage& page) {
+         for (auto* widget : QApplication::topLevelWidgets()) {
+             auto* window = as_if<BrowserWindow>(widget);

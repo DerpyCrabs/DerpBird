@@ -1,0 +1,29 @@
+--- a/UI/Qt/WebContentView.cpp
++++ b/UI/Qt/WebContentView.cpp
+@@ -52,6 +52,7 @@
+ #include <UI/Qt/SystemAppearance.h>
+ #include <UI/Qt/Theme.h>
+ #include <UI/Qt/WebContentView.h>
++#include <UI/Qt/SurfacePixelCoverage.h>
+ #ifdef LADYBIRD_HAS_WAYLAND_GPU_QUERY
+ #    include <UI/Qt/WaylandPageSurface.h>
+ #endif
+@@ -171,6 +172,8 @@
+     on_page_background_color_change = [this](Gfx::Color) {
+         update_iosurface_layer_background_color();
+     };
++#else
++    on_page_background_color_change = [this](Gfx::Color) { update(); };
+ #endif
+ 
+     QObject::connect(qGuiApp, &QGuiApplication::screenRemoved, this, [this](QScreen*) {
+@@ -1216,7 +1219,8 @@
+ #    ifdef LADYBIRD_QT_USE_VULKAN_WINDOW
+     // NB: Filling the part of the widget under the page's window would only touch memory that nobody sees. During a
+     //     resize, that is most of a window-sized buffer at every step.
+-    background -= rect_covered_by_page_window();
++    auto device_origin = QPointF(mapTo(window(), QPoint { 0, 0 })) * m_device_pixel_ratio;
++    background -= fully_covered_surface_pixels(rect_covered_by_page_window(), device_origin);
+ #    endif
+     for (auto const& rect : background)
+         painter.fillRect(rect, QColor(background_color.red(), background_color.green(), background_color.blue(), background_color.alpha()));

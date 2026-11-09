@@ -1,0 +1,587 @@
+--- a/Libraries/LibWeb/CSS/StyleEngineBridge.h
++++ b/Libraries/LibWeb/CSS/StyleEngineBridge.h
+@@ -114,6 +114,7 @@
+ u32 style_engine_last_pass_element(DocumentHost const*, BegunRead const*, StyleNodeID root, bool changed, u32 index);
+ u64 style_engine_animated_style_samples(DocumentHost const*, BegunRead const*, bool rebuilt_every_group, bool reset);
+ u32 style_engine_layer_index(DocumentHost const*, BegunRead const*, TreeScopeID tree_scope, u32 layer);
++u32 style_engine_layer_index_for_origin(DocumentHost const*, BegunRead const*, TreeScopeID tree_scope, u32 layer, u8 origin);
+ u64 style_engine_size_query_container_scan_visits(DocumentHost const*, BegunRead const*, bool reset);
+ u64 style_engine_ensure_random_base_value(DocumentHost const*, BegunRead const*, StyleNodeID node, ReadonlySpan<u16> name, bool element_shared);
+ }
+--- a/Libraries/LibWeb/CSS/StyleScope.cpp
++++ b/Libraries/LibWeb/CSS/StyleScope.cpp
+@@ -599,26 +599,31 @@
+ 
+ void StyleScope::publish_cascade_layer_order(StyleSheetState* pending_attachment)
+ {
+-    Vector<Parser::ValueParserFFI::NativeStyleSheet const*> sheets;
+-    // An adopted sheet is announced before ObservableArray stores it. Include that pending
+-    // attachment so its layer order crosses the same transaction boundary as its rules.
+-    for_each_stylesheet(CascadeOrigin::Author, [&](auto& sheet) {
+-        if (&sheet == pending_attachment)
+-            pending_attachment = nullptr;
+-        if (!sheet.native_media_list().matches())
+-            return;
+-        if (auto* shared_compiled_style_sheet = sheet.shared_compiled_style_sheet())
+-            sheets.append(shared_compiled_style_sheet->contents().native_sheet().handle());
+-        else
+-            sheets.append(sheet.native_sheet().handle());
+-    });
+-    if (pending_attachment && !pending_attachment->disabled() && pending_attachment->native_media_list().matches())
+-        sheets.append(pending_attachment->native_sheet().handle());
+-
+-    m_has_published_named_layer_order = Parser::ValueParserFFI::rust_style_sheet_publish_layer_order(
+-        sheets.data(), sheets.size(), document().style_computer().style_engine().host(),
+-        style_engine_tree_scope().value(), m_has_published_named_layer_order, &document(),
+-        [](void* document) { static_cast<DOM::Document*>(document)->flush_deferred_style_change_event(); });
++    // Layer names and order are local to an origin, even when their spellings
++    // coincide. Non-author sheets belong to the document scope.
++    for (auto origin : { CascadeOrigin::Author, CascadeOrigin::User, CascadeOrigin::UserAgent }) {
++        if (origin != CascadeOrigin::Author && !m_node->is_document())
++            continue;
++        Vector<Parser::ValueParserFFI::NativeStyleSheet const*> sheets;
++        auto* pending = origin == CascadeOrigin::Author ? pending_attachment : nullptr;
++        for_each_stylesheet(origin, [&](auto& sheet) {
++            if (&sheet == pending)
++                pending = nullptr;
++            if (!sheet.native_media_list().matches())
++                return;
++            if (auto* shared = sheet.shared_compiled_style_sheet())
++                sheets.append(shared->contents().native_sheet().handle());
++            else
++                sheets.append(sheet.native_sheet().handle());
++        });
++        if (pending && !pending->disabled() && pending->native_media_list().matches())
++            sheets.append(pending->native_sheet().handle());
++        auto index = static_cast<u8>(origin);
++        m_has_published_named_layer_order[index] = Parser::ValueParserFFI::rust_style_sheet_publish_layer_order(
++            sheets.data(), sheets.size(), document().style_computer().style_engine().host(),
++            style_engine_tree_scope().value(), index, m_has_published_named_layer_order[index], &document(),
++            [](void* document) { static_cast<DOM::Document*>(document)->flush_deferred_style_change_event(); });
++    }
+ }
+ 
+ // The `@keyframes` this scope defines, as the rule cache just built resolved them. The style computation resolves an
+@@ -761,9 +766,10 @@
+     auto const tree_scope = style_engine_tree_scope();
+     // NB: Asking the style engine for the index of a layer waits on it, and the predefined counter styles alone are
+     //     over a hundred rules in one layer, so each layer is asked for once.
+-    HashMap<u32, u32> layer_indices;
+-    auto layer_index = [&](u32 layer) {
+-        return layer_indices.ensure(layer, [&] { return StyleEngineFFI::style_engine_layer_index(style_engine.host(), &read, tree_scope, layer); });
++    HashMap<u64, u32> layer_indices;
++    auto layer_index = [&](u32 layer, CascadeOrigin origin) {
++        auto key = (static_cast<u64>(origin) << 32) | layer;
++        return layer_indices.ensure(key, [&] { return StyleEngineFFI::style_engine_layer_index_for_origin(style_engine.host(), &read, tree_scope, layer, static_cast<u8>(origin)); });
+     };
+     auto collect_counter_style_rules = [&](CSS::CascadeOrigin cascade_origin, CSS::StyleSheetState const& style_sheet) {
+         if (!style_sheet.native_media_list().matches())
+@@ -777,7 +783,7 @@
+                 .name = Utf16FlyString { rule.name() },
+                 .descriptors = rule.descriptors(),
+                 .origin = cascade_origin_precedence(cascade_origin),
+-                .layer = layer_index(layer),
++                .layer = layer_index(layer, cascade_origin),
+             });
+         });
+     };
+--- a/Libraries/LibWeb/CSS/StyleScope.h
++++ b/Libraries/LibWeb/CSS/StyleScope.h
+@@ -171,7 +171,7 @@
+     bool m_needs_counter_style_cache_update : 1 { true };
+     bool m_is_doing_counter_style_cache_update : 1 { false };
+     bool m_sheets_define_counter_styles : 1 { false };
+-    bool m_has_published_named_layer_order : 1 { false };
++    bool m_has_published_named_layer_order[4] {};
+     // Whether the style engine holds this scope's layer order and keyframes as the rule cache resolved them.
+     bool m_has_published_rule_cache : 1 { false };
+     u64 m_counter_style_environment_identity { 0 };
+--- a/Libraries/LibWeb/Rust/src/css/rule/compilation.rs
++++ b/Libraries/LibWeb/Rust/src/css/rule/compilation.rs
+@@ -1375,6 +1375,7 @@
+                 sheets.len(),
+                 host.host(),
+                 0,
++                0, // Author origin
+                 false,
+                 std::ptr::null_mut(),
+                 prepare,
+--- a/Libraries/LibWeb/Rust/src/css/style/boundary.rs
++++ b/Libraries/LibWeb/Rust/src/css/style/boundary.rs
+@@ -512,6 +512,7 @@
+         animated_style_samples(rebuilt_every_group: bool, reset: bool) -> u64 =>
+             engine.retained.live_counters.animated_samples(rebuilt_every_group, reset);
+         layer_index(tree_scope: TreeScopeID, layer: CascadeLayerID) -> u32;
++        layer_index_for_origin(tree_scope: TreeScopeID, layer: CascadeLayerID, origin: u8) -> u32;
+         size_query_container_scan_visits(reset: bool) -> u64;
+         ensure_random_base_value(node: Option<StyleNodeID>, name: FfiSpan<u16>, element_shared: bool) -> u64 => {
+             // SAFETY: The host lends the name for the call.
+--- a/Libraries/LibWeb/Rust/src/css/style/bridge.rs
++++ b/Libraries/LibWeb/Rust/src/css/style/bridge.rs
+@@ -1666,9 +1666,11 @@
+     let mut functions = std::mem::take(&mut engine.document_functions);
+     // SAFETY: The host lends the custom functions the inputs name for this call.
+     unsafe {
+-        functions.take_in(&mut computation_inputs, &engine.document_media, |scope, layer| {
+-            engine.layer_index(scope, layer)
+-        });
++        functions.take_in(
++            &mut computation_inputs,
++            &engine.document_media,
++            |scope, layer, origin| engine.layer_index_for_origin(scope, layer, origin),
++        );
+     }
+     engine.document_functions = functions;
+     engine.custom_property_registrations_changed = engine
+--- a/Libraries/LibWeb/Rust/src/css/style/custom_property_cascade.rs
++++ b/Libraries/LibWeb/Rust/src/css/style/custom_property_cascade.rs
+@@ -136,7 +136,7 @@
+         &mut self,
+         inputs: &mut bridge::FfiDocumentStyleComputationInputs,
+         media: &DocumentMediaSnapshot,
+-        layer_index: impl Fn(TreeScopeID, CascadeLayerID) -> u32,
++        layer_index: impl Fn(TreeScopeID, CascadeLayerID, u8) -> u32,
+     ) {
+         self.definitions.clear();
+         self.visibilities.clear();
+@@ -170,7 +170,15 @@
+             };
+             let precedence = (
+                 entry.origin,
+-                layer_index(TreeScopeID(entry.tree_scope), CascadeLayerID(entry.layer)),
++                layer_index(
++                    TreeScopeID(entry.tree_scope),
++                    CascadeLayerID(entry.layer),
++                    match entry.origin {
++                        0 => CascadeOrigin::UserAgent as u8,
++                        1 => CascadeOrigin::User as u8,
++                        _ => CascadeOrigin::Author as u8,
++                    },
++                ),
+             );
+             let key = (entry.scope, function.signature.name.units());
+             if winners.get(&key).is_none_or(|&(winner, _)| winner <= precedence) {
+@@ -1370,7 +1378,7 @@
+             ..Default::default()
+         };
+         let mut snapshot = DocumentFunctionSnapshot::default();
+-        unsafe { snapshot.take_in(&mut inputs, &DocumentMediaSnapshot::default(), |_, layer| layer.0) };
++        unsafe { snapshot.take_in(&mut inputs, &DocumentMediaSnapshot::default(), |_, layer, _| layer.0) };
+         assert_eq!(inputs, bridge::FfiDocumentStyleComputationInputs::default());
+         let reached = |tree_scope| {
+             snapshot
+--- a/Libraries/LibWeb/Rust/src/css/style/pipeline/rule_store.rs
++++ b/Libraries/LibWeb/Rust/src/css/style/pipeline/rule_store.rs
+@@ -418,7 +418,7 @@
+     sheets_by_scope: Column<Vec<SheetID>>,
+     /// Qualified layer-name ranks in each tree scope. Important declarations reverse the rank
+     /// through the cascade-priority operator rather than maintaining a second order.
+-    layer_ranks: Column<Option<HashMap<CascadeLayerID, u32>>>,
++    layer_ranks: Column<[Option<HashMap<CascadeLayerID, u32>>; 4]>,
+ 
+     scopes_using_document_sheets: BitColumn,
+     /// The `@scope` levels the scoped style rules are inside, by the scope their versions name,
+@@ -510,8 +510,14 @@
+                 .sum::<usize>();
+         let sheets_by_scope =
+             self.sheets_by_scope.heap_size() + self.sheets_by_scope.iter().map(vec_bytes).sum::<usize>();
+-        let layer_ranks =
+-            self.layer_ranks.heap_size() + self.layer_ranks.iter().flatten().map(map_bytes).sum::<usize>();
++        let layer_ranks = self.layer_ranks.heap_size()
++            + self
++                .layer_ranks
++                .iter()
++                .flatten()
++                .flatten()
++                .map(map_bytes)
++                .sum::<usize>();
+         sheets
+             + self.rules.heap_size(sizer, |_, _| 0)
+             + vec_bytes(&self.rule_children)
+@@ -552,7 +558,7 @@
+                 atoms.extend(leased.iter().copied());
+             }
+         }
+-        for ranks in self.layer_ranks.iter().flatten() {
++        for ranks in self.layer_ranks.iter().flatten().flatten() {
+             visited += u64::try_from(ranks.len()).expect("layer rank count exceeds u64");
+             atoms.extend(
+                 ranks
+@@ -1167,45 +1173,67 @@
+     }
+ 
+     #[must_use]
+-    pub fn layer_ranks_match(&self, scope: TreeScopeID, ranks: &HashMap<CascadeLayerID, u32>) -> bool {
++    pub fn layer_ranks_match(&self, scope: TreeScopeID, origin: u8, ranks: &HashMap<CascadeLayerID, u32>) -> bool {
+         self.layer_ranks
+             .get(scope.0 as usize)
++            .and_then(|origins| origins.get(origin as usize))
+             .and_then(Option::as_ref)
+             .map_or(ranks.is_empty(), |current| current == ranks)
+     }
+ 
+-    pub(crate) fn set_layer_ranks(&mut self, scope: TreeScopeID, ranks: HashMap<CascadeLayerID, u32>) -> bool {
++    pub(crate) fn set_layer_ranks(
++        &mut self,
++        scope: TreeScopeID,
++        origin: u8,
++        ranks: HashMap<CascadeLayerID, u32>,
++    ) -> bool {
+         let index = scope.0 as usize;
+         self.layer_ranks.ensure(index);
+-        let initialized = self.layer_ranks[index].is_some();
+-        if !initialized && ranks.is_empty() {
++        let current = &mut self.layer_ranks[index][origin as usize];
++        if current.is_none() && ranks.is_empty() {
+             return false;
+         }
+-        if self.layer_ranks[index].as_ref() == Some(&ranks) {
++        if current.as_ref() == Some(&ranks) {
+             return false;
+         }
+-        self.layer_ranks[index] = Some(ranks);
+-
++        *current = Some(ranks);
+         true
+     }
+ 
+     #[must_use]
++    #[cfg(test)]
+     pub fn layer_order_is_initialized(&self, scope: TreeScopeID) -> bool {
+-        self.layer_ranks.get(scope.0 as usize).is_some_and(Option::is_some)
+-    }
+-
+-    /// The comparable rank of a layer. A topology change rewrites these ranks without touching any
+-    /// rule that references the layer.
++        self.layer_order_is_initialized_for_origin(scope, CascadeOrigin::Author as u8)
++    }
++    #[must_use]
++    pub fn layer_order_is_initialized_for_origin(&self, scope: TreeScopeID, origin: u8) -> bool {
++        self.layer_ranks
++            .get(scope.0 as usize)
++            .and_then(|origins| origins.get(origin as usize))
++            .is_some_and(Option::is_some)
++    }
++
+     #[must_use]
+     pub fn layer_rank(&self, scope: TreeScopeID, layer: CascadeLayerID) -> u64 {
+         u64::from(self.layer_index(scope, layer))
+     }
+-
+-    /// The dense rank C++ cascade consumers use. The implicit outer layer and an as-yet undeclared
+-    /// name sort after every named layer in the scope.
++    #[must_use]
++    pub fn layer_rank_for_origin(&self, scope: TreeScopeID, layer: CascadeLayerID, origin: u8) -> u64 {
++        u64::from(self.layer_index_for_origin(scope, layer, origin))
++    }
++
+     #[must_use]
+     pub fn layer_index(&self, scope: TreeScopeID, layer: CascadeLayerID) -> u32 {
+-        let Some(ranks) = self.layer_ranks.get(scope.0 as usize).and_then(Option::as_ref) else {
++        self.layer_index_for_origin(scope, layer, CascadeOrigin::Author as u8)
++    }
++    #[must_use]
++    pub fn layer_index_for_origin(&self, scope: TreeScopeID, layer: CascadeLayerID, origin: u8) -> u32 {
++        let Some(ranks) = self
++            .layer_ranks
++            .get(scope.0 as usize)
++            .and_then(|origins| origins.get(origin as usize))
++            .and_then(Option::as_ref)
++        else {
+             return 0;
+         };
+         if layer != CascadeLayerID::UNLAYERED
+@@ -1217,9 +1245,10 @@
+     }
+ 
+     #[must_use]
+-    pub fn layer_ranks(&self, scope: TreeScopeID) -> HashMap<CascadeLayerID, u32> {
++    pub fn layer_ranks(&self, scope: TreeScopeID, origin: u8) -> HashMap<CascadeLayerID, u32> {
+         self.layer_ranks
+             .get(scope.0 as usize)
++            .and_then(|origins| origins.get(origin as usize))
+             .and_then(Option::as_ref)
+             .cloned()
+             .unwrap_or_default()
+@@ -1571,8 +1600,11 @@
+     /// The parser publishes qualified name identities rather than ranks. This table is the one
+     /// place that derives ranks, so shadow scopes can order the same spelling independently.
+     pub fn set_layer_order(&mut self, scope: TreeScopeID, layers: &[CascadeLayerID]) -> bool {
++        self.set_layer_order_for_origin(scope, layers, CascadeOrigin::Author as u8)
++    }
++    pub fn set_layer_order_for_origin(&mut self, scope: TreeScopeID, layers: &[CascadeLayerID], origin: u8) -> bool {
+         let ranks = Self::layer_ranks_in_order(layers);
+-        self.set_layer_ranks(scope, ranks)
++        self.set_layer_ranks(scope, origin, ranks)
+     }
+ }
+ 
+--- a/Libraries/LibWeb/Rust/src/css/style/pipeline/rule_store/staging.rs
++++ b/Libraries/LibWeb/Rust/src/css/style/pipeline/rule_store/staging.rs
+@@ -132,7 +132,7 @@
+     rule_in_a_layer: StagedField<RuleID, bool>,
+     rule_gated_by_container_query: StagedField<RuleID, bool>,
+     rule_liveness: StagedField<RuleID, bool>,
+-    layer_orders: StagedField<TreeScopeID, HashMap<CascadeLayerID, u32>>,
++    layer_orders: StagedField<(TreeScopeID, u8), HashMap<CascadeLayerID, u32>>,
+     scopes_using_document_sheets: StagedField<TreeScopeID, bool>,
+     sheets_in_scope: StagedField<TreeScopeID, Vec<SheetID>>,
+     sheet_rule_replacements: Column<Option<SheetRuleReplacement>>,
+@@ -271,33 +271,45 @@
+     }
+ 
+     /// Put the qualified layer names in the order one tree scope declares them in.
++    #[cfg(test)]
+     pub fn set_layer_order(&mut self, scope: TreeScopeID, layers: &[CascadeLayerID]) {
++        self.set_layer_order_for_origin(scope, layers, CascadeOrigin::Author as u8);
++    }
++    pub fn set_layer_order_for_origin(&mut self, scope: TreeScopeID, layers: &[CascadeLayerID], origin: u8) {
+         let ranks = RuleStore::layer_ranks_in_order(layers);
+-        let pending_order = self.host.program_staging.layer_orders.after(scope);
++        let pending_order = self.host.program_staging.layer_orders.after((scope, origin));
+         if pending_order.map_or_else(
+-            || self.retained.rules.layer_ranks_match(scope, &ranks),
++            || self.retained.rules.layer_ranks_match(scope, origin, &ranks),
+             |pending| pending == &ranks,
+         ) {
+             return;
+         }
+-        self.host
+-            .program_staging
+-            .layer_orders
+-            .stage(scope, || self.retained.rules.layer_ranks(scope), ranks);
++        self.host.program_staging.layer_orders.stage(
++            (scope, origin),
++            || self.retained.rules.layer_ranks(scope, origin),
++            ranks,
++        );
+     }
+ 
+     /// The dense layer rank consumed by the C++ property cascade and non-style rule lookup.
+     #[must_use]
+     pub fn layer_index(&self, scope: TreeScopeID, layer: CascadeLayerID) -> u32 {
+-        self.host.program_staging.layer_orders.after(scope).map_or_else(
+-            || self.retained.rules.layer_index(scope, layer),
+-            |ranks| {
+-                ranks
+-                    .get(&layer)
+-                    .copied()
+-                    .unwrap_or_else(|| u32::try_from(ranks.len()).expect("cascade layer count exhausted"))
+-            },
+-        )
++        self.layer_index_for_origin(scope, layer, CascadeOrigin::Author as u8)
++    }
++    pub fn layer_index_for_origin(&self, scope: TreeScopeID, layer: CascadeLayerID, origin: u8) -> u32 {
++        self.host
++            .program_staging
++            .layer_orders
++            .after((scope, origin))
++            .map_or_else(
++                || self.retained.rules.layer_index_for_origin(scope, layer, origin),
++                |ranks| {
++                    ranks
++                        .get(&layer)
++                        .copied()
++                        .unwrap_or_else(|| u32::try_from(ranks.len()).expect("cascade layer count exhausted"))
++                },
++            )
+     }
+ 
+     /// The declaration block `rule` holds, as this transaction staged it.
+@@ -588,11 +600,15 @@
+         changes.sheets.sort_unstable();
+         changes.sheets.dedup();
+ 
+-        changes.layered_scopes = moved(staging.layer_orders.pairs()).collect();
++        changes.layered_scopes = moved(staging.layer_orders.pairs()).map(|(scope, _)| scope).collect();
++        changes.layered_scopes.sort_unstable();
++        changes.layered_scopes.dedup();
+         // NB: A scope's first layer order places no layered rule that was there before it.
+-        changes
+-            .reordered_scopes
+-            .extend(moved(staging.layer_orders.pairs()).filter(|&scope| program.layer_order_is_initialized(scope)));
++        changes.reordered_scopes.extend(
++            moved(staging.layer_orders.pairs())
++                .filter(|&(scope, origin)| program.layer_order_is_initialized_for_origin(scope, origin))
++                .map(|(scope, _)| scope),
++        );
+         changes.reordered_scopes.sort_unstable();
+         changes.reordered_scopes.dedup();
+         changes
+@@ -655,8 +671,8 @@
+         let layer_orders = self.host.program_staging.layer_orders.take_dirty();
+         let scopes = self.host.program_staging.scopes_using_document_sheets.take_dirty();
+         if !layer_orders.is_empty() || !scopes.is_empty() {
+-            for (scope, ranks) in layer_orders {
+-                self.retained.rules.set_layer_ranks(scope, ranks);
++            for ((scope, origin), ranks) in layer_orders {
++                self.retained.rules.set_layer_ranks(scope, origin, ranks);
+             }
+             for (scope, uses_document_sheets) in scopes {
+                 if uses_document_sheets {
+--- a/Libraries/LibWeb/Rust/src/css/style/pipeline/rules.rs
++++ b/Libraries/LibWeb/Rust/src/css/style/pipeline/rules.rs
+@@ -2038,7 +2038,9 @@
+             .get(program.sheets_in_scope(scope))?
+             .iter()
+             .copied()
+-            .find(|group| program.layer_ranks_match(scope, &self.groups[group].layer_ranks))
++            .find(|group| {
++                program.layer_ranks_match(scope, CascadeOrigin::Author as u8, &self.groups[group].layer_ranks)
++            })
+     }
+ 
+     /// Have the shadow tree `scope`, which is in no group, join the group of the trees alike, or a
+@@ -2064,7 +2066,7 @@
+                 index: ScopeIndex::default(),
+                 scopes: smallvec::smallvec![scope],
+                 sheets,
+-                layer_ranks: program.layer_ranks(scope),
++                layer_ranks: program.layer_ranks(scope, CascadeOrigin::Author as u8),
+             },
+         );
+         self.group_of_scope.insert(scope, group);
+@@ -2120,7 +2122,7 @@
+         let held = self.groups.get_mut(&group).expect("a scope's group is held");
+         let sheets: Box<[SheetID]> = program.sheets_in_scope(scope).into();
+         let previous = std::mem::replace(&mut held.sheets, sheets.clone());
+-        held.layer_ranks = program.layer_ranks(scope);
++        held.layer_ranks = program.layer_ranks(scope, CascadeOrigin::Author as u8);
+         if let Some(groups) = self.groups_by_sheets.get_mut(&previous) {
+             groups.retain(|&mut other| other != group);
+             if groups.is_empty() {
+@@ -2718,7 +2720,7 @@
+         let placement = self.entries.place(sheet, group, version.layer, || EntryPlacement {
+             origin: placement.origin,
+             group,
+-            layer_rank: program.layer_rank(layer_scope, version.layer),
++            layer_rank: program.layer_rank_for_origin(layer_scope, version.layer, placement.origin as u8),
+             sheet_rank: placement.sheet_rank,
+             layer: version.layer,
+         });
+@@ -2954,7 +2956,9 @@
+             let sheets_in_scope = program.sheets_in_scope(scope);
+             if let Some(group) = self.group_of_scope.get(&scope).copied() {
+                 let held = &self.groups[&group];
+-                if *held.sheets == *sheets_in_scope && program.layer_ranks_match(scope, &held.layer_ranks) {
++                if *held.sheets == *sheets_in_scope
++                    && program.layer_ranks_match(scope, CascadeOrigin::Author as u8, &held.layer_ranks)
++                {
+                     if reordered {
+                         reordered_groups.push(group);
+                     }
+@@ -3155,7 +3159,8 @@
+                 // The entries take the ranks of their sheet and layers where they are placed.
+                 self.entries.rank_placements_of(sheet, group, |placement| {
+                     placement.sheet_rank = sheet_rank;
+-                    placement.layer_rank = program.layer_rank(layer_scope, placement.layer);
++                    placement.layer_rank =
++                        program.layer_rank_for_origin(layer_scope, placement.layer, placement.origin as u8);
+                 });
+             }
+             // NB: A sheet whose rank was only relabeled keeps its order against the others.
+--- a/Libraries/LibWeb/Rust/src/css/style/rule_writes.rs
++++ b/Libraries/LibWeb/Rust/src/css/style/rule_writes.rs
+@@ -223,7 +223,11 @@
+     /// Whether the conditions of each rule hold.
+     RuleConditions(Box<[(u64, bool)]>),
+     /// The order of the cascade layers of a tree scope, by qualified name, the unnamed outer layer as an empty one.
+-    LayerOrder { tree_scope: u32, names: Vec<Vec<u16>> },
++    LayerOrder {
++        tree_scope: u32,
++        origin: u8,
++        names: Vec<Vec<u16>>,
++    },
+ }
+ 
+ impl RuleWrite {
+@@ -271,7 +275,11 @@
+                     }
+                 }
+             }
+-            Self::LayerOrder { tree_scope, names } => {
++            Self::LayerOrder {
++                tree_scope,
++                origin,
++                names,
++            } => {
+                 let layers: Vec<_> = names
+                     .iter()
+                     .map(|name| {
+@@ -282,7 +290,7 @@
+                         })
+                     })
+                     .collect();
+-                engine.set_layer_order(TreeScopeID(tree_scope), &layers);
++                engine.set_layer_order_for_origin(TreeScopeID(tree_scope), &layers, origin);
+             }
+         }
+     }
+--- a/Libraries/LibWeb/Rust/src/css/style/tests.rs
++++ b/Libraries/LibWeb/Rust/src/css/style/tests.rs
+@@ -1842,3 +1842,33 @@
+         assert_staged_hover_facts(&engine, &nodes, expected);
+     }
+ }
++
++#[test]
++fn layer_orders_are_independent_per_origin_across_transactions() {
++    let (mut engine, _, _) = authoring_engine();
++    let scope = TreeScopeID::DOCUMENT;
++    let first = CascadeLayerID(1);
++    let second = CascadeLayerID(2);
++    let user = CascadeOrigin::User as u8;
++    let ua = CascadeOrigin::UserAgent as u8;
++    engine.set_layer_order(scope, &[first, second]);
++    engine.set_layer_order_for_origin(scope, &[second, first], user);
++    engine.set_layer_order_for_origin(scope, &[first, second], ua);
++    assert_eq!(engine.layer_index(scope, first), 0);
++    assert_eq!(engine.layer_index_for_origin(scope, first, user), 1);
++    let transaction = engine.take_transaction();
++    engine.release_transaction(transaction);
++    assert_eq!(engine.rules.layer_index_for_origin(scope, first, user), 1);
++    engine.set_layer_order_for_origin(scope, &[first, second], user);
++    assert_eq!(engine.layer_index(scope, first), 0);
++    assert_eq!(engine.layer_index_for_origin(scope, first, user), 0);
++    let transaction = engine.take_transaction();
++    assert_eq!(transaction.rule_changes.reordered_scopes, vec![scope]);
++    engine.release_transaction(transaction);
++    engine.set_layer_order_for_origin(scope, &[], user);
++    let transaction = engine.take_transaction();
++    engine.release_transaction(transaction);
++    assert_eq!(engine.rules.layer_index(scope, second), 1);
++    assert_eq!(engine.rules.layer_index_for_origin(scope, second, ua), 1);
++    assert_eq!(engine.rules.layer_index_for_origin(scope, second, user), 0);
++}
+--- a/Libraries/LibWeb/Rust/src/css/style_sheet.rs
++++ b/Libraries/LibWeb/Rust/src/css/style_sheet.rs
+@@ -648,7 +648,7 @@
+     result
+ }
+ 
+-/// Publish the layer order of the host's ordered, active author sheets.
++/// Publish one cascade origin's layer order independently of the other origins.
+ ///
+ /// # Safety
+ /// Sheets must be live, and `host` a live document host, on its document's thread. prepare must
+@@ -659,6 +659,7 @@
+     count: usize,
+     host: &crate::render_state::DocumentHost,
+     tree_scope: u32,
++    origin: u8,
+     previously_had_layers: bool,
+     context: *mut c_void,
+     prepare: unsafe extern "C" fn(*mut c_void),
+@@ -674,7 +675,11 @@
+     // must clear the engine's old ranks.
+     if has_layers || previously_had_layers {
+         unsafe { prepare(context) };
+-        host.write_rules(crate::css::style::rule_writes::RuleWrite::LayerOrder { tree_scope, names });
++        host.write_rules(crate::css::style::rule_writes::RuleWrite::LayerOrder {
++            tree_scope,
++            origin,
++            names,
++        });
+     }
+     has_layers
+ }

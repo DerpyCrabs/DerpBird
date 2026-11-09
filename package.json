@@ -1,0 +1,43 @@
+{
+  "name": "derpbird",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "check": "tsc --noEmit",
+    "test": "bun test ./tests/*.test.ts",
+    "build:engine": "bun run prepare:engine && python3 scripts/engine.py build --jobs 4",
+    "test:ui:dom": "bun run build && bun scripts/check-ui.ts",
+    "prepare:engine": "bun run build && python3 scripts/prepare-engine.py",
+    "start": "python3 scripts/run.py",
+    "test:overlay": "python3 -m unittest discover -s tests/build -v",
+    "test:native:unit": "cmake -S tests/native -B artifacts/native-tests -G Ninja && cmake --build artifacts/native-tests && ctest --test-dir artifacts/native-tests --output-on-failure",
+    "test:native:engine": "cmake -S tests/native -B artifacts/native-engine-tests -G Ninja -DDERPBIRD_ENGINE_BUILD=\"$PWD/vendor/ladybird/Build/release\" && cmake --build artifacts/native-engine-tests && ctest --test-dir artifacts/native-engine-tests --output-on-failure",
+    "test:shell:engine": "vendor/ladybird/Build/release/bin/TestLibWebView --suite TestDerpBirdShell",
+    "test:styles:engine": "vendor/ladybird/Build/release/bin/TestLibWebView --suite TestDerpBirdStyles && python3 scripts/test-document-styles.py",
+    "test:native:regressions": "python3 scripts/test-native-regressions.py",
+    "test:styles:bundle": "bun run build && bun scripts/test-style-worker.ts"
+  },
+  "dependencies": {
+    "@effectweb/lucide": "file:../EffectWeb/packages/lucide",
+    "@effectweb/shadcn": "file:../EffectWeb/packages/shadcn",
+    "colorjs.io": "0.7.1",
+    "effect": "4.1.0",
+    "effectweb": "file:../EffectWeb/packages/runtime",
+    "less": "4.9.1",
+    "postcss": "8.5.32",
+    "stylus-lang-bundle": "github:openstyles/stylus-lang-bundle#ad941359ffd800eb6a16fa8459902573e7d5e240",
+    "usercss-meta": "0.12.0"
+  },
+  "devDependencies": {
+    "@effectweb/compiler": "file:../EffectWeb/packages/compiler",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/bun": "1.4.4",
+    "tailwindcss": "4.3.3",
+    "typescript": "7.0.2",
+    "vite": "8.3.5",
+    "happy-dom": "21.0.4"
+  }
+}

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<script src="include.js"></script>
+<script>
+test(() => {
+    // Like injected author sheets, document themes do not pierce shadow roots.
+    const readers = [];
+    for (const withSheet of [false, true]) {
+        const host = document.createElement('div');
+        document.body.append(host);
+        const root = host.attachShadow({mode: 'open'});
+        const reader = document.createElement('span');
+        reader.className = 'reader';
+        reader.style.color = 'rgb(1, 2, 3)';
+        root.append(reader);
+        if (withSheet) {
+            const sheet = new CSSStyleSheet();
+            sheet.replaceSync('.reader { width: 10px }');
+            root.adoptedStyleSheets = [sheet];
+        }
+        readers.push(reader);
+    }
+    const report = label => println(label + ': ' + readers.map(reader => getComputedStyle(reader).color).join(' / '));
+    report('before');
+    const sections = [{conditions: [{type: 'url', value: location.href + '#on'}], css: '.reader { color: rgb(4, 5, 6) !important }'}];
+    internals.setDerpbirdUserStyles(JSON.stringify(sections));
+    history.replaceState(null, '', '#on');
+    report('inside');
+    history.replaceState(null, '', '#off');
+    report('outside');
+    history.replaceState(null, '', '#on');
+    report('returned');
+    internals.setDerpbirdUserStyles('[]');
+    report('removed');
+});
+</script>

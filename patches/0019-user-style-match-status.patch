@@ -1,0 +1,87 @@
+--- a/Libraries/LibWeb/DOM/Document.cpp
++++ b/Libraries/LibWeb/DOM/Document.cpp
+@@ -1180,17 +1180,36 @@
+         if (!is_decoded_svg()) {
+             DerpBirdStyleMatchBudget budget;
+             for (auto const& section : page().derpbird_user_styles()) {
++                auto skipped_before = budget.skipped_conditions;
+                 if (section.matches(url(), budget))
+                     m_derpbird_user_styles->append(section.css);
++                if (budget.skipped_conditions != skipped_before && !section.source_id.is_empty()
++                    && !m_derpbird_skipped_style_ids.contains_slow(section.source_id))
++                    m_derpbird_skipped_style_ids.append(section.source_id);
+             }
++            m_derpbird_skipped_style_conditions = budget.skipped_conditions;
+         }
+     }
+     return *m_derpbird_user_styles;
+ }
+ 
++String Document::derpbird_user_style_status() const
++{
++    JsonObject status;
++    status.set("url"sv, url().serialize());
++    status.set("evaluated"sv, m_derpbird_user_styles.has_value());
++    status.set("skippedConditions"sv, m_derpbird_skipped_style_conditions);
++    JsonArray ids;
++    for (auto const& id : m_derpbird_skipped_style_ids) ids.must_append(id);
++    status.set("styleIds"sv, move(ids));
++    return MUST(String::from_utf8(JsonValue(move(status)).serialized()));
++}
++
+ void Document::invalidate_derpbird_user_styles()
+ {
+     m_derpbird_user_styles.clear();
++    m_derpbird_skipped_style_ids.clear();
++    m_derpbird_skipped_style_conditions = 0;
+ }
+ 
+ bool Document::content_blocking_enabled() const
+--- a/Libraries/LibWeb/DOM/Document.h
++++ b/Libraries/LibWeb/DOM/Document.h
+@@ -1867,6 +1867,7 @@
+     bool content_blocking_enabled() const;
+     Vector<Utf16String> const& derpbird_user_styles();
+     void invalidate_derpbird_user_styles();
++    String derpbird_user_style_status() const;
+     Utf16String const& content_blocker_style_sheet();
+     void invalidate_content_blocker_style_sheet();
+     bool content_blocker_style_sheet_may_need_refresh_for_class_or_id(Utf16FlyString const* id, ReadonlySpan<Utf16FlyString> class_names);
+@@ -2519,6 +2520,8 @@
+     Optional<u64> m_animation_keyframes_published_generation;
+ 
+     Optional<Vector<Utf16String>> m_derpbird_user_styles;
++    Vector<String> m_derpbird_skipped_style_ids;
++    u32 m_derpbird_skipped_style_conditions { 0 };
+     Optional<Utf16String> m_content_blocker_style_sheet;
+     // Class/id tokens already covered by the cached content blocker stylesheet.
+     HashTable<Utf16FlyString> m_content_blocker_style_sheet_checked_classes;
+--- a/Libraries/LibWebCommon/WebView/PageInfo.h
++++ b/Libraries/LibWebCommon/WebView/PageInfo.h
+@@ -17,6 +17,7 @@
+     StackingContextTree = 1 << 5,
+     AccessibilityTree = 1 << 6,
+     DisplayList = 1 << 7,
++    DerpBirdStyleStatus = 1 << 8,
+ };
+ 
+ AK_ENUM_BITWISE_OPERATORS(PageInfoType);
+--- a/Services/WebContent/ConnectionFromClient.cpp
++++ b/Services/WebContent/ConnectionFromClient.cpp
+@@ -2830,6 +2830,16 @@
+ 
+     StringBuilder builder;
+ 
++    if (type == WebView::PageInfoType::DerpBirdStyleStatus) {
++        if (!page->page().has_local_traversable()) {
++            async_did_get_internal_page_info(page_id, type, {});
++            return;
++        }
++        if (auto doc = page->page().local_traversable()->active_document())
++            builder.append(doc->derpbird_user_style_status());
++    }
++
++
+     if (has_flag(type, WebView::PageInfoType::Text)) {
+         append_page_text(page->page(), builder);
+     }

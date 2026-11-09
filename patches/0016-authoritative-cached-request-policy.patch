@@ -1,0 +1,125 @@
+--- a/Libraries/LibWeb/Fetch/Fetching/Fetching.cpp
++++ b/Libraries/LibWeb/Fetch/Fetching/Fetching.cpp
+@@ -2580,8 +2580,13 @@
+             stored_response = select_response_from_cache(*http_cache, *http_request);
+ 
+             // 2. If storedResponse is non-null, then:
++            auto& page = Bindings::principal_host_defined_page(realm);
++            Optional<URL::URL> policy_top_level_url;
++            if (auto const& reserved = http_request->reserved_client_snapshot()) policy_top_level_url = reserved->top_level_creation_url;
++            else if (auto const& client = http_request->client_snapshot()) policy_top_level_url = client->top_level_creation_url;
+             if (http_request->derpbird_popup_source.has_value()
+-                || DerpBirdWebRequestRegistration::has_rules(Bindings::principal_host_defined_page(realm))) stored_response = nullptr;
++                || DerpBirdWebRequestRegistration::has_rules(page)
++                || (page.content_blocking_enabled_for_url(policy_top_level_url) && ContentBlocker::the().has_request_header_filters())) stored_response = nullptr;
+             if (stored_response) {
+                 // WebContent's optional memory cache bypasses ResourceLoader and
+                 // RequestServer; apply the same response condition before using it.
+@@ -2598,11 +2603,6 @@
+                     auto direct = ContentBlocker::the().check(http_request->current_url(), source, type, http_request->method(), top_level_url);
+                     if (direct.blocked && !direct.substitute.has_value()) {
+                         page.client().page_did_block_resource(http_request->current_url(), "Request (cache)"sv, direct.matched_rule);
+-                        return PendingResponse::create(fetch_params, Infrastructure::Response::network_error("Cached request blocked by content filter"_string));
+-                    }
+-                    auto request_headers = ContentBlocker::the().check_request_headers(http_request->current_url(), source, type, http_request->method(), *http_request->header_list(), top_level_url);
+-                    if (request_headers.blocked) {
+-                        page.client().page_did_block_resource(http_request->current_url(), "Request header (cache)"sv, request_headers.matched_rule);
+                         return PendingResponse::create(fetch_params, Infrastructure::Response::network_error("Cached request blocked by content filter"_string));
+                     }
+                     auto canonical = ContentBlocker::the().check_canonical_hosts(http_request->current_url(), source, type, http_request->method(), stored_response->header_list()->canonical_host_names(), top_level_url);
+--- a/Libraries/LibWeb/Loader/ResourceLoader.cpp
++++ b/Libraries/LibWeb/Loader/ResourceLoader.cpp
+@@ -633,16 +633,8 @@
+         return nullptr;
+     }
+ 
+-    if (!request.page() || request.page()->content_blocking_enabled_for_url(request.top_level_creation_url())) {
+-        auto type = ContentBlocker::resource_type_from_fetch_metadata(request.destination(), request.initiator_type(), request.request_mode());
+-        if (request.derpbird_subframe_navigation) type = ContentBlocker::ResourceType::Subdocument;
+-        auto decision = ContentBlocker::the().check_request_headers(url, request.source_url().value_or(url), type, request.method(), request.headers(), request.top_level_creation_url());
+-        if (decision.blocked) {
+-            if (auto page = request.page()) page->client().page_did_block_resource(url, "Request header"sv, decision.matched_rule);
+-            on_complete->function()(false, {}, "Request blocked by header filter"sv);
+-            return nullptr;
+-        }
+-    }
++    // RequestServer evaluates header rules after cookies, validators and
++    // generated headers exist, including disk-cache hits.
+     auto protocol_request = start_network_request(request, transfer_lease);
+     if (!protocol_request) {
+         on_complete->function()(false, {}, "Failed to start network request"sv);
+--- a/Services/RequestServer/Request.cpp
++++ b/Services/RequestServer/Request.cpp
+@@ -639,7 +639,7 @@
+         m_appended_cookie_header = true;
+     }
+ 
+-    transition_to_state(State::Fetch);
++    transition_to_state(m_request_policy_for_cache ? State::ReadCache : State::Fetch);
+     return true;
+ }
+ 
+@@ -899,6 +899,7 @@
+     m_response_storage_state = ResponseStorageState::NotStarted;
+     m_response_policy_done = false;
+     m_request_policy_done = false;
++    m_request_policy_for_cache = false;
+     m_request_policy_pending = false;
+     ++m_request_policy_generation;
+     if (m_request_policy_timer) m_request_policy_timer->stop();
+@@ -1209,6 +1210,17 @@
+ 
+ void Request::handle_read_cache_state()
+ {
++    // Cached responses still require policy against current cookies and the
++    // generated request headers. Do not evaluate incomplete renderer headers.
++    if ((m_query_response_policy & 4) && !m_request_policy_done) {
++        if (!m_request_policy_for_cache) {
++            m_request_policy_for_cache = true;
++            transition_to_state(State::RetrieveCookie);
++        } else if (!m_request_policy_pending) {
++            query_request_headers();
++        }
++        return;
++    }
+     if (!m_cache_canonical_policy_done) {
+         m_cache_canonical_policy_done = true;
+         m_canonical_host_names = m_cache_entry_reader->canonical_host_names();
+@@ -1542,7 +1554,7 @@
+ {
+     m_request_policy_done = false;
+     if (m_include_credentials == HTTP::Cookie::IncludeCredentials::No) {
+-        transition_to_state(State::Fetch);
++        transition_to_state(m_request_policy_for_cache ? State::ReadCache : State::Fetch);
+         return;
+     }
+ 
+@@ -1620,7 +1632,7 @@
+ 
+ void Request::complete_request_header_policy(u64 generation, bool allowed)
+ {
+-    if (!m_request_policy_pending || generation != m_request_policy_generation || m_state != State::Fetch) return;
++    if (!m_request_policy_pending || generation != m_request_policy_generation || (m_state != State::Fetch && m_state != State::ReadCache)) return;
+     m_request_policy_pending = false;
+     m_request_policy_timer->stop();
+     if (!allowed) {
+@@ -1629,7 +1641,8 @@
+         return;
+     }
+     m_request_policy_done = true;
+-    handle_fetch_state();
++    if (m_state == State::ReadCache) handle_read_cache_state();
++    else handle_fetch_state();
+ }
+ 
+ void Request::handle_fetch_state()
+--- a/Services/RequestServer/Request.h
++++ b/Services/RequestServer/Request.h
+@@ -378,6 +378,7 @@
+     u64 m_request_policy_generation { 0 };
+     bool m_request_policy_pending { false };
+     bool m_request_policy_done { false };
++    bool m_request_policy_for_cache { false };
+     RefPtr<Core::Timer> m_request_policy_timer;
+     u64 m_response_policy_generation { 0 };
+     Function<void()> m_response_policy_continuation;

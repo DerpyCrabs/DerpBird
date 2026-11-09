@@ -1,0 +1,79 @@
+--- a/Libraries/LibWebView/Application.cpp
++++ b/Libraries/LibWebView/Application.cpp
+@@ -885,10 +885,45 @@
+ ErrorOr<bool> Application::load_content_blocker_lists()
+ {
+     auto custom_filters = m_settings->custom_content_blocker_filters();
++    // Policy toggles (enabled/disabled sites) do not change filter source. Avoid
++    // re-reading and serializing every list on the UI thread for those changes.
++    JsonArray inputs;
++    for (auto const& path : m_browser_options.content_blocker_list_paths) {
++        auto status = TRY(Core::File::stat(path));
++        JsonArray stamp;
++        stamp.must_append(TRY(String::from_utf8(path)));
++        stamp.must_append(TRY(String::formatted("{}:{}:{}:{}:{}", status.st_dev, status.st_ino, status.st_size, status.st_mtime, status.st_ctime)));
++#if defined(AK_OS_MACOS)
++        stamp.must_append(static_cast<i64>(status.st_mtimespec.tv_nsec));
++        stamp.must_append(static_cast<i64>(status.st_ctimespec.tv_nsec));
++#elif !defined(AK_OS_WINDOWS)
++        stamp.must_append(static_cast<i64>(status.st_mtim.tv_nsec));
++        stamp.must_append(static_cast<i64>(status.st_ctim.tv_nsec));
++#endif
++        inputs.must_append(move(stamp));
++    }
++    // Names and provenance affect attribution/trusted resources, even if the
++    // selected files themselves have not changed.
++    for (auto const& list : m_settings->content_blocker_lists()) {
++        JsonArray metadata;
++        metadata.must_append(list.identifier);
++        metadata.must_append(list.name);
++        metadata.must_append(list.enabled);
++        metadata.must_append(list.built_in);
++        metadata.must_append(list.url.has_value() ? list.url->serialize() : String {});
++        inputs.must_append(move(metadata));
++    }
++    inputs.must_append(custom_filters);
++    auto input_signature = inputs.serialized();
++    if (m_content_blocker_input_signature == input_signature)
++        return false;
+     if (m_browser_options.content_blocker_list_paths.is_empty() && custom_filters.is_empty()) {
+-        if (m_content_blocker_list_buffer.has_value() && m_content_blocker_list_buffer->size() == 0)
++        if (m_content_blocker_list_buffer.has_value() && m_content_blocker_list_buffer->size() == 0) {
++            m_content_blocker_input_signature = move(input_signature);
+             return false;
++        }
+         m_content_blocker_list_buffer = TRY(Core::AnonymousBuffer::create_with_size(0));
++        m_content_blocker_input_signature = move(input_signature);
+         return true;
+     }
+ 
+@@ -945,6 +980,8 @@
+     auto blocker_list_buffer = TRY(Core::AnonymousBuffer::create_with_size(serialized.bytes().size()));
+     serialized.bytes().copy_to(Bytes { blocker_list_buffer.data<u8>(), blocker_list_buffer.size() });
+ 
++    // Publish the signature only after all reads and allocations succeeded.
++    m_content_blocker_input_signature = move(input_signature);
+     if (m_content_blocker_list_buffer.has_value() && m_content_blocker_list_buffer->bytes() == blocker_list_buffer.bytes())
+         return false;
+ 
+@@ -1172,7 +1209,9 @@
+         auto file = TRY(Core::File::open(temporary_path, Core::File::OpenMode::Write));
+         TRY(file->write_until_depleted(contents));
+     }
+-    return FileSystem::move_file(path, temporary_path);
++    TRY(FileSystem::move_file(path, temporary_path));
++    m_content_blocker_input_signature.clear();
++    return {};
+ }
+ 
+ ErrorOr<void> Application::import_local_content_blocker_list(String name, String contents)
+--- a/Libraries/LibWebView/Application.h
++++ b/Libraries/LibWebView/Application.h
+@@ -661,6 +661,7 @@
+     OwnPtr<FontServiceHost> m_font_service_host;
+     JsonValue m_site_compatibility_data;
+     Optional<Core::AnonymousBuffer> m_content_blocker_list_buffer;
++    Optional<String> m_content_blocker_input_signature;
+     RefPtr<Core::Timer> m_content_blocker_list_update_timer;
+     struct PendingContentBlockerListUpdate {
+         String identifier;

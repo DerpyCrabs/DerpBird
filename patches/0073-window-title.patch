@@ -1,0 +1,24 @@
+--- a/UI/Qt/BrowserWindow.cpp
++++ b/UI/Qt/BrowserWindow.cpp
+@@ -1279,8 +1279,8 @@
+ void BrowserWindow::update_window_title(QString const& title)
+ {
+     char const* format = is_private() == WebView::IsPrivate::Yes
+-        ? "%1 - " BROWSER_PRODUCT_NAME " (Private)"
+-        : "%1 - " BROWSER_PRODUCT_NAME;
++        ? "%1 - DerpBird (Private)"
++        : "%1 - DerpBird";
+     setWindowTitle(QString(format).arg(title));
+ }
+ 
+--- a/UI/Qt/main.cpp
++++ b/UI/Qt/main.cpp
+@@ -129,7 +129,7 @@
+             app->offer_to_restore_unexpectedly_closed_tabs(*restored_window);
+         } else {
+             auto& window = app->new_window(browser_options.urls, configuration);
+-            window.setWindowTitle(BROWSER_PRODUCT_NAME);
++            window.setWindowTitle("DerpBird");
+             app->offer_to_restore_unexpectedly_closed_tabs(window);
+         }
+     }

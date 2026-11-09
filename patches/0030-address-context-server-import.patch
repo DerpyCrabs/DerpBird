@@ -1,0 +1,77 @@
+--- a/Libraries/LibRequests/ExportedRequest.cpp
++++ b/Libraries/LibRequests/ExportedRequest.cpp
+@@ -22,6 +22,7 @@
+     TRY(encoder.encode(request.reason_phrase));
+     TRY(encoder.encode(request.response_headers));
+     TRY(encoder.encode(request.canonical_host_names));
++    TRY(encoder.encode(request.policy_ip_addresses));
+     TRY(encoder.encode(request.body));
+     TRY(encoder.encode(request.status));
+     return {};
+@@ -41,6 +42,8 @@
+     request.response_headers = TRY(decoder.decode<Vector<HTTP::Header>>());
+     request.canonical_host_names = TRY(decoder.decode<String>());
+     if (request.canonical_host_names.byte_count() > 4096) return Error::from_string_literal("Oversized canonical provenance");
++    request.policy_ip_addresses = TRY(decoder.decode<String>());
++    if (request.policy_ip_addresses.byte_count() > 16384) return Error::from_string_literal("Oversized address provenance");
+     request.body = TRY(decoder.decode<IPC::File>());
+     request.status = TRY(decoder.decode<IPC::File>());
+     return request;
+--- a/Libraries/LibRequests/ExportedRequest.h
++++ b/Libraries/LibRequests/ExportedRequest.h
+@@ -32,6 +32,8 @@
+     Optional<String> reason_phrase;
+     Vector<HTTP::Header> response_headers;
+     String canonical_host_names;
++    // Live response provenance only; never persisted in the HTTP cache.
++    String policy_ip_addresses;
+ 
+     IPC::File body;
+     IPC::File status;
+--- a/Libraries/LibWeb/ContentBlocker/Rust/src/lib.rs
++++ b/Libraries/LibWeb/ContentBlocker/Rust/src/lib.rs
+@@ -508,7 +508,7 @@
+             let origin = format!("{}/", &url[..origin_end]);
+             for candidate in [url, origin.as_str()] {
+                 let Ok(mut popup) = adblock::request::Request::new(candidate, source_url, "popup", request_method) else { continue; };
+-                popup = popup.with_top_url(top_source);
++                popup = popup.with_top_url(top_source).with_ip_addresses(as_str(ip_addresses).unwrap_or_default());
+                 popup.hostname_only_filter = true;
+                 let matched = engine.engine.check_network_request_subset(&popup, false, true);
+                 if matched.filter.is_some() || matched.exception.is_some() { result = matched; break; }
+--- a/Services/RequestServer/Request.cpp
++++ b/Services/RequestServer/Request.cpp
+@@ -580,6 +580,7 @@
+     request->m_reason_phrase = move(exported.reason_phrase);
+     request->m_response_headers = HTTP::HeaderList::create(move(exported.response_headers));
+     request->m_canonical_host_names = move(exported.canonical_host_names);
++    request->m_imported_policy_ip_addresses = move(exported.policy_ip_addresses);
+     request->m_import = Import {};
+     request->m_import->body_fd = exported.body.take_fd();
+     request->m_import->status_fd = exported.status.take_fd();
+@@ -1661,6 +1662,7 @@
+ 
+ String Request::policy_ip_addresses() const
+ {
++    if (m_type == RequestType::Imported) return m_imported_policy_ip_addresses;
+     if (!(m_query_response_policy & 8) || !m_dns_result || m_cache_status == CacheStatus::ReadFromCache || m_state == State::ReadCache || m_request_policy_for_cache) return {};
+     StringBuilder result;
+     for (auto const& address : m_dns_result->cached_addresses()) {
+@@ -2101,6 +2103,7 @@
+         .reason_phrase = m_reason_phrase,
+         .response_headers = m_response_headers->headers(),
+         .canonical_host_names = m_canonical_host_names,
++        .policy_ip_addresses = policy_ip_addresses(),
+         .body = move(body),
+         .status = move(status),
+     };
+--- a/Services/RequestServer/Request.h
++++ b/Services/RequestServer/Request.h
+@@ -236,6 +236,7 @@
+     bool decode_canonical_hosts(StringView);
+     void query_canonical_urls();
+     String m_canonical_host_names;
++    String m_imported_policy_ip_addresses;
+     bool m_cache_canonical_policy_done { false };
+     void resolve_connection_host(ByteString host);
+     bool m_resolving_canonical_origin { false };

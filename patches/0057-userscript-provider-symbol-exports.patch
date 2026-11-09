@@ -1,0 +1,22 @@
+--- a/Libraries/LibWeb/DOM/Element.h
++++ b/Libraries/LibWeb/DOM/Element.h
+@@ -1195,7 +1195,7 @@
+ }
+ 
+ bool is_valid_namespace_prefix(Utf16View);
+-bool is_valid_attribute_local_name(Utf16View);
++WEB_API bool is_valid_attribute_local_name(Utf16View);
+ bool is_valid_element_local_name(Utf16View const&);
+ 
+ enum class ValidationContext {
+--- a/Libraries/LibWeb/HTML/HTMLImageElement.h
++++ b/Libraries/LibWeb/HTML/HTMLImageElement.h
+@@ -84,7 +84,7 @@
+     void react_to_changes_in_the_environment();
+ 
+     // https://html.spec.whatwg.org/multipage/images.html#update-the-image-data
+-    void update_the_image_data(bool restart_the_animations = false, bool maybe_omit_events = false);
++    WEB_API void update_the_image_data(bool restart_the_animations = false, bool maybe_omit_events = false);
+ 
+     // https://html.spec.whatwg.org/multipage/images.html#use-srcset-or-picture
+     [[nodiscard]] bool uses_srcset_or_picture() const;

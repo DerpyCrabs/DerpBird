@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<script src="include.js"></script>
+<div id="probe" style="color: rgb(1, 2, 3)">Parent</div>
+<script>
+asyncTest(async done => {
+    const createFrame = async source => {
+        const frame = document.createElement('iframe');
+        const loaded = new Promise(resolve => frame.onload = resolve);
+        frame.src = source;
+        document.body.append(frame);
+        await loaded;
+        return frame;
+    };
+    const color = frame => new Promise(resolve => {
+        const receive = event => {
+            if (event.source !== frame.contentWindow || typeof event.data?.color !== 'string') return;
+            removeEventListener('message', receive);
+            resolve(event.data.color);
+        };
+        addEventListener('message', receive);
+        frame.contentWindow.postMessage('read-style', '*');
+    });
+    // Internals installs on this Page only. Production HTTP-frame propagation
+    // is exercised through Application/IPC by TestDerpBirdStyles.cpp.
+    const target = new URL('../data/derpbird-style-child.html?match', location.href).href;
+    const otherURL = new URL(target);
+    otherURL.search = '?other';
+    const matching = await createFrame(target);
+    const other = await createFrame(otherURL.href);
+    println('before: ' + await color(matching));
+    const sections = [{ conditions: [{ type: 'url', value: target }], css: '#probe { color: rgb(4, 5, 6) !important }' }];
+    println('install: ' + internals.setDerpbirdUserStyles(JSON.stringify(sections)));
+    println('parent: ' + getComputedStyle(document.getElementById('probe')).color);
+    println('matching child: ' + await color(matching));
+    println('other child: ' + await color(other));
+    const later = await createFrame(target);
+    println('new child: ' + await color(later));
+    internals.setDerpbirdUserStyles('[]');
+    println('removed existing: ' + await color(matching));
+    println('removed new: ' + await color(later));
+    matching.remove(); other.remove(); later.remove();
+    done();
+});
+</script>

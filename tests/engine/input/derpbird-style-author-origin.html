@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<script src="include.js"></script>
+<script>
+test(() => {
+    document.documentElement.dataset.theme = 'light';
+    const site = document.createElement('style');
+    site.textContent = ':root { --surface: rgb(255,255,255) } .probe { color: rgb(255,0,0); background: var(--surface) }';
+    document.head.append(site);
+    const probe = document.createElement('div');
+    probe.className = 'probe';
+    document.body.append(probe);
+    const css = '@media (min-width: 1px) { html[data-theme] { --surface: rgb(239,241,245) } .probe { color: rgb(0,0,255) } }';
+    const read = () => getComputedStyle(probe).color + ' / ' + getComputedStyle(probe).backgroundColor;
+    println('site: ' + read());
+    internals.setDerpbirdUserStyles(JSON.stringify([{conditions: [], css}]));
+    const installed = read();
+    println('installed: ' + installed);
+    const reference = document.createElement('style');
+    reference.textContent = css;
+    document.head.append(reference);
+    println('same as author injection: ' + (installed === read()));
+    reference.remove();
+    const late = document.createElement('style');
+    late.textContent = '.probe { color: rgb(0,255,0) }';
+    document.head.append(late);
+    println('late site sheet: ' + read());
+    const adopted = new CSSStyleSheet();
+    adopted.replaceSync('.probe { color: rgb(255,0,255) }');
+    document.adoptedStyleSheets = [adopted];
+    println('late adopted sheet: ' + read());
+    document.adoptedStyleSheets = [];
+    internals.setDerpbirdUserStyles('[]');
+    println('removed: ' + read());
+});
+</script>

@@ -1,0 +1,11 @@
+--- a/UI/Qt/BrowserWindow.cpp
++++ b/UI/Qt/BrowserWindow.cpp
+@@ -769,7 +769,7 @@
+     create_restored_tab(tabs[active_index], 0, false);
+     for (size_t i = 0; i < tabs.size(); ++i) {
+         if (i != active_index)
+-            create_restored_tab(tabs[i], static_cast<int>(i), !tabs[i].pinned);
++            create_restored_tab(tabs[i], static_cast<int>(i), false);
+     }
+ }
+ 

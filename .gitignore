@@ -1,0 +1,13 @@
+node_modules/
+dist/
+artifacts/
+*.log
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+*.core
+core
+
+third_party/adblock/target/

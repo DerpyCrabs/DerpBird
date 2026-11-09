@@ -1,0 +1,134 @@
+--- a/Libraries/LibWeb/Animations/KeyframeEffect.h
++++ b/Libraries/LibWeb/Animations/KeyframeEffect.h
+@@ -82,6 +82,7 @@
+ 
+     struct KeyFrameSet : public RefCounted<KeyFrameSet> {
+         struct StyleSheetResourceContext {
++            u64 derpbird_authority_id { 0 };
+             String base_url;
+             bool origin_clean { false };
+         };
+--- a/Libraries/LibWeb/CSS/StyleEngineInput.cpp
++++ b/Libraries/LibWeb/CSS/StyleEngineInput.cpp
+@@ -2426,6 +2426,7 @@
+             continue;
+         }
+         if (auto const& resource_context = key_frame_set->style_sheet_resource_context; resource_context.has_value()) {
++            row.derpbird_authority_id = resource_context->derpbird_authority_id;
+             row.has_resource_context = true;
+             row.resource_context_is_origin_clean = resource_context->origin_clean;
+             auto bytes = resource_context->base_url.bytes();
+--- a/Libraries/LibWeb/CSS/StyleScope.cpp
++++ b/Libraries/LibWeb/CSS/StyleScope.cpp
+@@ -495,6 +495,7 @@
+         auto keyframe_set = adopt_ref(*new Animations::KeyframeEffect::KeyFrameSet);
+         auto base_url = sheet.style_resource_base_url();
+         keyframe_set->style_sheet_resource_context = {
++            .derpbird_authority_id = sheet.derpbird_insertion_authority() ? sheet.derpbird_insertion_authority()->identity() : 0,
+             .base_url = base_url.has_value() ? base_url->to_string() : String {},
+             .origin_clean = sheet.is_origin_clean(),
+         };
+--- a/Libraries/LibWeb/Rust/src/css/animation.rs
++++ b/Libraries/LibWeb/Rust/src/css/animation.rs
+@@ -401,6 +401,7 @@
+ #[repr(C)]
+ #[derive(Clone, Copy)]
+ pub struct FfiAnimationStyleSheetResourceContext {
++    pub derpbird_authority_id: u64,
+     pub base_url: *const u8,
+     pub base_url_length: usize,
+     pub has_value: bool,
+@@ -411,6 +412,7 @@
+     #[cfg(test)]
+     const fn empty() -> Self {
+         Self {
++            derpbird_authority_id: 0,
+             base_url: std::ptr::null(),
+             base_url_length: 0,
+             has_value: false,
+@@ -8908,6 +8910,7 @@
+         let is_transition = effect.is_transition;
+         let style_sheet_resource_context = match effect.resource_context() {
+             None => FfiAnimationStyleSheetResourceContext {
++                derpbird_authority_id: 0,
+                 base_url: std::ptr::null(),
+                 base_url_length: 0,
+                 has_value: false,
+@@ -8916,6 +8919,7 @@
+             Some(resource_context) => {
+                 base_urls.push(std::sync::Arc::clone(&resource_context.base_url));
+                 FfiAnimationStyleSheetResourceContext {
++                    derpbird_authority_id: resource_context.derpbird_authority_id,
+                     base_url: resource_context.base_url.as_ptr(),
+                     base_url_length: resource_context.base_url.len(),
+                     has_value: true,
+--- a/Libraries/LibWeb/Rust/src/css/style/bridge/animations.rs
++++ b/Libraries/LibWeb/Rust/src/css/style/bridge/animations.rs
+@@ -17,6 +17,7 @@
+     /// The effect's keyframes come from a style sheet, which their URLs resolve against: its base
+     /// URL is the range of the base URL buffer below.
+     pub has_resource_context: bool,
++    pub derpbird_authority_id: u64,
+     pub resource_context_is_origin_clean: bool,
+     pub first_keyframe: u32,
+     pub keyframe_count: u32,
+--- a/Libraries/LibWeb/Rust/src/css/style/effect_descriptions.rs
++++ b/Libraries/LibWeb/Rust/src/css/style/effect_descriptions.rs
+@@ -204,6 +204,7 @@
+ /// The style sheet an effect's keyframes come from, which their URLs resolve against.
+ #[derive(Clone)]
+ pub(crate) struct PublishedResourceContext {
++    pub(crate) derpbird_authority_id: u64,
+     /// Shared with every resolution of the effect's declarations that points into it.
+     pub(crate) base_url: Arc<[u8]>,
+     pub(crate) origin_clean: bool,
+@@ -518,6 +519,7 @@
+                     custom_property_interval_values: (!custom_declarations.is_empty()).then(Default::default),
+                     keyframes: Arc::new(PublishedKeyframes {
+                         resource_context: effect.has_resource_context.then(|| PublishedResourceContext {
++                            derpbird_authority_id: effect.derpbird_authority_id,
+                             base_url: self.base_url_bytes[range(effect.base_url_offset, effect.base_url_length)].into(),
+                             origin_clean: effect.resource_context_is_origin_clean,
+                         }),
+@@ -898,6 +900,7 @@
+             generation,
+             is_transition: false,
+             has_resource_context: false,
++            derpbird_authority_id: 0,
+             resource_context_is_origin_clean: false,
+             first_keyframe: 0,
+             keyframe_count: 0,
+--- a/Libraries/LibWeb/Rust/src/css/style_compute.rs
++++ b/Libraries/LibWeb/Rust/src/css/style_compute.rs
+@@ -7271,7 +7271,7 @@
+             let style_sheet_resource_context =
+                 if matches!(property.value_source, FfiAnimationSpecifiedValueSource::Value) {
+                     FfiStyleSheetResourceContext {
+-                        derpbird_authority_id: 0,
++                        derpbird_authority_id: property.style_sheet_resource_context.derpbird_authority_id,
+                         base_url: property.style_sheet_resource_context.base_url,
+                         base_url_length: property.style_sheet_resource_context.base_url_length,
+                         has_value: property.style_sheet_resource_context.has_value,
+--- a/Libraries/LibWeb/Rust/src/css/style_value.rs
++++ b/Libraries/LibWeb/Rust/src/css/style_value.rs
+@@ -1812,7 +1812,8 @@
+ }
+ 
+ /// Fetch context carried by a computed url() image. This is not part of the CSS value's
+-/// identity, so equality deliberately ignores it.
++/// identity, except the native authority boundary, which must not be interned
++/// together with an ordinary page value or another userscript's value.
+ #[repr(C)]
+ #[derive(Clone)]
+ pub struct ImageResourceContext {
+@@ -1825,8 +1826,8 @@
+ }
+ 
+ impl PartialEq for ImageResourceContext {
+-    fn eq(&self, _other: &Self) -> bool {
+-        true
++    fn eq(&self, other: &Self) -> bool {
++        self.derpbird_authority_id == other.derpbird_authority_id
+     }
+ }
+ 

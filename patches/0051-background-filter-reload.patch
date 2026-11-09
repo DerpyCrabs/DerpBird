@@ -1,0 +1,244 @@
+--- a/Libraries/LibWebView/Application.cpp
++++ b/Libraries/LibWebView/Application.cpp
+@@ -24,6 +24,7 @@
+ #include <LibCore/StandardPaths.h>
+ #include <LibCore/StatsLog.h>
+ #include <LibCore/System.h>
++#include <LibThreading/Thread.h>
+ #include <LibCore/TimeZoneWatcher.h>
+ #include <LibCore/Timer.h>
+ #include <LibDatabase/Database.h>
+@@ -259,6 +260,7 @@
+ 
+ Application::~Application()
+ {
++    *m_content_blocker_reload_alive = false;
+ #if !defined(AK_OS_WINDOWS)
+     // No event loop runs the handlers during teardown, so a signal from here on takes its default action again.
+     for (auto handler : m_session_signal_handlers)
+@@ -882,13 +884,18 @@
+     }
+ }
+ 
+-ErrorOr<bool> Application::load_content_blocker_lists()
+-{
+-    auto custom_filters = m_settings->custom_content_blocker_filters();
++struct ContentBlockerLoadResult {
++    String signature;
++    Optional<Core::AnonymousBuffer> changed_buffer;
++};
++
++static ErrorOr<ContentBlockerLoadResult> prepare_content_blocker_lists(Vector<ByteString> const& paths, Vector<ContentBlockerList> const& catalog,
++    ByteString const& directory, String const& custom_filters, Optional<String> const& previous_signature, Optional<Core::AnonymousBuffer> const& previous_buffer)
++{
+     // Policy toggles (enabled/disabled sites) do not change filter source. Avoid
+     // re-reading and serializing every list on the UI thread for those changes.
+     JsonArray inputs;
+-    for (auto const& path : m_browser_options.content_blocker_list_paths) {
++    for (auto const& path : paths) {
+         auto status = TRY(Core::File::stat(path));
+         JsonArray stamp;
+         stamp.must_append(TRY(String::from_utf8(path)));
+@@ -904,7 +911,7 @@
+     }
+     // Names and provenance affect attribution/trusted resources, even if the
+     // selected files themselves have not changed.
+-    for (auto const& list : m_settings->content_blocker_lists()) {
++    for (auto const& list : catalog) {
+         JsonArray metadata;
+         metadata.must_append(list.identifier);
+         metadata.must_append(list.name);
+@@ -915,20 +922,16 @@
+     }
+     inputs.must_append(custom_filters);
+     auto input_signature = inputs.serialized();
+-    if (m_content_blocker_input_signature == input_signature)
+-        return false;
+-    if (m_browser_options.content_blocker_list_paths.is_empty() && custom_filters.is_empty()) {
+-        if (m_content_blocker_list_buffer.has_value() && m_content_blocker_list_buffer->size() == 0) {
+-            m_content_blocker_input_signature = move(input_signature);
+-            return false;
+-        }
+-        m_content_blocker_list_buffer = TRY(Core::AnonymousBuffer::create_with_size(0));
+-        m_content_blocker_input_signature = move(input_signature);
+-        return true;
++    if (previous_signature == input_signature)
++        return ContentBlockerLoadResult { move(input_signature), {} };
++    if (paths.is_empty() && custom_filters.is_empty()) {
++        if (previous_buffer.has_value() && previous_buffer->size() == 0)
++            return ContentBlockerLoadResult { move(input_signature), {} };
++        return ContentBlockerLoadResult { move(input_signature), TRY(Core::AnonymousBuffer::create_with_size(0)) };
+     }
+ 
+     Checked<size_t> total_size = 0;
+-    for (auto const& path : m_browser_options.content_blocker_list_paths) {
++    for (auto const& path : paths) {
+         auto file = TRY(Core::File::open(path, Core::File::OpenMode::Read));
+         total_size += TRY(file->size());
+         total_size += 1;
+@@ -942,13 +945,24 @@
+     // Keep list text separate from native provenance. Subscription contents
+     // cannot inject a trusted-source marker into another list.
+     JsonArray lists;
+-    for (auto const& path : m_browser_options.content_blocker_list_paths) {
++    size_t actual_size = custom_filters.bytes().size();
++    auto chunk = TRY(ByteBuffer::create_uninitialized(64 * KiB));
++    for (auto const& path : paths) {
+         auto file = TRY(Core::File::open(path, Core::File::OpenMode::Read));
+-        auto content = TRY(file->read_until_eof());
++        ByteBuffer content;
++        while (true) {
++            auto bytes = TRY(file->read_some(chunk.bytes()));
++            if (bytes.is_empty()) break;
++            if (bytes.size() > maximum_content_blocker_list_size - content.size()
++                || bytes.size() > maximum_combined_content_blocker_list_size - actual_size)
++                return Error::from_string_literal("Content blocker lists grew beyond their size limit");
++            TRY(content.try_append(bytes));
++            actual_size += bytes.size();
++        }
+         String label = TRY(String::from_utf8(LexicalPath(path).basename()));
+         bool trusted = false;
+-        for (auto const& list : m_settings->content_blocker_lists()) {
+-            if (content_blocker_list_path(list.identifier) != path) continue;
++        for (auto const& list : catalog) {
++            if (LexicalPath::join(directory, ByteString::formatted("{}.txt", list.identifier)).string() != path) continue;
+             label = list.name;
+             if (list.built_in && list.url.has_value()) {
+                 auto address = list.url->serialize();
+@@ -980,13 +994,69 @@
+     auto blocker_list_buffer = TRY(Core::AnonymousBuffer::create_with_size(serialized.bytes().size()));
+     serialized.bytes().copy_to(Bytes { blocker_list_buffer.data<u8>(), blocker_list_buffer.size() });
+ 
+-    // Publish the signature only after all reads and allocations succeeded.
+-    m_content_blocker_input_signature = move(input_signature);
+-    if (m_content_blocker_list_buffer.has_value() && m_content_blocker_list_buffer->bytes() == blocker_list_buffer.bytes())
+-        return false;
+-
+-    m_content_blocker_list_buffer = move(blocker_list_buffer);
++    if (previous_buffer.has_value() && previous_buffer->bytes() == blocker_list_buffer.bytes())
++        return ContentBlockerLoadResult { move(input_signature), {} };
++
++    return ContentBlockerLoadResult { move(input_signature), move(blocker_list_buffer) };
++}
++
++ErrorOr<bool> Application::load_content_blocker_lists()
++{
++    auto result = TRY(prepare_content_blocker_lists(m_browser_options.content_blocker_list_paths, m_settings->content_blocker_lists(),
++        m_content_blocker_lists_directory, m_settings->custom_content_blocker_filters(), m_content_blocker_input_signature, m_content_blocker_list_buffer));
++    m_content_blocker_input_signature = move(result.signature);
++    if (!result.changed_buffer.has_value()) return false;
++    m_content_blocker_list_buffer = result.changed_buffer.release_value();
+     return true;
++}
++
++void Application::schedule_content_blocker_reload()
++{
++    if (m_content_blocker_reload_running) return;
++    rebuild_content_blocker_list_paths();
++    m_content_blocker_reload_running = true;
++    auto generation = m_content_blocker_reload_generation;
++    // Only immutable value snapshots cross threads. The lifetime token is read
++    // and invalidated on the main thread; the worker never accesses Application.
++    auto worker = Threading::Thread::construct("Filter lists"sv,
++        [this, alive = m_content_blocker_reload_alive, event_loop = Core::EventLoop::current_weak(), generation,
++            paths = m_browser_options.content_blocker_list_paths, catalog = m_settings->content_blocker_lists(),
++            directory = m_content_blocker_lists_directory, custom = m_settings->custom_content_blocker_filters(),
++            signature = m_content_blocker_input_signature, buffer = m_content_blocker_list_buffer]() mutable -> intptr_t {
++            auto result = prepare_content_blocker_lists(paths, catalog, directory, custom, signature, buffer);
++            auto loop = event_loop->take();
++            if (!loop) return 0;
++            loop->deferred_invoke([this, alive = move(alive), generation, result = move(result)]() mutable {
++                if (!*alive) return;
++                m_content_blocker_reload_running = false;
++                if (generation != m_content_blocker_reload_generation) {
++                    schedule_content_blocker_reload();
++                    return;
++                }
++                if (result.is_error()) {
++                    warnln("Unable to apply content blocker settings: {}", result.error());
++                    return;
++                }
++                auto loaded = result.release_value();
++                m_content_blocker_input_signature = move(loaded.signature);
++                if (!loaded.changed_buffer.has_value()) return;
++                m_content_blocker_list_buffer = loaded.changed_buffer.release_value();
++                WebContentClient::for_each_client([&](WebContentClient& client) {
++                    client.async_set_content_blockers(*m_content_blocker_list_buffer);
++                    return IterationDecision::Continue;
++                });
++                ViewImplementation::for_each_view([](ViewImplementation& view) {
++                    view.notify_content_blocking_changed();
++                    return IterationDecision::Continue;
++                });
++            });
++            return 0;
++        });
++    worker->set_qos(Core::Platform::ThreadQoS::Utility);
++    worker->start();
++    worker->detach();
++    // detach() may race a completed thread, which then still needs joining.
++    if (worker->needs_to_be_joined()) (void)worker->join();
+ }
+ 
+ JsonObject Application::content_blocker_list_update_status(StringView identifier) const
+@@ -1211,6 +1281,7 @@
+     }
+     TRY(FileSystem::move_file(path, temporary_path));
+     m_content_blocker_input_signature.clear();
++    ++m_content_blocker_reload_generation;
+     return {};
+ }
+ 
+@@ -3391,12 +3462,8 @@
+ void Application::apply_content_blocker_settings()
+ {
+     rebuild_content_blocker_list_paths();
+-    bool rules_changed = false;
+-
+-    if (auto result = load_content_blocker_lists(); result.is_error())
+-        warnln("Unable to apply content blocker settings: {}", result.error());
+-    else
+-        rules_changed = result.release_value();
++    ++m_content_blocker_reload_generation;
++    schedule_content_blocker_reload();
+ 
+     auto enabled = content_blocking_enabled();
+     auto disabled_sites = m_settings->content_blocker_disabled_sites().values();
+@@ -3406,8 +3473,6 @@
+             client.async_set_content_blocking_policy(page.id(), enabled, disabled_sites);
+             return IterationDecision::Continue;
+         });
+-        if (rules_changed)
+-            client.async_set_content_blockers(*m_content_blocker_list_buffer);
+         return IterationDecision::Continue;
+     });
+     ViewImplementation::for_each_view([](ViewImplementation& view) {
+--- a/Libraries/LibWebView/Application.h
++++ b/Libraries/LibWebView/Application.h
+@@ -5,6 +5,8 @@
+  */
+ 
+ #pragma once
++
++#include <memory>
+ 
+ #include <AK/ByteBuffer.h>
+ #include <AK/ByteString.h>
+@@ -508,6 +510,7 @@
+     ErrorOr<void> launch_devtools_server();
+     // Returns whether the combined rules changed.
+     ErrorOr<bool> load_content_blocker_lists();
++    void schedule_content_blocker_reload();
+     void apply_content_blocker_settings();
+     void rebuild_content_blocker_list_paths();
+     ByteString content_blocker_list_path(StringView identifier) const;
+@@ -662,6 +665,9 @@
+     JsonValue m_site_compatibility_data;
+     Optional<Core::AnonymousBuffer> m_content_blocker_list_buffer;
+     Optional<String> m_content_blocker_input_signature;
++    std::shared_ptr<bool> m_content_blocker_reload_alive { std::make_shared<bool>(true) };
++    bool m_content_blocker_reload_running { false };
++    u64 m_content_blocker_reload_generation { 0 };
+     RefPtr<Core::Timer> m_content_blocker_list_update_timer;
+     struct PendingContentBlockerListUpdate {
+         String identifier;

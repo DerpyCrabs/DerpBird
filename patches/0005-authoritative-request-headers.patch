@@ -1,0 +1,19 @@
+--- a/Services/RequestServer/Request.cpp
++++ b/Services/RequestServer/Request.cpp
+@@ -1754,10 +1754,12 @@
+         set_option(CURLOPT_NOBODY, 1L);
+     }
+ 
+-    // INTEROP: Like other engines, ask HTTP/1.x servers to keep the connection alive. curl leaves this header out of
+-    //          HTTP/2 and HTTP/3 requests, which have no Connection header.
+-    if (!m_request_headers->contains("Connection"sv))
+-        curl_headers = curl_slist_append(curl_headers, "Connection: keep-alive");
++    // HTTP/1.1 connections are persistent by default; HTTP/2 and HTTP/3 forbid
++    // Connection. Do not synthesize a protocol-dependent field after policy ran.
++    // curl otherwise adds Expect for large POST bodies. Keep the filtered header
++    // set authoritative and avoid an extra 100-continue wait on ordinary uploads.
++    if (!m_request_headers->contains("Expect"sv))
++        curl_headers = curl_slist_append(curl_headers, "Expect:");
+ 
+     // NB: Send each header name once, with the combined value of all headers of that name, as other engines do.
+     Vector<StringView> sent_header_names;

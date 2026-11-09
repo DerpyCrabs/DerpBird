@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<script src="include.js"></script>
+<div id="probe" style="color:rgb(1,2,3)">Budget</div>
+<script>
+test(() => {
+    location.hash = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaab';
+    const probe = document.getElementById('probe');
+    const expensive = { conditions: [{ type: 'regexp', value: '.*#(a+)+' }], css: '#probe { color: red !important }' };
+    const sections = Array.from({ length: 128 }, () => expensive);
+    // Direct URL rules must remain available after regexp budget exhaustion.
+    sections.push({ conditions: [{ type: 'url', value: location.href }], css: '#probe { color: rgb(4,5,6) !important }' });
+    sections.push({ conditions: [{ type: 'regexp', value: '.*' }], css: '#probe { color: rgb(7,8,9) !important }' });
+    println('install: ' + internals.setDerpbirdUserStyles(JSON.stringify(sections)));
+    println('after expensive rules: ' + getComputedStyle(probe).color);
+    // Replacing the registry must reset the document budget/cache.
+    println('replace: ' + internals.setDerpbirdUserStyles(JSON.stringify([sections.at(-1)])));
+    println('after replacement: ' + getComputedStyle(probe).color);
+    internals.setDerpbirdUserStyles('[]');
+    println('removed: ' + getComputedStyle(probe).color);
+});
+</script>

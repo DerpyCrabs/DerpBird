@@ -1,0 +1,191 @@
+--- a/Libraries/LibWebView/SessionStore.h
++++ b/Libraries/LibWebView/SessionStore.h
+@@ -172,6 +172,9 @@
+     // with the window's tab order: Launch restore depends on both. And a write that fails leaves the window's metadata
+     // dirty, for the next flush to retry.
+     ErrorOr<void> tab_pinned_changed(SessionTabId, bool pinned);
++    ErrorOr<Optional<SessionTabId>> tab_tree_parent(SessionTabId);
++    ErrorOr<void> set_tab_tree_parent(SessionTabId, Optional<SessionTabId>);
++
+     void active_tab_changed(SessionTabId);
+     void application_quitting();
+     void application_quit_aborted();
+@@ -231,6 +234,9 @@
+     };
+ 
+     struct Statements {
++        Database::StatementID tree_parent;
++        Database::StatementID set_tree_parent;
++
+         Database::StatementID insert_session;
+         Database::StatementID insert_tab;
+         Database::StatementID insert_tab_if_missing;
+@@ -551,6 +557,7 @@
+     static bool is_tab_worth_keeping(URL::URL const&);
+     static u32 max_closed_units(UnitKind);
+ 
++    HashMap<SessionTabId, SessionTabId> m_private_tab_tree;
+     Optional<PersistedStorage> m_persisted_storage;
+     TransientStorage m_transient_storage;
+     RefPtr<Core::Timer> m_flush_timer;
+--- a/Libraries/LibWebView/SessionStore.cpp
++++ b/Libraries/LibWebView/SessionStore.cpp
+@@ -306,7 +306,11 @@
+     if (database.options().foreign_keys != Database::Database::ForeignKeys::Yes)
+         return Error::from_string_literal("Session storage relies on cascading deletes; open the connection with foreign keys enabled");
+ 
++    auto tree_schema = TRY(database.prepare_statement("CREATE TABLE IF NOT EXISTS DerpBirdTabTree (tab_id INTEGER PRIMARY KEY REFERENCES SessionTabs(id) ON DELETE CASCADE, parent_id INTEGER REFERENCES SessionTabs(id) ON DELETE SET NULL, CHECK(tab_id != parent_id));"sv));
++    TRY(database.try_execute_statement(tree_schema, {}));
+     Statements statements {};
++    statements.tree_parent = TRY(database.prepare_statement("SELECT (SELECT parent_id FROM DerpBirdTabTree WHERE tab_id = :id) AS parent_id;"sv));
++    statements.set_tree_parent = TRY(database.prepare_statement("INSERT INTO DerpBirdTabTree(tab_id, parent_id) VALUES (:id, :parent) ON CONFLICT(tab_id) DO UPDATE SET parent_id = excluded.parent_id;"sv));
+     statements.insert_session = TRY(database.prepare_statement("INSERT INTO Sessions (id, kind, closed_time, close_sequence, source_window_id, source_tab_index, origin, active_tab_index) VALUES (:id, :kind, :closed_time, :close_sequence, :source_window_id, :source_tab_index, :origin, :active_tab_index);"sv));
+     statements.insert_tab = TRY(database.prepare_statement("INSERT INTO SessionTabs (id, session_id, tab_ordinal, active_url, current_used_step_index) VALUES (:id, :session_id, :tab_ordinal, :active_url, :current_used_step_index);"sv));
+     statements.insert_tab_if_missing = TRY(database.prepare_statement("INSERT OR IGNORE INTO SessionTabs (id, session_id, tab_ordinal, active_url, current_used_step_index) VALUES (:id, :session_id, :tab_ordinal, :active_url, :current_used_step_index);"sv));
+@@ -1819,6 +1823,36 @@
+     return drain_window_metadata();
+ }
+ 
++ErrorOr<Optional<SessionTabId>> SessionStore::tab_tree_parent(SessionTabId id)
++{
++    if (!m_persisted_storage.has_value()) {
++        auto found = m_private_tab_tree.find(id);
++        if (found == m_private_tab_tree.end()) return Optional<SessionTabId> {};
++        return Optional<SessionTabId> { found->value };
++    }
++    auto& storage = *m_persisted_storage;
++    return storage.database->try_execute_bound_statement_one<Optional<SessionTabId>>(storage.statements.tree_parent,
++        [&](auto& bind) -> ErrorOr<void> { return bind("id"sv, id); },
++        [](Database::ResultRow& row) { return row.read_optional_integer<SessionTabId>("parent_id"sv); });
++}
++
++ErrorOr<void> SessionStore::set_tab_tree_parent(SessionTabId id, Optional<SessionTabId> parent)
++{
++    if (parent == id) return Error::from_string_literal("A tab cannot contain itself");
++    if (m_persisted_storage.has_value()) {
++        auto& storage = *m_persisted_storage;
++        TRY(storage.database->try_execute_bound_statement(storage.statements.set_tree_parent, [&](auto& bind) -> ErrorOr<void> {
++            TRY(bind("id"sv, id));
++            TRY(bind("parent"sv, parent));
++            return {};
++        }));
++    } else {
++        if (parent.has_value()) m_private_tab_tree.set(id, *parent);
++        else m_private_tab_tree.remove(id);
++    }
++    return {};
++}
++
+ void SessionStore::tab_moved(TabMoved moved)
+ {
+     auto ordinal = index_as_size(moved.ordinal);
+@@ -1937,8 +1971,12 @@
+ ErrorOr<void> SessionStore::finish_window_close(PendingWindowClose const& pending)
+ {
+     bool any_tab_worth_keeping = false;
+-    for (auto const& member : pending.members)
++    for (auto const& member : pending.members) {
+         any_tab_worth_keeping |= is_tab_worth_keeping(member.tab.url);
++        // An explicitly created group is meaningful even before its tabs navigate.
++        if (!any_tab_worth_keeping)
++            any_tab_worth_keeping |= TRY(tab_tree_parent(member.tab_id)).has_value();
++    }
+ 
+     if (pending.members.is_empty() || !any_tab_worth_keeping) {
+         if (m_persisted_storage.has_value())
+--- a/UI/Qt/BrowserWindow.cpp
++++ b/UI/Qt/BrowserWindow.cpp
+@@ -1016,6 +1016,10 @@
+     auto* tab = m_tabs_container->tab(index);
+     if (tab->is_loaded())
+         tab->view().prepare_for_window_move();
++    if (m_derpbird_chrome) {
++        auto result = m_derpbird_chrome->detach_tree_tab(*tab);
++        if (result.is_error()) return;
++    }
+     uninitialize_tab(tab);
+     m_tabs_container->take_tab(index);
+     if (m_current_tab == tab)
+@@ -1137,6 +1141,10 @@
+         auto parent_index = tab_index(tab->derpbird_script_parent());
+         if (parent_index >= 0) activate_tab(parent_index);
+     }
++    if (m_derpbird_chrome) {
++        auto detached = m_derpbird_chrome->detach_tree_tab(*tab);
++        if (detached.is_error()) { dbgln("Cannot update tab tree: {}", detached.error()); return false; }
++    }
+     m_tabs_container->remove_tab(index);
+     if (auto session_tab_id = tab->session_tab_id(); session_tab_id.has_value()) {
+         WebView::SessionStore::TabClosed closed {
+@@ -1162,6 +1170,14 @@
+     if (!tab)
+         return;
+ 
++    if (m_derpbird_chrome && !m_derpbird_chrome->reordering_tree()) {
++        auto* target = tab_at(new_index);
++        if (target && target != tab) {
++            auto result = m_derpbird_chrome->move_tree_tab(*tab, *target, old_index < new_index ? "after"sv : "before"sv);
++            if (result.is_error()) dbgln("Cannot move tab tree: {}", result.error());
++        }
++        return;
++    }
+     auto pinned_count = pinned_tab_count();
+     if (tab->is_pinned())
+         new_index = clamp(new_index, 0, pinned_count - 1);
+@@ -1192,6 +1208,10 @@
+ 
+     auto pinned_count = pinned_tab_count();
+     auto destination = clamp(pinned_index.value_or(pinned_count), 0, pinned_count);
++    if (m_derpbird_chrome) {
++        auto result = m_derpbird_chrome->detach_tree_tab(tab);
++        if (result.is_error()) return;
++    }
+     tab.set_pinned(true);
+     if (index != destination)
+         m_tabs_container->tab_bar()->moveTab(index, destination);
+--- a/Tests/LibWebView/TestSessionStore.cpp
++++ b/Tests/LibWebView/TestSessionStore.cpp
+@@ -2370,3 +2370,43 @@
+     store->flush_dirty_state();
+     EXPECT_EQ(select_i64(*database, MUST(String::formatted("SELECT COUNT(*) FROM SessionTabs WHERE id = {};", tab))), 0);
+ }
++
++TEST_CASE(derpbird_blank_tab_group_survives_normal_close_and_restart)
++{
++    auto database = create_session_database();
++    SessionTabId parent;
++    SessionTabId child;
++    {
++        auto store = TRY_OR_FAIL(SessionStore::create(*database));
++        auto window = TRY_OR_FAIL(store->window_opened());
++        parent = open_tab(*store, window, "about:blank"sv);
++        child = open_tab(*store, window, "about:blank"sv);
++        TRY_OR_FAIL(store->set_tab_tree_parent(child, parent));
++        EXPECT_EQ(TRY_OR_FAIL(store->tab_tree_parent(child)).value(), parent);
++        TRY_OR_FAIL(store->window_closing({ .window_id = window, .active_tab_index = 1, .closed_at = UnixDateTime::now() }));
++        store->mark_clean_exit();
++    }
++    auto restored = TRY_OR_FAIL(SessionStore::create(*database, SessionLaunchPolicy::Everything));
++    auto windows = restored->take_launch_plan();
++    EXPECT_EQ(windows.size(), 1u);
++    if (windows.is_empty()) return;
++    EXPECT_EQ(windows[0].tabs.size(), 2u);
++    EXPECT_EQ(TRY_OR_FAIL(restored->tab_tree_parent(child)).value(), parent);
++    TRY_OR_FAIL(restored->set_tab_tree_parent(child, {}));
++    EXPECT(!TRY_OR_FAIL(restored->tab_tree_parent(child)).has_value());
++}
++
++TEST_CASE(derpbird_private_tab_groups_do_not_leak_between_sessions)
++{
++    auto first = SessionStore::create();
++    auto window = TRY_OR_FAIL(first->window_opened());
++    auto parent = open_tab(*first, window, "about:blank"sv);
++    auto child = open_tab(*first, window, "about:blank"sv);
++    TRY_OR_FAIL(first->set_tab_tree_parent(child, parent));
++    EXPECT_EQ(TRY_OR_FAIL(first->tab_tree_parent(child)).value(), parent);
++    EXPECT(first->set_tab_tree_parent(child, child).is_error());
++    auto second = SessionStore::create();
++    EXPECT(!TRY_OR_FAIL(second->tab_tree_parent(child)).has_value());
++    TRY_OR_FAIL(first->set_tab_tree_parent(child, {}));
++    EXPECT(!TRY_OR_FAIL(first->tab_tree_parent(child)).has_value());
++}

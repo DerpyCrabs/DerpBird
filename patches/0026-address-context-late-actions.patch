@@ -1,0 +1,76 @@
+--- a/Libraries/LibWeb/Fetch/Engine/NetworkTransportHandle.h
++++ b/Libraries/LibWeb/Fetch/Engine/NetworkTransportHandle.h
+@@ -23,6 +23,7 @@
+     [[nodiscard]] Optional<Requests::RequestTransferLeaseKey> const& transfer_lease() const { return m_request->transfer_lease(); }
+     [[nodiscard]] ByteString const& http_version() const { return m_request->http_version(); }
+ 
++    [[nodiscard]] String const& policy_ip_addresses() const { return m_request->response_policy_ip_addresses(); }
+     [[nodiscard]] bool has_file_backed_response_body() const;
+ 
+     virtual void resume_body_delivery_up_to(u64 byte_count) override;
+--- a/Libraries/LibWeb/Loader/ContentBlocker.cpp
++++ b/Libraries/LibWeb/Loader/ContentBlocker.cpp
+@@ -599,7 +599,7 @@
+     auto initiator = serialized_url_for_matching(source_url_for_matching(source));
+     auto kind = resource_type_to_adblock_request_type(type);
+     auto top = serialized_top_context(url, source, type, top_url);
+-    auto result = ContentBlocking::FFI::rust_content_blocker_action_rules(m_engine, address.bytes(), initiator.bytes(), kind.bytes(), method.bytes(), top.bytes(), action);
++    auto result = ContentBlocking::FFI::rust_content_blocker_action_rules(m_engine, address.bytes(), initiator.bytes(), kind.bytes(), method.bytes(), top.bytes(), action, ip_addresses.bytes());
+     ScopeGuard release = [&] { ContentBlocking::FFI::rust_content_blocker_free_string(result.data, result.length); };
+     if (!result.length || result.length > 1 * MiB) return rules;
+     auto value = JsonValue::from_string(StringView { result.data, result.length });
+--- a/Libraries/LibWeb/Loader/ResourceLoader.cpp
++++ b/Libraries/LibWeb/Loader/ResourceLoader.cpp
+@@ -504,17 +504,19 @@
+     if (request.method() != "HEAD"sv && (!request.page() || request.page()->content_blocking_enabled_for_url(request.top_level_creation_url()))) {
+         auto type = ContentBlocker::resource_type_from_fetch_metadata(request.destination(), request.initiator_type(), request.request_mode());
+         if (request.derpbird_subframe_navigation) type = ContentBlocker::ResourceType::Subdocument;
+-        auto operations = ContentBlocker::the().response_replacements(url, request.source_url().value_or(url), type, request.method(), request.top_level_creation_url());
+-        Vector<String> rules;
+-        for (auto const& operation : operations.values()) {
+-            if (operation.is_object()) {
+-                if (auto rule = operation.as_object().get_string("matched_rule"sv); rule.has_value()) rules.append(*rule);
+-            }
+-        }
+-        DerpBirdResponseFiltering::wrap(move(operations), on_headers_received, on_data_received, on_cached_body_available, on_complete,
+-            [request, rules = move(rules)] {
+-                if (auto page = request.page()) for (auto const& rule : rules)
+-                    page->client().page_did_block_resource(*request.url(), "Filter: response"sv, rule);
++        DerpBirdResponseFiltering::wrap({}, on_headers_received, on_data_received, on_cached_body_available, on_complete,
++            [request](JsonArray const& operations) {
++                if (auto page = request.page()) {
++                    for (auto const& operation : operations.values()) {
++                        if (!operation.is_object()) continue;
++                        if (auto rule = operation.as_object().get_string("matched_rule"sv); rule.has_value())
++                            page->client().page_did_block_resource(*request.url(), "Filter: response"sv, *rule);
++                    }
++                }
++            }, [request, type](Fetch::Engine::NetworkTransportHandle* transport) {
++                if (auto page = request.page(); page && !page->content_blocking_enabled_for_url(request.top_level_creation_url())) return JsonArray {};
++                StringView addresses = transport ? transport->policy_ip_addresses().bytes_as_string_view() : StringView {};
++                return ContentBlocker::the().response_replacements(*request.url(), request.source_url().value_or(*request.url()), type, request.method(), request.top_level_creation_url(), addresses);
+             });
+     }
+ 
+@@ -651,8 +653,8 @@
+         auto type = ContentBlocker::resource_type_from_fetch_metadata(request.destination(), request.initiator_type(), request.request_mode());
+         if (request.derpbird_subframe_navigation) type = ContentBlocker::ResourceType::Subdocument;
+         for (auto const& address : addresses) {
+-            auto decision = ContentBlocker::the().check_ip_address(*request.url(), request.source_url().value_or(*request.url()), type, request.method(), address, request.top_level_creation_url());
+-            if (!decision.blocked) continue;
++            auto decision = ContentBlocker::the().check(*request.url(), request.source_url().value_or(*request.url()), type, request.method(), request.top_level_creation_url(), address);
++            if (!decision.blocked && !decision.rewritten_url.has_value()) continue;
+             if (auto page = request.page()) page->client().page_did_block_resource(*request.url(), "IP address"sv, decision.matched_rule);
+             canonical_action->decision = move(decision);
+             return false;
+--- a/Libraries/LibWeb/WebSockets/WebSocket.cpp
++++ b/Libraries/LibWeb/WebSockets/WebSocket.cpp
+@@ -281,7 +281,7 @@
+         if (!page->content_blocking_enabled_for_url(top_level)) return true;
+         auto& blocker = ContentBlocker::the();
+         for (auto const& address : addresses) {
+-            auto decision = blocker.check_ip_address(connection_url, source, ContentBlocker::ResourceType::WebSocket, "GET"sv, address, top_level);
++            auto decision = blocker.check(connection_url, source, ContentBlocker::ResourceType::WebSocket, "GET"sv, top_level, address);
+             if (!decision.blocked) continue;
+             page->client().page_did_block_resource(connection_url, "WebSocket IP address"sv, decision.matched_rule);
+             return false;

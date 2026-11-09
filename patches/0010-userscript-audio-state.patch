@@ -1,0 +1,59 @@
+--- a/Libraries/LibWebView/Application.h
++++ b/Libraries/LibWebView/Application.h
+@@ -451,6 +451,7 @@
+     void when_compositor_gpu_device_identity_is_known(CompositorGpuDeviceIdentityCallback);
+ 
+     Function<void(JsonValue const&)> on_derpbird_scripts_changed;
++    Function<void(ViewImplementation&)> on_derpbird_audio_changed;
+     Function<void(WebContentPage&, CanonicalDocument&, ByteBuffer, Function<void(ErrorOr<ByteBuffer>)>)> on_derpbird_value_request;
+ 
+ protected:
+--- a/Libraries/LibWebView/ViewImplementation.cpp
++++ b/Libraries/LibWebView/ViewImplementation.cpp
+@@ -2978,12 +2978,14 @@
+     Application::the().insert_clipboard_item(move(item));
+ }
+ 
+-void ViewImplementation::toggle_page_mute_state()
+-{
++void ViewImplementation::toggle_page_mute_state(bool from_userscript)
++{
++    m_derpbird_muted_by_script = from_userscript;
+     m_mute_state = Web::HTML::invert_mute_state(m_mute_state);
+     traversable().for_each_hosting_page([&](WebContentPage& page) {
+         page.client().set_audio_playback_mute_state(page.id(), m_mute_state);
+     });
++    if (Application::the().on_derpbird_audio_changed) Application::the().on_derpbird_audio_changed(*this);
+ }
+ 
+ void ViewImplementation::update_audibility()
+@@ -2993,7 +2995,9 @@
+         if (page.audibility() == Audio::Audibility::Audible)
+             audible = true;
+     });
++    bool changed = audible != is_playing_audio();
+     m_tab_indicators.set_active(TabIndicator::PlayingAudio, audible, MonotonicTime::now());
++    if (changed && Application::the().on_derpbird_audio_changed) Application::the().on_derpbird_audio_changed(*this);
+ }
+ 
+ void ViewImplementation::reset_page_media_state()
+--- a/Libraries/LibWebView/ViewImplementation.h
++++ b/Libraries/LibWebView/ViewImplementation.h
+@@ -516,7 +516,8 @@
+     void set_input_method_state(Badge<WebContentPage>, InputMethodState);
+ 
+     Web::HTML::MuteState page_mute_state() const { return m_mute_state; }
+-    void toggle_page_mute_state();
++    void toggle_page_mute_state(bool from_userscript = false);
++    bool derpbird_muted_by_script() const { return m_derpbird_muted_by_script; }
+ 
+     // The tab plays audio while the AudioServer has recently heard any page of it.
+     void update_audibility(Badge<WebContentPage>) { update_audibility(); }
+@@ -1138,6 +1139,7 @@
+     u64 m_playing_audio_indicator_change_count { 0 };
+     Web::ScreenWakeLockState m_screen_wake_lock_state { Web::ScreenWakeLockState::Released };
+ 
++    bool m_derpbird_muted_by_script { false };
+     Web::HTML::MuteState m_mute_state { Web::HTML::MuteState::Unmuted };
+ 
+     CanonicalTraversable* m_top_level_traversable { nullptr };

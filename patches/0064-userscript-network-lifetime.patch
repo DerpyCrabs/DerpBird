@@ -1,0 +1,16 @@
+--- a/Services/WebContent/PageHost.cpp
++++ b/Services/WebContent/PageHost.cpp
+@@ -205,7 +205,12 @@
+     session->value->on_close = [weak = m_value_requests->make_weak_ptr(), page_id, document_id] {
+         if (weak) weak->cancel_document(page_id, document_id);
+     };
+-    auto request = TRY(m_value_requests->add(page_id, document_id, move(completion)));
++    auto decoded = TRY(Web::DerpBirdValueProtocol::decode_request(payload.bytes()));
++    using Method = Web::DerpBirdValueProtocol::Method;
++    bool network = decoded.method == Method::Network || decoded.method == Method::NetworkLegacy || decoded.method == Method::NetworkRead;
++    // The provider owns details.timeout and cancellation. A storage RPC timer
++    // must not cut off slow headers, long responses or an idle streaming read.
++    auto request = TRY(m_value_requests->add(page_id, document_id, move(completion), !network));
+     m_client.async_did_request_derpbird_values(page_id, document_id, request, payload.bytes());
+     return request;
+ }

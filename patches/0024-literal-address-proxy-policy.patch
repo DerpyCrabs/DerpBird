@@ -1,0 +1,81 @@
+--- a/Services/RequestServer/ConnectionFromClient.cpp
++++ b/Services/RequestServer/ConnectionFromClient.cpp
+@@ -616,7 +616,9 @@
+ 
+     // Avoid leaking hostnames resolved by the proxy.
+     auto proxy = proxy_configuration().proxy_for(*parsed).copy();
+-    if (proxy.has_value() && proxy->resolves_hostnames()) {
++    if (proxy.has_value() && proxy->resolves_hostnames()
++        && !IPv4Address::from_string(host).has_value()
++        && !IPv6Address::from_string(host).has_value()) {
+         start_aia_fetch(url, fetch_url, move(proxy), {});
+         return;
+     }
+@@ -970,7 +972,9 @@
+ 
+     // Avoid leaking hostnames resolved by the proxy.
+     auto proxy = proxy_configuration().proxy_for(url).copy();
+-    if (proxy.has_value() && proxy->resolves_hostnames()) {
++    if (proxy.has_value() && proxy->resolves_hostnames()
++        && !IPv4Address::from_string(host).has_value()
++        && !IPv6Address::from_string(host).has_value()) {
+         if (m_pending_websockets.remove(websocket_id))
+             open_websocket(websocket_id, move(url), move(origin), move(protocols), move(extensions), move(additional_request_headers), move(proxy), nullptr);
+         return;
+--- a/Services/RequestServer/Request.cpp
++++ b/Services/RequestServer/Request.cpp
+@@ -893,6 +893,10 @@
+ 
+ void Request::reset_for_retry()
+ {
++    ++m_canonical_policy_generation;
++    if (m_canonical_policy_timer) m_canonical_policy_timer->stop();
++    m_pending_canonical_urls.clear();
++    m_pending_ip_addresses.clear();
+     m_response_headers->clear();
+     m_reason_phrase.clear();
+     m_status_code.clear();
+@@ -1388,7 +1392,9 @@
+     m_pending_ip_addresses.clear();
+     // Avoid leaking hostnames resolved by the proxy.
+     m_proxy = proxy_configuration().proxy_for(m_url).copy();
+-    if (m_proxy.has_value() && m_proxy->resolves_hostnames()) {
++    if (m_proxy.has_value() && m_proxy->resolves_hostnames()
++        && !IPv4Address::from_string(m_url.serialized_host()).has_value()
++        && !IPv6Address::from_string(m_url.serialized_host()).has_value()) {
+         m_dns_result = nullptr;
+         continue_after_dns_lookup();
+         return;
+@@ -1631,7 +1637,7 @@
+         }
+     }
+ 
+-    if ((m_query_response_policy & 8) && m_dns_result) {
++    if ((m_query_response_policy & 8) && m_dns_result && (!m_proxy.has_value() || !m_proxy->resolves_hostnames())) {
+         // CONNECT_TO controls the connection-pool destination, while TLS/SNI
+         // and HTTP retain the original URL. Preserve all approved candidates
+         // for Happy Eyeballs rather than forcing a fresh socket per request.
+@@ -1897,7 +1903,7 @@
+         }
+     }
+ 
+-    if ((m_query_response_policy & 8) && m_dns_result) {
++    if ((m_query_response_policy & 8) && m_dns_result && (!m_proxy.has_value() || !m_proxy->resolves_hostnames())) {
+         // CONNECT_TO controls the connection-pool destination, while TLS/SNI
+         // and HTTP retain the original URL. Preserve all approved candidates
+         // for Happy Eyeballs rather than forcing a fresh socket per request.
+--- a/Services/RequestServer/WebSocketImplCurl.cpp
++++ b/Services/RequestServer/WebSocketImplCurl.cpp
+@@ -114,7 +114,11 @@
+     m_curl_string_lists.append(curl_headers);
+ 
+     if (auto const& dns_info = info.dns_result(); dns_info.has_value()) {
+-        auto policy_host = policy_connection_host(*dns_info, url.serialized_host(), url.port_or_default());
++        // Remote-resolving proxies must see the actual literal destination;
++        // only locally resolved connections use an internal pool identity.
++        auto policy_host = m_proxy.has_value() && m_proxy->resolves_hostnames()
++            ? url.serialized_host().to_byte_string()
++            : policy_connection_host(*dns_info, url.serialized_host(), url.port_or_default());
+         auto target = ByteString::formatted("{}:{}:{}:{}", url.serialized_host(), url.port_or_default(), policy_host, url.port_or_default());
+         auto* target_list = curl_slist_append(nullptr, target.characters());
+         VERIFY(target_list);

@@ -1,0 +1,33 @@
+--- a/UI/Qt/WebContentView.h
++++ b/UI/Qt/WebContentView.h
+@@ -213,6 +213,7 @@
+     void set_follows_mouse_while_inactive(bool follows) { m_follows_mouse_while_inactive = follows; }
+ 
+ signals:
++    void zoom_level_changed();
+     void ready_to_paint();
+     void crash_overlay_changed();
+     void image_overlay_unavailable();
+--- a/UI/Qt/WebContentView.cpp
++++ b/UI/Qt/WebContentView.cpp
+@@ -1940,6 +1940,7 @@
+ {
+     ViewImplementation::update_zoom();
+     update_viewport_size();
++    emit zoom_level_changed();
+ }
+ 
+ void WebContentView::showEvent(QShowEvent* event)
+--- a/UI/Qt/Tab.cpp
++++ b/UI/Qt/Tab.cpp
+@@ -264,6 +264,10 @@
+     QObject::connect(bookmark_action, &QAction::triggered, this, [this] { show_bookmark_popover(); });
+     m_location_edit->set_trailing_action(bookmark_action);
+     m_location_edit->set_zoom_action(create_application_action(*m_location_edit, view().reset_zoom_action(), IncludeActionIcon::No));
++    connect(&view(), &WebContentView::zoom_level_changed, this, [this] {
++        if (auto* chrome = m_window->derpbird_chrome())
++            chrome->queue_snapshot();
++    });
+     // The translate button shows the page's translation menu, rather than translating the page at once.
+     m_translate_action = create_application_action(*m_location_edit, view().page_translation().translate_action());
+     m_location_edit->set_translate_action(m_translate_action);

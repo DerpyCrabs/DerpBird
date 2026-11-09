@@ -1,0 +1,8 @@
+<!DOCTYPE html>
+<div id="probe" style="color: rgb(1, 2, 3)">Child</div>
+<script>
+addEventListener('message', event => {
+    if (event.source === parent && event.data === 'read-style')
+        parent.postMessage({ color: getComputedStyle(document.getElementById('probe')).color }, '*');
+});
+</script>

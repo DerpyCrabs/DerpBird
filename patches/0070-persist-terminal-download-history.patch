@@ -1,0 +1,281 @@
+--- a/Libraries/LibWebView/DownloadStore.h
++++ b/Libraries/LibWebView/DownloadStore.h
+@@ -42,6 +42,17 @@
+     bool may_replace_destination { false };
+ };
+ 
++struct DownloadHistoryRecord {
++    i64 id { 0 };
++    String url;
++    String destination;
++    u8 status { 2 }; // FileDownloader::DownloadStatus: Completed, Canceled, Failed.
++    i64 downloaded_size { 0 };
++    i64 total_size { -1 }; // Unknown size.
++    String error;
++    UnixDateTime created_time;
++};
++
+ class WEBVIEW_API DownloadStore {
+     AK_MAKE_NONCOPYABLE(DownloadStore);
+     AK_MAKE_NONMOVABLE(DownloadStore);
+@@ -62,6 +73,8 @@
+     Vector<DownloadRecord> resumable_downloads();
+ 
+     i64 maximum_download_id();
++    void save_history(DownloadHistoryRecord const&);
++    Vector<DownloadHistoryRecord> download_history();
+ 
+ private:
+     struct Statements {
+@@ -69,6 +82,10 @@
+         Database::StatementID delete_download { 0 };
+         Database::StatementID list_downloads { 0 };
+         Database::StatementID maximum_download_id { 0 };
++        Database::StatementID save_history { 0 };
++        Database::StatementID list_history { 0 };
++        Database::StatementID delete_history { 0 };
++        Database::StatementID trim_history { 0 };
+     };
+ 
+     DownloadStore() = default;
+--- a/Libraries/LibWebView/DownloadStore.cpp
++++ b/Libraries/LibWebView/DownloadStore.cpp
+@@ -103,6 +103,22 @@
+                 ALTER TABLE Downloads ADD COLUMN may_replace_destination INTEGER NOT NULL DEFAULT 0;
+             )#"sv,
+         },
++        {
++            .version = 4u,
++            .sql = R"#(
++                CREATE TABLE DownloadHistory (
++                    id INTEGER PRIMARY KEY,
++                    url TEXT NOT NULL,
++                    destination TEXT NOT NULL,
++                    status INTEGER NOT NULL,
++                    downloaded_size INTEGER NOT NULL,
++                    total_size INTEGER NOT NULL,
++                    error TEXT NOT NULL,
++                    created_time INTEGER NOT NULL
++                );
++                CREATE INDEX DownloadHistoryRecency ON DownloadHistory (created_time DESC, id DESC);
++            )#"sv,
++        },
+     });
+ 
+     return database.migrate("Downloads"sv, migrations, mode);
+@@ -156,8 +172,21 @@
+ 
+     statements.maximum_download_id = TRY(database.prepare_statement(R"#(
+         SELECT IFNULL(MAX(id), 0)
+-        FROM Downloads;
+-    )#"sv));
++        FROM (SELECT id FROM Downloads UNION ALL SELECT id FROM DownloadHistory);
++    )#"sv));
++
++    statements.save_history = TRY(database.prepare_statement(R"#(
++        INSERT INTO DownloadHistory (id, url, destination, status, downloaded_size, total_size, error, created_time)
++        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
++        ON CONFLICT(id) DO UPDATE SET url=excluded.url, destination=excluded.destination,
++            status=excluded.status, downloaded_size=excluded.downloaded_size,
++            total_size=excluded.total_size, error=excluded.error;
++    )#"sv));
++    statements.list_history = TRY(database.prepare_statement(
++        "SELECT id,url,destination,status,downloaded_size,total_size,error,created_time FROM DownloadHistory ORDER BY id ASC"sv));
++    statements.delete_history = TRY(database.prepare_statement("DELETE FROM DownloadHistory WHERE id=?"sv));
++    statements.trim_history = TRY(database.prepare_statement(
++        "DELETE FROM DownloadHistory WHERE id IN (SELECT id FROM DownloadHistory ORDER BY created_time DESC,id DESC LIMIT -1 OFFSET 5000)"sv));
+ 
+     return adopt_own(*new DownloadStore { database, move(statements) });
+ }
+@@ -206,6 +235,7 @@
+         return;
+ 
+     m_database->execute_statement(m_statements.delete_download, {}, id);
++    m_database->execute_statement(m_statements.delete_history, {}, id);
+ }
+ 
+ Vector<DownloadRecord> DownloadStore::resumable_downloads()
+@@ -270,4 +300,34 @@
+     return maximum_id;
+ }
+ 
+-}
++void DownloadStore::save_history(DownloadHistoryRecord const& record)
++{
++    if (!m_database || record.id < 0 || record.status < 2 || record.status > 4
++        || record.downloaded_size < 0 || record.total_size < -1)
++        return;
++    m_database->execute_statement(m_statements.save_history, {}, record.id, record.url,
++        record.destination, record.status, record.downloaded_size, record.total_size, record.error, record.created_time);
++    m_database->execute_statement(m_statements.trim_history, {});
++}
++
++Vector<DownloadHistoryRecord> DownloadStore::download_history()
++{
++    Vector<DownloadHistoryRecord> records;
++    if (!m_database) return records;
++    m_database->execute_statement(m_statements.list_history, [&](auto statement) -> ErrorOr<void> {
++        auto id = m_database->result_i64_checked(statement, 0);
++        auto status = m_database->result_i64_checked(statement, 3);
++        auto size = m_database->result_i64_checked(statement, 4);
++        auto total = m_database->result_i64_checked(statement, 5);
++        if (id.is_error() || status.is_error() || size.is_error() || total.is_error()
++            || id.value() < 0 || status.value() < 2 || status.value() > 4 || size.value() < 0 || total.value() < -1)
++            return {};
++        records.append({ id.value(), m_database->result_column<String>(statement, 1),
++            m_database->result_column<String>(statement, 2), static_cast<u8>(status.value()), size.value(), total.value(),
++            m_database->result_column<String>(statement, 6), m_database->result_column<UnixDateTime>(statement, 7) });
++        return {};
++    });
++    return records;
++}
++
++}
+--- a/Libraries/LibWebView/FileDownloader.cpp
++++ b/Libraries/LibWebView/FileDownloader.cpp
+@@ -1359,7 +1359,28 @@
+ 
+     m_next_download_id = max(m_next_download_id, static_cast<u64>(download_store.maximum_download_id()) + 1);
+ 
++    for (auto const& record : download_store.download_history()) {
++        auto url = URL::Parser::basic_parse(record.url);
++        LexicalPath destination { record.destination.to_byte_string() };
++        if (!url.has_value() || !destination.is_absolute()) continue;
++        Download download {
++            .id = static_cast<u64>(record.id),
++            .url = url.release_value(),
++            .destination = move(destination),
++            .status = static_cast<DownloadStatus>(record.status),
++            .downloaded_size = static_cast<u64>(record.downloaded_size),
++            .total_size = {},
++            .error = {},
++            .bytes_per_second = {},
++            .created_time = record.created_time,
++        };
++        if (record.total_size >= 0) download.total_size = static_cast<u64>(record.total_size);
++        if (!record.error.is_empty()) download.error = record.error;
++        download.created_time = record.created_time;
++        m_downloads.append(move(download));
++    }
+     restore_persisted_downloads();
++    quick_sort(m_downloads, [](auto const& a, auto const& b) { return a.id < b.id; });
+ }
+ 
+ void FileDownloader::persist_download_snapshot(u64 id, PersistUrgency urgency)
+@@ -1748,6 +1769,21 @@
+ 
+ void FileDownloader::notify_download_updated(Download const& download)
+ {
++    static_assert(static_cast<u8>(DownloadStatus::Completed) == 2);
++    static_assert(static_cast<u8>(DownloadStatus::Canceled) == 3);
++    static_assert(static_cast<u8>(DownloadStatus::Failed) == 4);
++    // Persist metadata once at terminal transitions, never progress ticks,
++    // private transfers, request headers, or live producer capabilities.
++    if (m_download_store && download.is_private == IsPrivate::No && !status_is_active(download.status)
++        && download.id <= static_cast<u64>(NumericLimits<i64>::max())
++        && download.downloaded_size <= static_cast<u64>(NumericLimits<i64>::max())
++        && (!download.total_size.has_value() || *download.total_size <= static_cast<u64>(NumericLimits<i64>::max()))) {
++        m_download_store->save_history({
++            static_cast<i64>(download.id), download.url.serialize(),
++            MUST(String::from_byte_string(download.destination.string())), static_cast<u8>(download.status),
++            static_cast<i64>(download.downloaded_size), download.total_size.has_value() ? static_cast<i64>(*download.total_size) : -1,
++            download.error.value_or(String {}), download.created_time });
++    }
+     RefPtr<AdoptedResponseObserver> response_observer;
+     Optional<Download> finished_download;
+     if (!status_is_active(download.status)) {
+--- a/Base/res/ladybird/about-pages/downloads.html
++++ b/Base/res/ladybird/about-pages/downloads.html
+@@ -453,7 +453,7 @@
+ 
+                 const isEmpty = downloads.length === 0;
+                 downloadsEmpty.classList.toggle("hidden", !isEmpty);
+-                downloadsEmpty.textContent = "Files you download in this session will show up here.";
++                downloadsEmpty.textContent = "Downloaded files will show up here.";
+ 
+                 if (isEmpty) {
+                     downloadsStatus.textContent = "No downloads yet.";
+@@ -463,7 +463,7 @@
+                 } else if (pausedCount > 0) {
+                     downloadsStatus.textContent = `${pluralize(pausedCount, "paused download")} · ${pluralize(downloads.length, "item")} total.`;
+                 } else {
+-                    downloadsStatus.textContent = `${pluralize(downloads.length, "download")} in this session.`;
++                    downloadsStatus.textContent = `${pluralize(downloads.length, "download")}.`;
+                 }
+             }
+ 
+--- a/Tests/LibWebView/TestDownloadStore.cpp
++++ b/Tests/LibWebView/TestDownloadStore.cpp
+@@ -277,3 +277,72 @@
+     EXPECT_EQ(MUST(WebView::DownloadStore::migrate_schema(database)), Database::MigrationOutcome::Success);
+     EXPECT_EQ(MUST(WebView::DownloadStore::migrate_schema(database, Database::MigrationMode::CheckOnly)), Database::MigrationOutcome::Success);
+ }
++
++TEST_CASE(terminal_history_round_trip_clear_and_id_allocation)
++{
++    auto database = create_database();
++    auto store = create_store(database);
++    store->save_download(example_download(7));
++    WebView::DownloadHistoryRecord record {
++        .id = 9,
++        .url = "https://example.com/download"_string,
++        .destination = "/tmp/completed.bin"_string,
++        .status = 4,
++        .downloaded_size = 12,
++        .total_size = -1,
++        .error = "Interrupted"_string,
++        .created_time = UnixDateTime::from_seconds_since_epoch(1234),
++    };
++    store->save_history(record);
++    auto reopened = MUST(WebView::DownloadStore::create(database));
++    auto history = reopened->download_history();
++    EXPECT_EQ(history.size(), 1u);
++    EXPECT_EQ(history[0].status, 4u);
++    EXPECT_EQ(history[0].total_size, -1);
++    EXPECT_EQ(history[0].downloaded_size, 12);
++    EXPECT_EQ(history[0].error, "Interrupted"_string);
++    EXPECT_EQ(history[0].destination, record.destination);
++    EXPECT_EQ(history[0].created_time, record.created_time);
++    EXPECT_EQ(reopened->maximum_download_id(), 9);
++    EXPECT_EQ(reopened->resumable_downloads().size(), 1u);
++    record.status = 2;
++    record.total_size = 12;
++    record.error = {};
++    reopened->save_history(record);
++    EXPECT_EQ(reopened->download_history().size(), 1u);
++    EXPECT_EQ(reopened->download_history()[0].status, 2u);
++    EXPECT(reopened->download_history()[0].error.is_empty());
++    reopened->remove_download(9);
++    EXPECT(reopened->download_history().is_empty());
++    EXPECT_EQ(reopened->maximum_download_id(), 7);
++    auto disabled = WebView::DownloadStore::create_disabled();
++    disabled->save_history(record);
++    EXPECT(disabled->download_history().is_empty());
++}
++
++TEST_CASE(terminal_history_rejects_live_states_and_bounds_retention)
++{
++    auto database = create_database();
++    auto store = create_store(database);
++    WebView::DownloadHistoryRecord record {
++        .url = "https://example.com/download"_string,
++        .destination = "/tmp/completed.bin"_string,
++        .error = {},
++        .created_time = UnixDateTime::from_seconds_since_epoch(0),
++    };
++    for (u8 status : { 0, 1, 5 }) {
++        record.status = status;
++        store->save_history(record);
++    }
++    EXPECT(store->download_history().is_empty());
++    record.status = 3;
++    for (i64 id = 0; id <= 5000; ++id) {
++        record.id = id;
++        record.created_time = UnixDateTime::from_seconds_since_epoch(id);
++        store->save_history(record);
++    }
++    auto history = store->download_history();
++    EXPECT_EQ(history.size(), 5000u);
++    EXPECT_EQ(history.first().id, 1);
++    EXPECT_EQ(history.last().id, 5000);
++}

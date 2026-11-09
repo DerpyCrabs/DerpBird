@@ -1,0 +1,125 @@
+--- a/Libraries/LibWeb/CSS/ImageStyleValueResourceKey.h
++++ b/Libraries/LibWeb/CSS/ImageStyleValueResourceKey.h
+@@ -6,6 +6,7 @@
+ 
+ #pragma once
+ 
++#include <LibWeb/Page/DerpBirdInsertionAuthority.h>
+ #include <AK/HashFunctions.h>
+ #include <AK/Optional.h>
+ #include <AK/Traits.h>
+@@ -25,6 +26,8 @@
+     Optional<CrossOriginModifierValue> cross_origin;
+     Optional<Utf16FlyString> integrity;
+     Optional<ReferrerPolicyModifierValue> referrer_policy;
++    // Retain the token, so its address cannot be recycled while the key lives.
++    RefPtr<DerpBirdInsertionAuthority> derpbird_insertion_authority;
+ 
+     static ImageStyleValueResourceKey create(::URL::URL url, URL const& url_value)
+     {
+@@ -62,6 +65,6 @@
+         hash = pair_int_hash(hash, key.cross_origin.has_value() ? to_underlying(*key.cross_origin) + 1 : 0);
+         hash = pair_int_hash(hash, key.integrity.has_value() ? key.integrity->hash() : 0);
+         hash = pair_int_hash(hash, key.referrer_policy.has_value() ? to_underlying(*key.referrer_policy) + 1 : 0);
+-        return hash;
++        return pair_int_hash(hash, ptr_hash(key.derpbird_insertion_authority.ptr()));
+     }
+ };
+--- a/Libraries/LibWeb/CSS/StyleEngineInput.cpp
++++ b/Libraries/LibWeb/CSS/StyleEngineInput.cpp
+@@ -3102,6 +3102,7 @@
+ 
+ static void record_style_rule_inserted(u64 identity, bool changes_environment, StyleSheetState& source_sheet)
+ {
++    source_sheet.revoke_derpbird_insertion_authority();
+     auto* sheet = owning_compiled_sheet(&source_sheet);
+     if (!sheet || stop_sharing_compiled_style_sheet(*sheet))
+         return;
+@@ -3199,6 +3200,9 @@
+ 
+ void record_style_rule_declarations_changed(RustRule const& rule, StyleSheetState& source_sheet)
+ {
++    // Revoke before compiling changed url() declarations or scheduling loads,
++    // including the fast CSSOM path that never calls invalidate_owners().
++    source_sheet.revoke_derpbird_insertion_authority();
+     auto* sheet = owning_compiled_sheet(&source_sheet);
+     if (!sheet || stop_sharing_compiled_style_sheet(*sheet))
+         return;
+--- a/Libraries/LibWeb/CSS/StyleSheetState.cpp
++++ b/Libraries/LibWeb/CSS/StyleSheetState.cpp
+@@ -160,6 +160,7 @@
+ 
+ void StyleSheetState::set_rules(RustRuleList rules)
+ {
++    revoke_derpbird_insertion_authority();
+     // https://drafts.csswg.org/css-font-loading/#font-face-css-connection
+     // If a @font-face rule is removed from the document, its corresponding FontFace object is no longer CSS-connected.
+     // The connection is not restorable by any means (but adding the @font-face back to the stylesheet will create a
+@@ -273,6 +274,7 @@
+ 
+ void StyleSheetState::rule_inserted(RustRule const& rule)
+ {
++    revoke_derpbird_insertion_authority();
+     recalculate_rule_caches();
+     record_style_rule_inserted(rule, *this);
+ 
+@@ -488,10 +490,8 @@
+ 
+ void StyleSheetState::invalidate_owners(bool revoke_insertion_authority)
+ {
+-    if (revoke_insertion_authority) {
+-        ++m_derpbird_authority_generation;
+-        m_derpbird_insertion_authority = nullptr;
+-    }
++    if (revoke_insertion_authority)
++        revoke_derpbird_insertion_authority();
+     auto previously_matched = m_native_sheet.media_state();
+     m_native_sheet.reset_media_state();
+     m_rule_cache = nullptr;
+--- a/Libraries/LibWeb/CSS/StyleSheetState.h
++++ b/Libraries/LibWeb/CSS/StyleSheetState.h
+@@ -119,6 +119,11 @@
+     void add_owning_document_or_shadow_root(DOM::Node& document_or_shadow_root);
+     void remove_owning_document_or_shadow_root(DOM::Node& document_or_shadow_root);
+     void invalidate_owners(bool revoke_insertion_authority = true);
++    void revoke_derpbird_insertion_authority()
++    {
++        ++m_derpbird_authority_generation;
++        m_derpbird_insertion_authority = nullptr;
++    }
+     RefPtr<DerpBirdInsertionAuthority> const& derpbird_insertion_authority() const { return m_derpbird_insertion_authority; }
+     void set_derpbird_insertion_authority(RefPtr<DerpBirdInsertionAuthority>);
+     GC::Ptr<DOM::Document> owning_document() const;
+--- a/Libraries/LibWeb/CSS/StyleValues/ImageStyleValue.cpp
++++ b/Libraries/LibWeb/CSS/StyleValues/ImageStyleValue.cpp
+@@ -196,7 +196,8 @@
+ ImageStyleValueResource* ImageStyleValue::resource_registered_by_clients(DOM::Document const& document) const
+ {
+     for (auto const* client : m_clients) {
+-        if (client->m_resource && client->document().ptr() == &document)
++        if (client->m_resource && client->document().ptr() == &document
++            && client->m_resource->key().derpbird_insertion_authority == m_derpbird_insertion_authority)
+             return client->m_resource;
+     }
+     return nullptr;
+@@ -204,6 +205,7 @@
+ 
+ void ImageStyleValue::set_style_sheet(StyleSheetState* style_sheet)
+ {
++    m_derpbird_insertion_authority = nullptr;
+     m_style_resource_base_url.clear();
+     m_resolved_url.clear();
+     m_parent_style_sheet_origin_clean.clear();
+@@ -308,8 +310,10 @@
+ 
+     // OPTIMIZATION: Most url() values have no request modifiers, so don't rebuild the URL value for those.
+     if (m_value->image._0->url_modifiers.length == 0)
+-        return ImageStyleValueResourceKey { .url = resolved_url.release_value(), .cross_origin = {}, .integrity = {}, .referrer_policy = {} };
+-    return ImageStyleValueResourceKey::create(resolved_url.release_value(), url_value());
++        return ImageStyleValueResourceKey { .url = resolved_url.release_value(), .cross_origin = {}, .integrity = {}, .referrer_policy = {}, .derpbird_insertion_authority = m_derpbird_insertion_authority };
++    auto key = ImageStyleValueResourceKey::create(resolved_url.release_value(), url_value());
++    key.derpbird_insertion_authority = m_derpbird_insertion_authority;
++    return key;
+ }
+ 
+ ::URL::URL ImageStyleValue::style_resource_base_url(DOM::Document const& document) const

@@ -1,0 +1,8 @@
+before: rgb(1, 2, 3)
+install: true
+parent: rgb(1, 2, 3)
+matching child: rgb(4, 5, 6)
+other child: rgb(1, 2, 3)
+new child: rgb(4, 5, 6)
+removed existing: rgb(1, 2, 3)
+removed new: rgb(1, 2, 3)

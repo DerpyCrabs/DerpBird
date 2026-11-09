@@ -1,0 +1,748 @@
+--- a/UI/Qt/WaylandPageSurface.h
++++ b/UI/Qt/WaylandPageSurface.h
+@@ -6,7 +6,6 @@
+ 
+ #pragma once
+ 
+-#include <AK/Array.h>
+ #include <AK/Function.h>
+ #include <AK/NonnullOwnPtr.h>
+ #include <AK/OwnPtr.h>
+@@ -19,6 +18,7 @@
+ #include <QPoint>
+ #include <QPointer>
+ #include <QRect>
++#include <QRectF>
+ #include <QSize>
+ 
+ #include <sys/types.h>
+@@ -61,12 +61,14 @@
+         u64 page_id { 0 };
+         i32 bitmap_id { -1 };
+         // The part of the dma-buf to show, in its pixels.
+-        QRect source;
++        QRectF source;
+         // Where to show it, in the logical coordinates of the window's surface.
+         QPoint position;
+         QSize destination;
+         // Whether the backing store may hold different pixels than when it was last presented.
+         bool has_new_content { true };
++        bool is_opaque { true };
++        wl_surface* above { nullptr };
+     };
+ 
+     enum class PresentResult {
+@@ -78,6 +80,7 @@
+         Failed,
+     };
+     PresentResult present(QWindow& parent, Frame const&);
++    wl_surface* surface() const { return m_surface; }
+     // Whether the frame would show a different part of its buffer, or show it somewhere else, than the surface does.
+     bool would_change_placement(Frame const&) const;
+     // Whether the last present takes effect only once the parent commits, because it moved the surface or because the
+@@ -102,10 +105,8 @@
+ 
+     // An image over the page, such as the address of a hovered link, at a position in the logical coordinates of the
+     // window's surface. It changes on screen together with the parent's next commit. False if the window has no surface.
+-    enum class OverlayKind { HoverLabel, BrowserShell };
+-    bool show_overlay(QWindow& parent, QImage const&, QPoint position, OverlayKind = OverlayKind::HoverLabel);
+-    void hide_overlay(OverlayKind = OverlayKind::HoverLabel);
+-    bool is_overlay_showing(OverlayKind kind) const { return m_overlays[static_cast<size_t>(kind)].is_attached; }
++    bool show_overlay(QWindow& parent, QImage const&, QPoint position);
++    void hide_overlay();
+ 
+     struct HeldBackingStore {
+         u64 page_id;
+@@ -179,7 +180,9 @@
+     Optional<QPoint> m_position;
+     bool m_position_needs_parent_commit { false };
+     Buffer const* m_presented_buffer { nullptr };
+-    QRect m_presented_source;
++    QRectF m_presented_source;
++    wl_surface* m_above { nullptr };
++    bool m_presented_opaque { true };
+     QSize m_presented_destination;
+     bool m_is_synchronized { false };
+     bool m_is_attached { false };
+@@ -187,13 +190,10 @@
+ 
+     Vector<NonnullOwnPtr<Buffer>> m_buffers;
+ 
+-    struct Overlay {
+-        wl_surface* surface { nullptr };
+-        wp_viewport* viewport { nullptr };
+-        wl_subsurface* subsurface { nullptr };
+-        bool is_attached { false };
+-    };
+-    Array<Overlay, 2> m_overlays;
++    wl_surface* m_overlay_surface { nullptr };
++    wp_viewport* m_overlay_viewport { nullptr };
++    wl_subsurface* m_overlay_subsurface { nullptr };
++    bool m_overlay_is_attached { false };
+     // The compositor may read these until it releases them.
+     Vector<wl_buffer*> m_overlay_buffers;
+ };
+--- a/UI/Qt/WaylandPageSurface.cpp
++++ b/UI/Qt/WaylandPageSurface.cpp
+@@ -74,16 +74,13 @@
+ {
+     m_surface = wl_compositor_create_surface(m_globals.compositor);
+     m_viewport = wp_viewporter_get_viewport(m_globals.viewporter, m_surface);
+-    for (auto& overlay : m_overlays) {
+-        overlay.surface = wl_compositor_create_surface(m_globals.compositor);
+-        overlay.viewport = wp_viewporter_get_viewport(m_globals.viewporter, overlay.surface);
+-    }
++    m_overlay_surface = wl_compositor_create_surface(m_globals.compositor);
++    m_overlay_viewport = wp_viewporter_get_viewport(m_globals.viewporter, m_overlay_surface);
+ 
+     // NB: Input goes to the browser window underneath, where Qt delivers it to the view.
+     auto* empty_region = wl_compositor_create_region(m_globals.compositor);
+     wl_surface_set_input_region(m_surface, empty_region);
+-    for (auto& overlay : m_overlays)
+-        wl_surface_set_input_region(overlay.surface, empty_region);
++    wl_surface_set_input_region(m_overlay_surface, empty_region);
+     wl_region_destroy(empty_region);
+ }
+ 
+@@ -97,10 +94,8 @@
+         destroy_buffer(*buffer);
+     for (auto* buffer : m_overlay_buffers)
+         wl_buffer_destroy(buffer);
+-    for (auto& overlay : m_overlays) {
+-        wp_viewport_destroy(overlay.viewport);
+-        wl_surface_destroy(overlay.surface);
+-    }
++    wp_viewport_destroy(m_overlay_viewport);
++    wl_surface_destroy(m_overlay_surface);
+     wp_viewport_destroy(m_viewport);
+     wl_surface_destroy(m_surface);
+ }
+@@ -128,8 +123,7 @@
+         wl_subsurface_set_desync(m_subsurface);
+     // NB: A new subsurface goes on top of its siblings, so the overlay is above the page. It stays synchronized, so
+     //     that what it shows and where it shows it change together.
+-    for (auto& overlay : m_overlays)
+-        overlay.subsurface = wl_subcompositor_get_subsurface(m_globals.subcompositor, overlay.surface, parent_surface);
++    m_overlay_subsurface = wl_subcompositor_get_subsurface(m_globals.subcompositor, m_overlay_surface, parent_surface);
+     m_parent = &parent;
+     m_parent_surface = parent_surface;
+     m_parent_surface_destroyed_connection = QObject::connect(wayland_window, &QNativeInterface::Private::QWaylandWindow::surfaceDestroyed, [this, wayland_window] {
+@@ -157,18 +151,16 @@
+         wl_subsurface_destroy(m_subsurface);
+         m_subsurface = nullptr;
+     }
+-    for (auto& overlay : m_overlays) {
+-        if (overlay.subsurface) {
+-            wl_subsurface_destroy(overlay.subsurface);
+-            overlay.subsurface = nullptr;
+-        }
++    if (m_overlay_subsurface) {
++        wl_subsurface_destroy(m_overlay_subsurface);
++        m_overlay_subsurface = nullptr;
+     }
+     m_parent = nullptr;
+     m_parent_surface = nullptr;
+     m_position.clear();
++    m_above = nullptr;
+     hide();
+     hide_overlay();
+-    hide_overlay(OverlayKind::BrowserShell);
+ }
+ 
+ WaylandPageSurface::Buffer* WaylandPageSurface::buffer_for(Frame const& frame)
+@@ -186,11 +178,12 @@
+     if (fstat(frame.dmabuf.objects[0].fd(), &object_stat) < 0)
+         return nullptr;
+ 
++    auto drm_format = frame.is_opaque ? opaque_drm_format(frame.dmabuf.drm_format) : frame.dmabuf.drm_format;
+     for (size_t i = 0; i < m_buffers.size(); ++i) {
+         auto& buffer = *m_buffers[i];
+         if (buffer.shared_image_buffer != &frame.shared_image_buffer)
+             continue;
+-        if (buffer.device == object_stat.st_dev && buffer.inode == object_stat.st_ino) {
++        if (buffer.device == object_stat.st_dev && buffer.inode == object_stat.st_ino && buffer.drm_format == drm_format) {
+             // NB: A view keeps showing a frame after its backing stores are gone, and it no longer has an ID for it
+             //     then. The compositor's release of the buffer is still the release of the backing store it held.
+             if (frame.bitmap_id >= 0 || !buffer.is_held_by_compositor) {
+@@ -210,7 +203,7 @@
+     buffer->inode = object_stat.st_ino;
+     buffer->page_id = frame.page_id;
+     buffer->bitmap_id = frame.bitmap_id;
+-    buffer->drm_format = opaque_drm_format(frame.dmabuf.drm_format);
++    buffer->drm_format = drm_format;
+     buffer->modifier = frame.dmabuf.modifier;
+ 
+     buffer->params = zwp_linux_dmabuf_v1_create_params(m_globals.dmabuf);
+@@ -343,13 +336,13 @@
+ 
+ bool WaylandPageSurface::would_change_placement(Frame const& frame) const
+ {
+-    return m_position != frame.position || m_presented_source != frame.source || m_presented_destination != frame.destination;
++    return m_position != frame.position || m_presented_source != frame.source || m_presented_destination != frame.destination || m_above != frame.above || m_presented_opaque != frame.is_opaque;
+ }
+ 
+ WaylandPageSurface::PresentResult WaylandPageSurface::present(QWindow& parent, Frame const& frame)
+ {
+     // NB: The source has to lie within the buffer, or the compositor disconnects us.
+-    auto source = frame.source.intersected(QRect { 0, 0, frame.dmabuf.size.width(), frame.dmabuf.size.height() });
++    auto source = frame.source.intersected(QRectF { 0, 0, static_cast<qreal>(frame.dmabuf.size.width()), static_cast<qreal>(frame.dmabuf.size.height()) });
+     if (source.isEmpty() || frame.destination.isEmpty()) {
+         hide();
+         return PresentResult::Presented;
+@@ -373,17 +366,22 @@
+     }
+ 
+     // NB: The position belongs to the browser window's state, and takes effect when it commits next.
+-    m_position_needs_parent_commit = m_position != frame.position;
++    m_position_needs_parent_commit = m_position != frame.position || m_above != frame.above;
++    if (m_above != frame.above) {
++        wl_subsurface_place_above(m_subsurface, frame.above ? frame.above : m_parent_surface);
++        m_above = frame.above;
++    }
+     if (m_position_needs_parent_commit) {
+         wl_subsurface_set_position(m_subsurface, frame.position.x(), frame.position.y());
+         m_position = frame.position;
+     }
+ 
+-    wp_viewport_set_source(m_viewport, wl_fixed_from_int(source.x()), wl_fixed_from_int(source.y()), wl_fixed_from_int(source.width()), wl_fixed_from_int(source.height()));
++    wp_viewport_set_source(m_viewport, wl_fixed_from_double(source.x()), wl_fixed_from_double(source.y()), wl_fixed_from_double(source.width()), wl_fixed_from_double(source.height()));
+     wp_viewport_set_destination(m_viewport, frame.destination.width(), frame.destination.height());
+ 
+     auto* opaque_region = wl_compositor_create_region(m_globals.compositor);
+-    wl_region_add(opaque_region, 0, 0, frame.destination.width(), frame.destination.height());
++    if (frame.is_opaque)
++        wl_region_add(opaque_region, 0, 0, frame.destination.width(), frame.destination.height());
+     wl_surface_set_opaque_region(m_surface, opaque_region);
+     wl_region_destroy(opaque_region);
+ 
+@@ -396,6 +394,7 @@
+     m_presented_buffer = buffer;
+     m_presented_source = frame.source;
+     m_presented_destination = frame.destination;
++    m_presented_opaque = frame.is_opaque;
+     return PresentResult::Presented;
+ }
+ 
+@@ -424,14 +423,11 @@
+         wl_subsurface_set_desync(m_subsurface);
+ }
+ 
+-bool WaylandPageSurface::show_overlay(QWindow& parent, QImage const& image, QPoint position, OverlayKind kind)
++bool WaylandPageSurface::show_overlay(QWindow& parent, QImage const& image, QPoint position)
+ {
+     if (image.isNull() || !ensure_subsurface(parent))
+         return false;
+ 
+-    auto& overlay = m_overlays[static_cast<size_t>(kind)];
+-    auto margins = parent.frameMargins();
+-    position += QPoint { margins.left(), margins.top() };
+     // NB: Wayland's ARGB8888 is Qt's premultiplied ARGB32 on a little-endian machine.
+     auto pixels = image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+     auto size = static_cast<size_t>(pixels.sizeInBytes());
+@@ -457,23 +453,22 @@
+     m_overlay_buffers.append(buffer);
+ 
+     auto logical_size = image.deviceIndependentSize().toSize();
+-    wl_subsurface_set_position(overlay.subsurface, position.x(), position.y());
+-    wp_viewport_set_destination(overlay.viewport, logical_size.width(), logical_size.height());
+-    wl_surface_attach(overlay.surface, buffer, 0, 0);
+-    wl_surface_damage_buffer(overlay.surface, 0, 0, INT32_MAX, INT32_MAX);
+-    wl_surface_commit(overlay.surface);
+-    overlay.is_attached = true;
++    wl_subsurface_set_position(m_overlay_subsurface, position.x(), position.y());
++    wp_viewport_set_destination(m_overlay_viewport, logical_size.width(), logical_size.height());
++    wl_surface_attach(m_overlay_surface, buffer, 0, 0);
++    wl_surface_damage_buffer(m_overlay_surface, 0, 0, INT32_MAX, INT32_MAX);
++    wl_surface_commit(m_overlay_surface);
++    m_overlay_is_attached = true;
+     return true;
+ }
+ 
+-void WaylandPageSurface::hide_overlay(OverlayKind kind)
+-{
+-    auto& overlay = m_overlays[static_cast<size_t>(kind)];
+-    if (!overlay.is_attached)
+-        return;
+-    wl_surface_attach(overlay.surface, nullptr, 0, 0);
+-    wl_surface_commit(overlay.surface);
+-    overlay.is_attached = false;
++void WaylandPageSurface::hide_overlay()
++{
++    if (!m_overlay_is_attached)
++        return;
++    wl_surface_attach(m_overlay_surface, nullptr, 0, 0);
++    wl_surface_commit(m_overlay_surface);
++    m_overlay_is_attached = false;
+ }
+ 
+ void WaylandPageSurface::overlay_buffer_released(void* data, wl_buffer* buffer)
+--- a/UI/Qt/WebContentView.h
++++ b/UI/Qt/WebContentView.h
+@@ -171,9 +171,8 @@
+     void set_zoom_level(double);
+     void set_vertical_tab_overlay_insets(int left, int right);
+     void set_bookmarks_bar_overlay_height(int);
+-    void set_browser_shell_overlay_visible(bool);
+-    void set_is_browser_shell();
+-    bool set_browser_shell_overlay_image(QImage const&, QPoint position);
++    void set_transparent_background(bool);
++    void set_compositing_above(WebContentView*);
+     // How much the page is dimmed under a page dialog, from 0 to 1, where the page is presented above anything Qt paints
+     // over it.
+     void set_page_dim(qreal);
+@@ -215,6 +214,7 @@
+     void set_follows_mouse_while_inactive(bool follows) { m_follows_mouse_while_inactive = follows; }
+ 
+ signals:
++    void native_surface_changed();
+     void zoom_level_changed();
+     void ready_to_paint();
+     void crash_overlay_changed();
+@@ -506,10 +506,7 @@
+     int m_vertical_tab_overlay_right { 0 };
+     int m_bookmarks_bar_overlay_height { 0 };
+ #endif
+-    bool m_browser_shell_overlay_visible { false };
+-    bool m_is_browser_shell { false };
+-    QImage m_browser_shell_overlay_image;
+-    QPoint m_browser_shell_overlay_position;
++    QPointer<WebContentView> m_compositing_below;
+ };
+ 
+ bool wheel_event_scrolls_continuously(QWheelEvent const&);
+--- a/UI/Qt/WebContentView.cpp
++++ b/UI/Qt/WebContentView.cpp
+@@ -1185,11 +1185,11 @@
+     }
+ 
+     if (bitmap) {
+-        QImage q_image(bitmap->scanline_u8(0), bitmap->width(), bitmap->height(), bitmap->pitch(), QImage::Format_RGB32);
++        QImage q_image(bitmap->scanline_u8(0), bitmap->width(), bitmap->height(), bitmap->pitch(), QImage::Format_ARGB32_Premultiplied);
+         QRect source_rect(0, 0, bitmap_size.width(), bitmap_size.height());
+ 
+         auto background_color = page_background_color();
+-        auto fallback_color = QColor(background_color.red(), background_color.green(), background_color.blue());
++        auto fallback_color = QColor(background_color.red(), background_color.green(), background_color.blue(), background_color.alpha());
+ 
+         if (m_scales_frames_to_fit && !bitmap_size.is_empty()) {
+             auto destination = rect_fitting_frame(bitmap_size, m_viewport_size);
+@@ -1219,7 +1219,7 @@
+     background -= rect_covered_by_page_window();
+ #    endif
+     for (auto const& rect : background)
+-        painter.fillRect(rect, QColor(background_color.red(), background_color.green(), background_color.blue()));
++        painter.fillRect(rect, QColor(background_color.red(), background_color.green(), background_color.blue(), background_color.alpha()));
+ }
+ #endif
+ 
+@@ -1260,7 +1260,7 @@
+         if (width <= 0 || height <= 0)
+             return {};
+ 
+-        QImage image(bitmap->scanline_u8(0), bitmap->width(), bitmap->height(), bitmap->pitch(), QImage::Format_RGB32);
++        QImage image(bitmap->scanline_u8(0), bitmap->width(), bitmap->height(), bitmap->pitch(), QImage::Format_ARGB32_Premultiplied);
+         return image.copy(0, 0, width, height);
+     }
+ 
+@@ -1750,8 +1750,6 @@
+ 
+ bool WebContentView::has_floating_surface_over_page() const
+ {
+-    if (m_browser_shell_overlay_visible)
+-        return true;
+     return m_suggestions_over_page || any_of(m_floating_surfaces, [](auto const& surface) { return surface && surface->isVisible(); });
+ }
+ 
+@@ -1899,25 +1897,22 @@
+ {
+ }
+ 
+-bool WebContentView::set_browser_shell_overlay_image(QImage const&, QPoint)
+-{
+-    return false;
+-}
+-#endif
+-
+-void WebContentView::set_is_browser_shell()
+-{
+-    m_is_browser_shell = true;
+-    set_presents_from_cpu_memory(true);
+-    set_browser_shell_overlay_visible(true);
+-}
+-
+-void WebContentView::set_browser_shell_overlay_visible(bool visible)
+-{
+-    if (m_browser_shell_overlay_visible == visible)
+-        return;
+-    m_browser_shell_overlay_visible = visible;
+-    schedule_repaint();
++#endif
++
++void WebContentView::set_transparent_background(bool transparent)
++{
++    WebView::ViewImplementation::set_transparent_background(transparent);
++    setAttribute(Qt::WA_OpaquePaintEvent, !transparent);
++}
++
++void WebContentView::set_compositing_above(WebContentView* view)
++{
++    m_compositing_below = view;
++#ifdef LADYBIRD_QT_USE_VULKAN_WINDOW
++    schedule_vulkan_window_update();
++#else
++    update();
++#endif
+ }
+ 
+ void WebContentView::set_bookmarks_bar_overlay_height([[maybe_unused]] int height)
+@@ -1941,8 +1936,8 @@
+ 
+ void WebContentView::update_viewport_size()
+ {
+-    auto scaled_width = int(width() * m_device_pixel_ratio);
+-    auto scaled_height = int(height() * m_device_pixel_ratio);
++    auto scaled_width = static_cast<int>(ceil(width() * m_device_pixel_ratio));
++    auto scaled_height = static_cast<int>(ceil(height() * m_device_pixel_ratio));
+     Gfx::IntRect rect(0, 0, scaled_width, scaled_height);
+ 
+     set_viewport_rect(rect);
+@@ -1983,7 +1978,6 @@
+ void WebContentView::hideEvent(QHideEvent* event)
+ {
+     WebContentViewBase::hideEvent(event);
+-    set_browser_shell_overlay_image({}, {});
+     set_system_visibility_state(Web::HTML::VisibilityState::Hidden);
+ #ifdef LADYBIRD_HAS_WAYLAND_GPU_QUERY
+     if (m_page_surface)
+--- a/UI/Qt/WebContentViewLinux.cpp
++++ b/UI/Qt/WebContentViewLinux.cpp
+@@ -916,7 +916,7 @@
+                 static_cast<float>(background_color.red()) / 255.0f,
+                 static_cast<float>(background_color.green()) / 255.0f,
+                 static_cast<float>(background_color.blue()) / 255.0f,
+-                1.0f,
++                static_cast<float>(background_color.alpha()) / 255.0f,
+             },
+         };
+         VkClearDepthStencilValue clear_depth_stencil { 1.0f, 0 };
+@@ -1226,7 +1226,7 @@
+         //     the page all its backing stores, so a hidden view keeps them, and so does one under a floating surface
+         //     such as a hover card, which comes and goes quickly. Qt reads the frame back from GPU memory then.
+         if (isVisible())
+-            set_presents_from_cpu_memory(m_is_browser_shell || is_page_covered_by_overlay());
++            set_presents_from_cpu_memory(is_page_covered_by_overlay());
+         update_page_surface(PageSurfaceContent::MayHaveChanged);
+         return;
+     }
+@@ -1234,7 +1234,7 @@
+ 
+     // NB: Qt paints the page itself while something covers it. Reading every frame back from GPU memory for that would
+     //     be slow, so the Compositor shares the frames in CPU memory until the page is uncovered.
+-    set_presents_from_cpu_memory(m_is_browser_shell || !m_vulkan_window || m_vulkan_window_cannot_import_frames || is_page_covered_by_overlay());
++    set_presents_from_cpu_memory(!m_vulkan_window || m_vulkan_window_cannot_import_frames || is_page_covered_by_overlay());
+ 
+     if (is_page_covered_by_overlay()) {
+         QTimer::singleShot(0, this, [this] {
+@@ -1344,31 +1344,30 @@
+     // Where the frame goes in the view, in device pixels, and the part of the frame that the page surface shows.
+     auto bitmap_size = paintable->bitmap_size;
+     QRect frame_rect;
+-    QRect source;
+-    QRect target;
++    QRectF source;
++    QRectF target;
+     if (m_scales_frames_to_fit) {
+         auto fitted = rect_fitting_frame(bitmap_size, m_viewport_size);
+         frame_rect = { fitted.x(), fitted.y(), fitted.width(), fitted.height() };
+-        source = { 0, 0, bitmap_size.width(), bitmap_size.height() };
++        source = QRectF(0, 0, bitmap_size.width(), bitmap_size.height());
+         target = frame_rect;
+     } else {
+         // NB: The view can already be smaller than the viewport the page has, and the compositor doesn't clip the
+         //     page surface to the browser window.
+         auto view_size = size() * m_device_pixel_ratio;
+         frame_rect = { 0, 0, min(min(bitmap_size.width(), m_viewport_size.width()), view_size.width()), min(min(bitmap_size.height(), m_viewport_size.height()), view_size.height()) };
+-        // NB: Hover-expanded chrome paints in the view over strips of the page, which the page surface would cover.
+-        auto left = qRound(m_vertical_tab_overlay_left * m_device_pixel_ratio);
+-        auto right = qRound(m_vertical_tab_overlay_right * m_device_pixel_ratio);
+-        auto top = qRound(m_bookmarks_bar_overlay_height * m_device_pixel_ratio);
+-        source = frame_rect.intersected({ left, top, view_size.width() - left - right, view_size.height() - top });
+-        // NB: Qt clips the view to the widgets it is in, such as while the page slides along with a toggling sidebar,
+-        //     but the compositor clips the page surface to nothing.
+         auto shown = rect_shown_in_window();
+-        source &= QRect { qRound(shown.x() * m_device_pixel_ratio), qRound(shown.y() * m_device_pixel_ratio), qRound(shown.width() * m_device_pixel_ratio), qRound(shown.height() * m_device_pixel_ratio) };
++        auto exact_source = QRectF(shown.x() * m_device_pixel_ratio, shown.y() * m_device_pixel_ratio,
++            shown.width() * m_device_pixel_ratio, shown.height() * m_device_pixel_ratio);
++        source = exact_source.intersected(QRectF(0, 0, bitmap_size.width(), bitmap_size.height()));
++        auto logical_insets = QRectF(m_vertical_tab_overlay_left, m_bookmarks_bar_overlay_height,
++            width() - m_vertical_tab_overlay_left - m_vertical_tab_overlay_right, height() - m_bookmarks_bar_overlay_height);
++        source &= QRectF(logical_insets.x() * m_device_pixel_ratio, logical_insets.y() * m_device_pixel_ratio,
++            logical_insets.width() * m_device_pixel_ratio, logical_insets.height() * m_device_pixel_ratio);
+         target = source;
+     }
+ 
+-    auto to_logical = [&](int device_pixels) { return max(1, qRound(device_pixels / m_device_pixel_ratio)); };
++    auto to_logical = [&](qreal device_pixels) { return max(1, qRound(device_pixels / m_device_pixel_ratio)); };
+     // QWidget coordinates exclude Qt's client-side decoration, whereas a Wayland
+     // subsurface is positioned within the complete parent surface.
+     auto margins = parent->frameMargins();
+@@ -1382,6 +1381,9 @@
+         .position = view_position + QPoint { qRound(target.x() / m_device_pixel_ratio), qRound(target.y() / m_device_pixel_ratio) },
+         .destination = { to_logical(target.width()), to_logical(target.height()) },
+         .has_new_content = content == PageSurfaceContent::MayHaveChanged,
++        .is_opaque = !has_transparent_background(),
++        .above = m_compositing_below && m_compositing_below->m_page_surface && m_compositing_below->m_page_surface->is_showing()
++            ? m_compositing_below->m_page_surface->surface() : nullptr,
+     };
+ 
+     // NB: The layout of the browser window changes on screen when it commits next, and so does the position of the page
+@@ -1391,6 +1393,7 @@
+         m_page_surface->set_synchronized(true);
+ 
+     m_page_surface->forget_buffers_except(backing_stores());
++    bool was_showing = m_page_surface->is_showing();
+     auto result = m_page_surface->present(*parent, frame);
+     if (result == WaylandPageSurface::PresentResult::Failed) {
+         m_page_surface_failed = true;
+@@ -1415,6 +1418,8 @@
+     m_page_surface_rect = covered_rect;
+     if (result == WaylandPageSurface::PresentResult::Presented)
+         m_page_surface_position = frame.position;
++    if (was_showing != m_page_surface->is_showing())
++        emit native_surface_changed();
+ }
+ 
+ // The part of the view that the widgets it is in do not clip away, in its coordinates.
+@@ -1447,34 +1452,6 @@
+         return false;
+     // NB: The overlay changes on screen when the browser window commits next, so have Qt repaint a pixel of it.
+     update(0, 0, 1, 1);
+-    return true;
+-}
+-
+-bool WebContentView::set_browser_shell_overlay_image(QImage const& image, QPoint position)
+-{
+-    if (!m_page_surface || m_page_surface_failed)
+-        return false;
+-    using Kind = WaylandPageSurface::OverlayKind;
+-    if (image.isNull()) {
+-        m_page_surface->hide_overlay(Kind::BrowserShell);
+-        m_browser_shell_overlay_image = {};
+-        return true;
+-    }
+-    auto* parent = window()->windowHandle();
+-    if (!parent || !current_paintable_can_use_vulkan_window())
+-        return false;
+-    auto window_position = mapTo(window(), position);
+-    auto margins = parent->frameMargins();
+-    auto surface_position = window_position + QPoint { margins.left(), margins.top() };
+-    if (m_page_surface->is_overlay_showing(Kind::BrowserShell)
+-        && m_browser_shell_overlay_image == image
+-        && m_browser_shell_overlay_image.devicePixelRatio() == image.devicePixelRatio()
+-        && m_browser_shell_overlay_position == surface_position)
+-        return true;
+-    if (!m_page_surface->show_overlay(*parent, image, window_position, Kind::BrowserShell))
+-        return false;
+-    m_browser_shell_overlay_image = image;
+-    m_browser_shell_overlay_position = surface_position;
+     return true;
+ }
+ 
+--- a/UI/Qt/BrowserWindow.cpp
++++ b/UI/Qt/BrowserWindow.cpp
+@@ -342,11 +342,15 @@
+ 
+     m_screen_observer = new WindowScreenObserver(*this);
+     m_screen_observer->on_device_pixel_ratio_change = [this] {
++        if (m_derpbird_chrome)
++            m_derpbird_chrome->update_display_metadata(m_screen_observer->device_pixel_ratio(), m_screen_observer->display_id(), m_screen_observer->refresh_rate());
+         for_each_tab([this](auto& tab) {
+             tab.view().set_device_pixel_ratio(m_screen_observer->device_pixel_ratio());
+         });
+     };
+     m_screen_observer->on_display_metadata_change = [this] {
++        if (m_derpbird_chrome)
++            m_derpbird_chrome->update_display_metadata(m_screen_observer->device_pixel_ratio(), m_screen_observer->display_id(), m_screen_observer->refresh_rate());
+         for_each_tab([this](auto& tab) {
+             tab.view().set_display_metadata(m_screen_observer->display_id(), m_screen_observer->refresh_rate());
+         });
+--- a/Libraries/LibWeb/DOM/Document.cpp
++++ b/Libraries/LibWeb/DOM/Document.cpp
+@@ -2169,6 +2169,8 @@
+ 
+ Color Document::canvas_background_color(Layout::BegunRead const& read) const
+ {
++    if (page().client().has_transparent_background())
++        return background_color(read);
+     return CSS::SystemColor::canvas(canvas_color_scheme(read)).blend(background_color(read));
+ }
+ 
+--- a/Libraries/LibWeb/Page/Page.h
++++ b/Libraries/LibWeb/Page/Page.h
+@@ -780,6 +780,7 @@
+     virtual double device_pixel_ratio() const = 0;
+     virtual double device_pixels_per_css_pixel() const = 0;
+     virtual double maximum_frames_per_second() const { return 60.0; }
++    virtual bool has_transparent_background() const { return false; }
+     virtual CSS::PreferredColorScheme preferred_color_scheme() const = 0;
+     virtual CSS::PreferredContrast preferred_contrast() const = 0;
+     virtual CSS::PreferredMotion preferred_motion() const = 0;
+--- a/Libraries/LibWebView/ViewImplementation.h
++++ b/Libraries/LibWebView/ViewImplementation.h
+@@ -343,6 +343,8 @@
+     bool can_set_force_dark() const;
+     void set_force_dark_enabled(bool);
+ 
++    void set_transparent_background(bool);
++    bool has_transparent_background() const { return m_transparent_background; }
+     void set_preferred_color_scheme(Web::CSS::PreferredColorScheme);
+     // Sends the interface theme to the pages showing the browser's own pages, which follow it.
+     void update_interface_color_scheme();
+@@ -1045,6 +1047,7 @@
+     double m_backup_bitmap_device_pixel_ratio { 1.0 };
+     Gfx::Color m_page_background_color { 255, 255, 255 };
+     Gfx::Color m_system_canvas_background_color { 255, 255, 255 };
++    bool m_transparent_background { false };
+     Web::CSS::PreferredColorScheme m_preferred_color_scheme { Web::CSS::PreferredColorScheme::Auto };
+     // The geometry of the window the view sits in, as the UI last reported it. Every page the tab comes to be
+     // hosted by is told it, so a page created after the window was last resized or moved answers outerWidth,
+--- a/Libraries/LibWebView/ViewImplementation.cpp
++++ b/Libraries/LibWebView/ViewImplementation.cpp
+@@ -1543,6 +1543,15 @@
+     return m_preferred_color_scheme;
+ }
+ 
++void ViewImplementation::set_transparent_background(bool transparent)
++{
++    m_transparent_background = transparent;
++    set_page_background_color(preferred_canvas_background_color());
++    traversable().for_each_hosting_page([&](WebContentPage& page) {
++        page.async_set_transparent_background(transparent);
++    });
++}
++
+ void ViewImplementation::set_preferred_color_scheme(Web::CSS::PreferredColorScheme color_scheme)
+ {
+     m_preferred_color_scheme = color_scheme;
+@@ -1615,6 +1624,7 @@
+ void ViewImplementation::send_preferences_to_page(WebContentPage& page)
+ {
+     send_system_theme_to_page(page);
++    page.async_set_transparent_background(m_transparent_background);
+     page.async_set_preferred_color_scheme(preferred_color_scheme_for_page(page));
+     page.async_set_preferred_contrast(m_preferred_contrast);
+     page.async_set_preferred_motion(m_preferred_motion);
+@@ -3053,6 +3063,8 @@
+ 
+ Gfx::Color ViewImplementation::preferred_canvas_background_color() const
+ {
++    if (m_transparent_background)
++        return Gfx::Color::Transparent;
+     if (m_preferred_color_scheme == Web::CSS::PreferredColorScheme::Dark)
+         return Web::CSS::SystemColor::canvas(Web::CSS::PreferredColorScheme::Dark);
+     if (m_preferred_color_scheme == Web::CSS::PreferredColorScheme::Light)
+--- a/Services/WebContent/PageClient.h
++++ b/Services/WebContent/PageClient.h
+@@ -98,6 +98,7 @@
+     void set_maximum_frames_per_second(double maximum_frames_per_second);
+     void set_frame_rate_capped(bool capped) { m_frame_rate_capped = capped; }
+     virtual double maximum_frames_per_second() const override { return m_maximum_frames_per_second; }
++    void set_transparent_background(bool);
+     void set_preferred_color_scheme(Web::CSS::PreferredColorScheme);
+     void set_preferred_contrast(Web::CSS::PreferredContrast);
+     void set_preferred_motion(Web::CSS::PreferredMotion);
+@@ -249,6 +250,7 @@
+         return screen_rect();
+     }
+     virtual size_t screen_count() const override { return m_all_screen_rects.size(); }
++    virtual bool has_transparent_background() const override { return m_transparent_background; }
+     virtual Web::CSS::PreferredColorScheme preferred_color_scheme() const override { return m_preferred_color_scheme; }
+     virtual Web::CSS::PreferredContrast preferred_contrast() const override { return m_preferred_contrast; }
+     virtual Web::CSS::PreferredMotion preferred_motion() const override { return m_preferred_motion; }
+@@ -470,6 +472,7 @@
+     bool m_is_closed { false };
+     bool m_did_start_using_gamepads { false };
+ 
++    bool m_transparent_background { false };
+     Web::CSS::PreferredColorScheme m_preferred_color_scheme { Web::CSS::PreferredColorScheme::Auto };
+     Web::CSS::PreferredContrast m_preferred_contrast { Web::CSS::PreferredContrast::NoPreference };
+     Web::CSS::PreferredMotion m_preferred_motion { Web::CSS::PreferredMotion::NoPreference };
+--- a/Services/WebContent/PageClient.cpp
++++ b/Services/WebContent/PageClient.cpp
+@@ -476,6 +476,18 @@
+     request_frame();
+ }
+ 
++void PageClient::set_transparent_background(bool transparent)
++{
++    if (m_transparent_background == transparent)
++        return;
++    m_transparent_background = transparent;
++    for (auto const& navigable : page().hosted_navigables()) {
++        if (auto document = navigable->active_document(); document && document->document_element())
++            document->document_element()->set_needs_repaint();
++    }
++    request_frame();
++}
++
+ void PageClient::set_preferred_color_scheme(Web::CSS::PreferredColorScheme color_scheme)
+ {
+     m_preferred_color_scheme = color_scheme;
+--- a/Services/WebContent/WebContentServer.ipc
++++ b/Services/WebContent/WebContentServer.ipc
+@@ -267,6 +267,7 @@
+ 
+     set_force_dark_settings(Web::PageId page_id, bool enabled, HashMap<String, bool> per_host) =|
+     set_autoplay_settings(Web::PageId page_id, Web::HTML::AutoplayPolicy policy, Vector<Utf16String> allowlist) =|
++    set_transparent_background(Web::PageId page_id, bool transparent) =|
+     set_preferred_color_scheme(Web::PageId page_id, Web::CSS::PreferredColorScheme color_scheme) =|
+     set_preferred_contrast(Web::PageId page_id, Web::CSS::PreferredContrast contrast) =|
+     set_preferred_motion(Web::PageId page_id, Web::CSS::PreferredMotion motion) =|
+--- a/Services/WebContent/ConnectionFromClient.h
++++ b/Services/WebContent/ConnectionFromClient.h
+@@ -266,6 +266,7 @@
+ 
+     virtual void set_force_dark_settings(Web::PageId page_id, bool enabled, HashMap<String, bool> per_host) override;
+     virtual void set_autoplay_settings(Web::PageId page_id, Web::HTML::AutoplayPolicy policy, Vector<Utf16String> allowlist) override;
++    virtual void set_transparent_background(Web::PageId, bool) override;
+     virtual void set_preferred_color_scheme(Web::PageId page_id, Web::CSS::PreferredColorScheme) override;
+     virtual void set_preferred_contrast(Web::PageId page_id, Web::CSS::PreferredContrast) override;
+     virtual void set_preferred_motion(Web::PageId page_id, Web::CSS::PreferredMotion) override;
+--- a/Services/WebContent/ConnectionFromClient.cpp
++++ b/Services/WebContent/ConnectionFromClient.cpp
+@@ -3400,6 +3400,12 @@
+     Web::HTML::AutoplaySettings::the().set_policy(policy, allowlist);
+ }
+ 
++void ConnectionFromClient::set_transparent_background(Web::PageId page_id, bool transparent)
++{
++    if (auto page = this->page(page_id); page.has_value())
++        page->set_transparent_background(transparent);
++}
++
+ void ConnectionFromClient::set_preferred_color_scheme(Web::PageId page_id, Web::CSS::PreferredColorScheme color_scheme)
+ {
+     if (auto page = this->page(page_id); page.has_value())
+--- a/UI/Qt/Shaders/WebContentViewLinux.frag
++++ b/UI/Qt/Shaders/WebContentViewLinux.frag
+@@ -13,7 +13,5 @@
+ 
+ void main()
+ {
+-    // Force opaque output so the page never blends; only the strips we explicitly clear to transparent (behind
+-    // hover-expanded vertical tabs) reveal the widgets composited below this window.
+-    output_color = vec4(texture(web_content_texture, texture_coordinates).rgb, 1.0);
++    output_color = texture(web_content_texture, texture_coordinates);
+ }
+--- a/Libraries/LibWeb/Painting/PaintingRustBridge.cpp
++++ b/Libraries/LibWeb/Painting/PaintingRustBridge.cpp
+@@ -648,7 +648,8 @@
+             opaque_canvas = document.navigable()->container_state().used_color_scheme != color_scheme;
+         }
+         inputs.canvas_fill_rect = config.canvas_fill_rect;
+-        inputs.canvas_color = CSS::SystemColor::canvas(color_scheme);
++        inputs.canvas_color = document.navigable()->is_top_level_traversable() && document.page().client().has_transparent_background()
++            ? Gfx::Color::Transparent : CSS::SystemColor::canvas(color_scheme);
+         inputs.opaque_canvas = opaque_canvas;
+         Gfx::IntRect bitmap_rect { {}, device_viewport_rect.size().to_type<int>() };
+         inputs.bitmap_rect = bitmap_rect;

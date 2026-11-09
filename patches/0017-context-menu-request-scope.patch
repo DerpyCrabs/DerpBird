@@ -1,0 +1,10 @@
+--- a/Libraries/LibWebView/Application.cpp
++++ b/Libraries/LibWebView/Application.cpp
+@@ -4692,6 +4692,7 @@
+     if (Web::DerpBirdWebRequestRules::compile(rules).is_error()) return false;
+     JsonObject scope;
+     for (auto key : { "matches"sv, "excludeMatches"sv, "includes"sv, "excludes"sv }) scope.set(key, metadata.get(key).value());
++    scope.set("contextMenu"sv, definition.run_at == Web::DerpBirdScriptRunAt::ContextMenu);
+     size_t count = 0, bytes = rules.serialized().byte_count() + scope.serialized().byte_count();
+     page.traversable().for_each_in_inclusive_subtree([&](CanonicalNavigable& navigable) {
+         if (!navigable.active_session_history_entry() || !navigable.active_session_history_entry()->document_state->document) return IterationDecision::Continue;

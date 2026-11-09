@@ -1,0 +1,86 @@
+--- a/Libraries/LibWebView/Settings.h
++++ b/Libraries/LibWebView/Settings.h
+@@ -351,7 +351,7 @@
+     WindowSettings m_window_settings;
+ 
+     URL::URL m_new_tab_page_url;
+-    bool m_restore_previous_session { false };
++    bool m_restore_previous_session { true };
+     Vector<String> m_languages;
+ 
+     Appearance m_appearance;
+--- a/Libraries/LibWebView/Settings.cpp
++++ b/Libraries/LibWebView/Settings.cpp
+@@ -27,6 +27,7 @@
+ static constexpr auto FIRST_RUN_COMPLETE_KEY = "firstRunComplete"sv;
+ static constexpr auto NEW_TAB_PAGE_URL_KEY = "newTabPageURL"sv;
+ static constexpr auto RESTORE_PREVIOUS_SESSION_KEY = "restorePreviousSession"sv;
++static constexpr auto SESSION_RESTORE_INITIALIZED_KEY = "derpbirdSessionRestoreInitialized"sv;
+ 
+ static constexpr auto LANGUAGES_KEY = "languages"sv;
+ 
+@@ -405,7 +406,10 @@
+             settings.m_new_tab_page_url = parsed_new_tab_page_url.release_value();
+     }
+ 
+-    settings.m_restore_previous_session = settings_json.value().get_bool(RESTORE_PREVIOUS_SESSION_KEY).value_or(false);
++    // Existing DerpBird profiles inherited Ladybird's pinned-only startup default.
++    // Migrate it once, then preserve subsequent choices made in settings.
++    if (settings_json.value().get_bool(SESSION_RESTORE_INITIALIZED_KEY).value_or(false))
++        settings.m_restore_previous_session = settings_json.value().get_bool(RESTORE_PREVIOUS_SESSION_KEY).value_or(true);
+ 
+     if (auto languages = settings_json.value().get(LANGUAGES_KEY); languages.has_value())
+         settings.m_languages = parse_json_languages(*languages);
+@@ -627,6 +631,7 @@
+     settings.set(FIRST_RUN_COMPLETE_KEY, m_first_run_complete);
+     settings.set(NEW_TAB_PAGE_URL_KEY, m_new_tab_page_url.serialize());
+     settings.set(RESTORE_PREVIOUS_SESSION_KEY, m_restore_previous_session);
++    settings.set(SESSION_RESTORE_INITIALIZED_KEY, true);
+ 
+     JsonObject window_settings;
+     if (m_window_settings.position.has_value()) {
+--- a/Tests/LibWebView/TestStartupSettings.cpp
++++ b/Tests/LibWebView/TestStartupSettings.cpp
+@@ -29,12 +29,12 @@
+     MUST(file->write_until_depleted(contents.bytes()));
+ }
+ 
+-TEST_CASE(restoring_the_previous_session_is_off_by_default)
++TEST_CASE(restoring_the_previous_session_is_on_by_default)
+ {
+     remove_settings_file();
+ 
+     auto settings = WebView::Settings::create(settings_path());
+-    EXPECT(!settings.restore_previous_session());
++    EXPECT(settings.restore_previous_session());
+ }
+ 
+ TEST_CASE(restoring_the_previous_session_is_persistent)
+@@ -57,12 +57,26 @@
+     remove_settings_file();
+ }
+ 
+-TEST_CASE(a_non_boolean_saved_value_leaves_restoring_off)
++TEST_CASE(a_non_boolean_saved_value_uses_the_default)
+ {
+     remove_settings_file();
+     write_settings_file(R"({"restorePreviousSession":"yes"})"sv);
+ 
+     auto settings = WebView::Settings::create(settings_path());
++    EXPECT(settings.restore_previous_session());
++    remove_settings_file();
++}
++
++TEST_CASE(legacy_pinned_only_default_is_migrated_once)
++{
++    remove_settings_file();
++    write_settings_file(R"({"restorePreviousSession":false})"sv);
++    {
++        auto settings = WebView::Settings::create(settings_path());
++        EXPECT(settings.restore_previous_session());
++        settings.set_restore_previous_session(false);
++    }
++    auto settings = WebView::Settings::create(settings_path());
+     EXPECT(!settings.restore_previous_session());
+     remove_settings_file();
+ }

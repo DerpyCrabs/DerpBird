@@ -1,0 +1,9 @@
+install: true
+outside: rgb(1, 2, 3)
+inside: rgb(4, 5, 6)
+left: rgb(1, 2, 3)
+returned: rgb(4, 5, 6)
+invalid: false
+after invalid: rgb(4, 5, 6)
+remove: true
+removed: rgb(1, 2, 3)

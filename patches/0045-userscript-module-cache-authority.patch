@@ -1,0 +1,230 @@
+--- a/Libraries/LibWeb/HTML/Scripting/Fetching.cpp
++++ b/Libraries/LibWeb/HTML/Scripting/Fetching.cpp
+@@ -773,10 +773,16 @@
+ 
+     // 4. Let moduleMap be settingsObject's module map.
+     auto& module_map = settings_object.module_map();
++    auto authority = options.derpbird_insertion_authority;
++    if (authority && !authority->active()) {
++        on_complete->function()(nullptr);
++        return;
++    }
++    auto authority_id = authority ? authority->identity() : 0;
+ 
+     // 5. If moduleMap[(url, moduleType)] is a module script, run onComplete given
+     //    moduleMap[(url, moduleType)], and return.
+-    auto entry = module_map.get(url, module_type);
++    auto entry = module_map.get(url, module_type, authority_id);
+     if (entry.has_value() && entry->has<GC::Ref<ModuleScript>>()) {
+         on_complete->function()(entry->get<GC::Ref<ModuleScript>>());
+         return;
+@@ -784,16 +790,16 @@
+ 
+     // 6. If moduleMap[(url, moduleType)] is a list, append onComplete to moduleMap[(url, moduleType)], and return.
+     if (entry.has_value() && entry->has<ModuleMap::CallbackList>()) {
+-        module_map.append(url, module_type, GC::create_function(GC::Heap::the(), [on_complete](GC::Ptr<ModuleScript> module_script) {
+-            on_complete->function()(module_script);
+-        }));
++        module_map.append(url, module_type, GC::create_function(GC::Heap::the(), [on_complete, authority](GC::Ptr<ModuleScript> module_script) {
++            on_complete->function()(authority && !authority->active() ? nullptr : module_script);
++        }), authority_id);
+         return;
+     }
+ 
+     // 7. Set moduleMap[(url, moduleType)] to « onComplete ».
+     GC::RootVector<ModuleMap::CallbackFunction> callbacks;
+-    callbacks.append(GC::create_function(GC::Heap::the(), [on_complete](GC::Ptr<ModuleScript> module_script) { on_complete->function()(module_script); }));
+-    module_map.set(url, module_type, move(callbacks));
++    callbacks.append(GC::create_function(GC::Heap::the(), [on_complete, authority](GC::Ptr<ModuleScript> module_script) { on_complete->function()(authority && !authority->active() ? nullptr : module_script); }));
++    module_map.set(url, module_type, move(callbacks), authority_id);
+ 
+     // 8. Let request be a new request whose URL is url, mode is "cors", referrer is referrer, and client is fetchClient.
+     auto request = Fetch::Infrastructure::Request::create();
+@@ -818,19 +824,19 @@
+     // 13. If performFetch was given, run performFetch with request, isTopLevel, and with processResponseConsumeBody as defined below.
+     //     Otherwise, fetch request with processResponseConsumeBody set to processResponseConsumeBody as defined below.
+     //     In both cases, let processResponseConsumeBody given response response and null, failure, or a byte sequence bodyBytes be the following algorithm:
+-    auto process_response_consume_body = [request, &module_map, url, module_type, &settings_object, options = options](GC::Ref<Fetch::Infrastructure::ResponseView> response, Fetch::Infrastructure::FetchAlgorithms::BodyBytes body_bytes) mutable {
++    auto process_response_consume_body = [request, &module_map, url, module_type, &settings_object, options = options, authority, authority_id](GC::Ref<Fetch::Infrastructure::ResponseView> response, Fetch::Infrastructure::FetchAlgorithms::BodyBytes body_bytes) mutable {
+         auto internal_response = response->unsafe_response();
+ 
+         // 1. If any of the following are true:
+         //    - bodyBytes is null or failure; or
+         //    - response's status is not an ok status,
+-        if (body_bytes.has<Empty>() || body_bytes.has<Fetch::Infrastructure::FetchAlgorithms::ConsumeBodyFailureTag>() || !Fetch::Infrastructure::is_ok_status(response->status())) {
++        if ((authority && !authority->active()) || body_bytes.has<Empty>() || body_bytes.has<Fetch::Infrastructure::FetchAlgorithms::ConsumeBodyFailureTag>() || !Fetch::Infrastructure::is_ok_status(response->status())) {
+             // then:
+             // 1. Let callbacks be moduleMap[(url, moduleType)].
+             // 2. Remove moduleMap[(url, moduleType)].
+             // 3. For each callback of callbacks: run callback given null.
+             // 4. Return.
+-            module_map.complete_fetch(url, module_type, nullptr);
++            module_map.complete_fetch(url, module_type, nullptr, authority_id);
+             return;
+         }
+ 
+@@ -885,13 +891,17 @@
+                 compile_off_thread(settings_object, move(source_code), JS::ProgramType::Module, 0, move(cache_key),
+                     [url = move(url), url_string = move(url_string), response_url = move(response_url),
+                         module_type_string = move(module_type_string),
+-                        options, settings_root = move(settings_root)](auto result, auto source_code) mutable {
++                        options, authority, authority_id, settings_root = move(settings_root)](auto result, auto source_code) mutable {
++                        if (authority && !authority->active()) {
++                            settings_root->module_map().complete_fetch(url, module_type_string, nullptr, authority_id);
++                            return;
++                        }
+                         auto module_script = result.compiled
+                             ? ModuleScript::create_from_pre_compiled(url_string, source_code, *settings_root, move(response_url), move(result.compiled)).release_value_but_fixme_should_propagate_errors()
+                             : ModuleScript::create_from_pre_parsed(url_string, source_code, *settings_root, move(response_url), move(result.parsed)).release_value_but_fixme_should_propagate_errors();
+                         if (module_script)
+                             module_script->set_fetch_options(options);
+-                        settings_root->module_map().complete_fetch(url, module_type_string, module_script);
++                        settings_root->module_map().complete_fetch(url, module_type_string, module_script, authority_id);
+                     });
+                 return;
+             }
+@@ -913,14 +923,15 @@
+         // 9. If moduleScript is null, then remove moduleMap[(url, moduleType)]; otherwise set
+         //    moduleMap[(url, moduleType)] to moduleScript.
+         // 10. For each callback of callbacks: run callback given moduleScript.
+-        module_map.complete_fetch(url, module_type, module_script);
++        if (module_script) module_script->set_fetch_options(options);
++        module_map.complete_fetch(url, module_type, module_script, authority_id);
+     };
+ 
+     if (perform_fetch != nullptr) {
+         auto result = perform_fetch->function()(request, is_top_level, move(process_response_consume_body));
+         // NB: The perform fetch hook can abort without running processResponseConsumeBody.
+         if (result.is_exception())
+-            module_map.complete_fetch(url, module_type, nullptr);
++            module_map.complete_fetch(url, module_type, nullptr, authority_id);
+     } else {
+         Fetch::Infrastructure::FetchAlgorithms::Input fetch_algorithms_input { Fetch::Engine::BodyIntent::ConsumeForCallback };
+         fetch_algorithms_input.process_response_consume_body = move(process_response_consume_body);
+--- a/Libraries/LibWeb/HTML/Scripting/ModuleMap.cpp
++++ b/Libraries/LibWeb/HTML/Scripting/ModuleMap.cpp
+@@ -19,33 +19,33 @@
+             [&](CallbackList const& callbacks) { visitor.visit(callbacks); });
+ }
+ 
+-Optional<ModuleMap::Entry const&> ModuleMap::get(URL::URL const& url, Utf16View type) const
++Optional<ModuleMap::Entry const&> ModuleMap::get(URL::URL const& url, Utf16View type, u64 authority_id) const
+ {
+-    return m_values.get({ url, type });
++    return m_values.get({ url, type, authority_id });
+ }
+ 
+-void ModuleMap::set(URL::URL const& url, Utf16View type, CallbackList&& callbacks)
++void ModuleMap::set(URL::URL const& url, Utf16View type, CallbackList&& callbacks, u64 authority_id)
+ {
+-    VERIFY(!m_values.contains({ url, type }));
+-    m_values.set({ url, type }, move(callbacks));
++    VERIFY(!m_values.contains({ url, type, authority_id }));
++    m_values.set({ url, type, authority_id }, move(callbacks));
+ }
+ 
+-void ModuleMap::append(URL::URL const& url, Utf16View type, CallbackFunction callback)
++void ModuleMap::append(URL::URL const& url, Utf16View type, CallbackFunction callback, u64 authority_id)
+ {
+-    auto entry = m_values.find({ url, type });
++    auto entry = m_values.find({ url, type, authority_id });
+     VERIFY(entry != m_values.end());
+     entry->value.get<CallbackList>().append(move(callback));
+ }
+ 
+-void ModuleMap::complete_fetch(URL::URL const& url, Utf16View type, GC::Ptr<ModuleScript> module_script)
++void ModuleMap::complete_fetch(URL::URL const& url, Utf16View type, GC::Ptr<ModuleScript> module_script, u64 authority_id)
+ {
+-    auto entry = m_values.find({ url, type });
++    auto entry = m_values.find({ url, type, authority_id });
+     VERIFY(entry != m_values.end());
+     GC::RootVector callbacks { move(entry->value.get<CallbackList>()) };
+     m_values.remove(entry);
+ 
+     if (module_script)
+-        m_values.set({ url, type }, GC::Ref { *module_script });
++        m_values.set({ url, type, authority_id }, GC::Ref { *module_script });
+ 
+     for (auto const& callback : callbacks)
+         callback->function()(module_script);
+--- a/Libraries/LibWeb/HTML/Scripting/ModuleMap.h
++++ b/Libraries/LibWeb/HTML/Scripting/ModuleMap.h
+@@ -19,23 +19,27 @@
+ 
+ class ModuleLocationTuple {
+ public:
+-    ModuleLocationTuple(URL::URL url, Utf16View type)
++    ModuleLocationTuple(URL::URL url, Utf16View type, u64 authority_id = 0)
+         : m_url(move(url))
+         , m_type(Utf16String::from_utf16(type))
++        , m_authority_id(authority_id)
+     {
+     }
+ 
+     URL::URL const& url() const { return m_url; }
+     Utf16String const& type() const { return m_type; }
+ 
++    u64 authority_id() const { return m_authority_id; }
++
+     bool operator==(ModuleLocationTuple const& other) const
+     {
+-        return other.url() == m_url && other.type() == m_type;
++        return other.url() == m_url && other.type() == m_type && other.authority_id() == m_authority_id;
+     }
+ 
+ private:
+     URL::URL m_url;
+     Utf16String m_type;
++    u64 m_authority_id;
+ };
+ 
+ // https://html.spec.whatwg.org/multipage/webappapis.html#module-map
+@@ -52,15 +56,16 @@
+ 
+     // A module map is a map keyed by tuples consisting of a URL record and a string. The URL record is the request URL
+     // at which the module was fetched, and the string indicates the type of the module (e.g. "javascript-or-wasm").
++    // DerpBird additionally partitions privileged loads by native insertion authority identity.
+     // The module map's values are either a module script or a list of algorithms (that are waiting for the fetch to
+     // complete).
+     using Entry = Variant<GC::Ref<ModuleScript>, CallbackList>;
+ 
+-    Optional<Entry const&> get(URL::URL const& url, Utf16View type) const;
++    Optional<Entry const&> get(URL::URL const& url, Utf16View type, u64 authority_id = 0) const;
+ 
+-    void set(URL::URL const& url, Utf16View type, CallbackList&&);
+-    void append(URL::URL const& url, Utf16View type, CallbackFunction);
+-    void complete_fetch(URL::URL const& url, Utf16View type, GC::Ptr<ModuleScript>);
++    void set(URL::URL const& url, Utf16View type, CallbackList&&, u64 authority_id = 0);
++    void append(URL::URL const& url, Utf16View type, CallbackFunction, u64 authority_id = 0);
++    void complete_fetch(URL::URL const& url, Utf16View type, GC::Ptr<ModuleScript>, u64 authority_id = 0);
+ 
+ private:
+     virtual void visit_edges(JS::Cell::Visitor&) override;
+@@ -76,7 +81,7 @@
+ struct Traits<Web::HTML::ModuleLocationTuple> : public DefaultTraits<Web::HTML::ModuleLocationTuple> {
+     static unsigned hash(Web::HTML::ModuleLocationTuple const& tuple)
+     {
+-        return pair_int_hash(tuple.url().to_byte_string().hash(), tuple.type().hash());
++        return pair_int_hash(pair_int_hash(tuple.url().to_byte_string().hash(), tuple.type().hash()), u64_hash(tuple.authority_id()));
+     }
+ };
+ 
+--- a/Libraries/LibWeb/HTML/Scripting/ModuleScript.cpp
++++ b/Libraries/LibWeb/HTML/Scripting/ModuleScript.cpp
+@@ -6,6 +6,7 @@
+ 
+ #include <LibGC/Heap.h>
+ #include <LibJS/Runtime/ModuleRequest.h>
++#include <LibJS/Runtime/Error.h>
+ #include <LibJS/ScriptCompilation.h>
+ #include <LibWeb/CSS/StyleSheetState.h>
+ #include <LibWeb/HTML/Scripting/Environments.h>
+@@ -273,6 +274,8 @@
+     // 1. Let settings be the settings object of script.
+     auto& settings = this->settings_object();
+     auto& realm = settings.realm();
++    if (auto authority = fetch_options().derpbird_insertion_authority; authority && !authority->active())
++        return WebIDL::create_rejected_promise(realm, JS::TypeError::create(realm, "Userscript module authority was revoked"sv));
+ 
+     // 2. Check if we can run script with realm. If this returns "do not run", then return a promise resolved with undefined.
+     if (can_run_script(settings) == RunScriptDecision::DoNotRun) {

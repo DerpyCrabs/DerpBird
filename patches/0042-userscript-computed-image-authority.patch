@@ -1,0 +1,229 @@
+--- a/Libraries/LibWeb/CSS/StyleEngineBridge.cpp
++++ b/Libraries/LibWeb/CSS/StyleEngineBridge.cpp
+@@ -528,6 +528,7 @@
+         return;
+     auto base_url = style_resource_base_url(sheet, collection);
+     collection.contexts.append({
++        .derpbird_authority_id = sheet.derpbird_insertion_authority() ? sheet.derpbird_insertion_authority()->identity() : 0,
+         .source_identity = sheet.native_sheet().identity(),
+         .base_url = base_url.value_or(String {}),
+         .has_base_url = base_url.has_value(),
+@@ -581,6 +582,7 @@
+         entries.ensure_capacity(contexts.size());
+         for (auto const& context : contexts) {
+             entries.unchecked_append({
++                .derpbird_authority_id = context.derpbird_authority_id,
+                 .source_identity = context.source_identity,
+                 .base_url = context.base_url.bytes().data(),
+                 .base_url_length = context.base_url.bytes().size(),
+--- a/Libraries/LibWeb/CSS/StyleEngineBridge.h
++++ b/Libraries/LibWeb/CSS/StyleEngineBridge.h
+@@ -143,6 +143,7 @@
+ // A style sheet's resource context as a rule's cascaded values read it, keyed by its native
+ // sheet: an imported sheet has its own.
+ struct CollectedStyleSheetResourceContext {
++    u64 derpbird_authority_id { 0 };
+     u64 source_identity { 0 };
+     String base_url;
+     bool has_base_url { false };
+--- a/Libraries/LibWeb/CSS/StyleSheetState.cpp
++++ b/Libraries/LibWeb/CSS/StyleSheetState.cpp
+@@ -478,8 +478,19 @@
+     return *m_rule_cache;
+ }
+ 
++void StyleSheetState::revoke_derpbird_insertion_authority()
++{
++    ++m_derpbird_authority_generation;
++    if (!m_derpbird_insertion_authority) return;
++    m_derpbird_insertion_authority = nullptr;
++    for (auto node : m_owning_documents_or_shadow_roots)
++        node->document().note_style_sheet_set_change();
++}
++
+ void StyleSheetState::set_derpbird_insertion_authority(RefPtr<DerpBirdInsertionAuthority> authority)
+ {
++    for (auto node : m_owning_documents_or_shadow_roots)
++        node->document().note_style_sheet_set_change();
+     auto generation = ++m_derpbird_authority_generation;
+     m_derpbird_insertion_authority = nullptr;
+     if (!authority) return;
+--- a/Libraries/LibWeb/CSS/StyleSheetState.h
++++ b/Libraries/LibWeb/CSS/StyleSheetState.h
+@@ -119,11 +119,7 @@
+     void add_owning_document_or_shadow_root(DOM::Node& document_or_shadow_root);
+     void remove_owning_document_or_shadow_root(DOM::Node& document_or_shadow_root);
+     void invalidate_owners(bool revoke_insertion_authority = true);
+-    void revoke_derpbird_insertion_authority()
+-    {
+-        ++m_derpbird_authority_generation;
+-        m_derpbird_insertion_authority = nullptr;
+-    }
++    void revoke_derpbird_insertion_authority();
+     RefPtr<DerpBirdInsertionAuthority> const& derpbird_insertion_authority() const { return m_derpbird_insertion_authority; }
+     void set_derpbird_insertion_authority(RefPtr<DerpBirdInsertionAuthority>);
+     GC::Ptr<DOM::Document> owning_document() const;
+--- a/Libraries/LibWeb/CSS/StyleValues/ImageStyleValue.cpp
++++ b/Libraries/LibWeb/CSS/StyleValues/ImageStyleValue.cpp
+@@ -144,6 +144,7 @@
+     : AbstractImageStyleValue(Type::Image, data)
+ {
+     auto const& context = data->image._0->resource_context;
++    m_derpbird_insertion_authority = DerpBirdInsertionAuthority::resolve(context.derpbird_authority_id);
+     if (context.has_base_url)
+         m_style_resource_base_url = DOMURL::parse(url_text_from_rust_data(context.base_url));
+     if (context.has_parent_style_sheet_origin_clean)
+--- a/Libraries/LibWeb/Rust/src/css/absolutize.rs
++++ b/Libraries/LibWeb/Rust/src/css/absolutize.rs
+@@ -253,6 +253,7 @@
+ 
+ #[derive(Clone, Copy)]
+ pub(crate) struct StyleSheetResourceContext<'a> {
++    pub derpbird_authority_id: u64,
+     pub(crate) base_url: &'a [u8],
+     pub(crate) origin_clean: bool,
+ }
+@@ -411,6 +412,9 @@
+             url_type: *url_type,
+             url_modifiers: url_modifiers.clone(),
+             resource_context: crate::css::style_value::ImageResourceContext {
++                derpbird_authority_id: context.style_sheet_resource_context
++                    .map(|context| context.derpbird_authority_id)
++                    .unwrap_or(resource_context.derpbird_authority_id),
+                 base_url,
+                 has_base_url: true,
+                 has_parent_style_sheet_origin_clean,
+--- a/Libraries/LibWeb/Rust/src/css/parser/images_gradients_parser.rs
++++ b/Libraries/LibWeb/Rust/src/css/parser/images_gradients_parser.rs
+@@ -46,6 +46,7 @@
+     // The stylesheet supplies its resource context when the value is computed. Inline images
+     // follow their element's document, which can change after parsing in a template document.
+     ImageResourceContext {
++        derpbird_authority_id: 0,
+         base_url: RetainedString::from_ascii(String::new()),
+         has_base_url: false,
+         has_parent_style_sheet_origin_clean: false,
+--- a/Libraries/LibWeb/Rust/src/css/style/bridge.rs
++++ b/Libraries/LibWeb/Rust/src/css/style/bridge.rs
+@@ -284,6 +284,7 @@
+ /// `url()` in its rules resolves against, and whether the sheet is origin-clean.
+ #[repr(C)]
+ pub struct FfiStyleSheetResourceContextEntry {
++    pub derpbird_authority_id: u64,
+     pub source_identity: u64,
+     pub base_url: *const u8,
+     pub base_url_length: usize,
+--- a/Libraries/LibWeb/Rust/src/css/style/pipeline/winner_store.rs
++++ b/Libraries/LibWeb/Rust/src/css/style/pipeline/winner_store.rs
+@@ -436,6 +436,7 @@
+                 url_type: 0,
+                 url_modifiers: RetainedRequestUrlModifierList::from_retained_modifiers(Vec::new()),
+                 resource_context: ImageResourceContext {
++                    derpbird_authority_id: 0,
+                     base_url: RetainedString::from_ascii(base_url.to_owned()),
+                     has_base_url: true,
+                     has_parent_style_sheet_origin_clean: true,
+--- a/Libraries/LibWeb/Rust/src/css/style/resource_contexts.rs
++++ b/Libraries/LibWeb/Rust/src/css/style/resource_contexts.rs
+@@ -15,6 +15,7 @@
+ 
+ #[derive(Clone, Debug, Default, PartialEq)]
+ pub(crate) struct StyleSheetResourceContext {
++    pub derpbird_authority_id: u64,
+     pub(crate) base_url: Box<[u8]>,
+     pub(crate) has_base_url: bool,
+     pub(crate) origin_clean: bool,
+@@ -80,6 +81,7 @@
+                 *context.base_url == *lent(entry.base_url, entry.base_url_length)
+                     && context.has_base_url == entry.has_base_url
+                     && context.origin_clean == entry.origin_clean
++                    && context.derpbird_authority_id == entry.derpbird_authority_id
+             })
+         };
+         if entries.len() == self.by_source.len() && entries.iter().all(held) {
+@@ -89,6 +91,7 @@
+             .iter()
+             .map(|entry| {
+                 let context = StyleSheetResourceContext {
++                    derpbird_authority_id: entry.derpbird_authority_id,
+                     base_url: lent(entry.base_url, entry.base_url_length).into(),
+                     has_base_url: entry.has_base_url,
+                     origin_clean: entry.origin_clean,
+@@ -107,6 +110,7 @@
+     /// The context as the drive reads it, borrowing this one's base URL.
+     pub(crate) fn as_drive_context(&self) -> FfiStyleSheetResourceContext {
+         FfiStyleSheetResourceContext {
++            derpbird_authority_id: self.derpbird_authority_id,
+             base_url: if self.has_base_url {
+                 self.base_url.as_ptr()
+             } else {
+@@ -131,6 +135,7 @@
+         let entries: Vec<_> = sheets
+             .iter()
+             .map(|&(source_identity, base_url)| FfiStyleSheetResourceContextEntry {
++                derpbird_authority_id: 0,
+                 source_identity,
+                 base_url: base_url.as_ptr(),
+                 base_url_length: base_url.len(),
+--- a/Libraries/LibWeb/Rust/src/css/style/style_job.rs
++++ b/Libraries/LibWeb/Rust/src/css/style/style_job.rs
+@@ -117,6 +117,7 @@
+                 let base_url = resource_context_urls[offset..].as_ptr();
+                 offset += entry.base_url_length;
+                 FfiStyleSheetResourceContextEntry {
++                    derpbird_authority_id: entry.derpbird_authority_id,
+                     source_identity: entry.source_identity,
+                     base_url,
+                     base_url_length: entry.base_url_length,
+--- a/Libraries/LibWeb/Rust/src/css/style_compute.rs
++++ b/Libraries/LibWeb/Rust/src/css/style_compute.rs
+@@ -3293,6 +3293,7 @@
+ #[repr(C)]
+ #[derive(Clone, Copy)]
+ pub struct FfiStyleSheetResourceContext {
++    pub derpbird_authority_id: u64,
+     pub base_url: *const u8,
+     pub base_url_length: usize,
+     pub has_value: bool,
+@@ -3302,6 +3303,7 @@
+ impl FfiStyleSheetResourceContext {
+     pub(crate) const fn empty() -> Self {
+         Self {
++            derpbird_authority_id: 0,
+             base_url: std::ptr::null(),
+             base_url_length: 0,
+             has_value: false,
+@@ -4429,6 +4431,7 @@
+                         unsafe { ak::slice_from_raw_parts(context.base_url, context.base_url_length) }
+                     };
+                     crate::css::absolutize::StyleSheetResourceContext {
++                        derpbird_authority_id: context.derpbird_authority_id,
+                         base_url,
+                         origin_clean: context.origin_clean,
+                     }
+@@ -7268,6 +7271,7 @@
+             let style_sheet_resource_context =
+                 if matches!(property.value_source, FfiAnimationSpecifiedValueSource::Value) {
+                     FfiStyleSheetResourceContext {
++                        derpbird_authority_id: 0,
+                         base_url: property.style_sheet_resource_context.base_url,
+                         base_url_length: property.style_sheet_resource_context.base_url_length,
+                         has_value: property.style_sheet_resource_context.has_value,
+--- a/Libraries/LibWeb/Rust/src/css/style_value.rs
++++ b/Libraries/LibWeb/Rust/src/css/style_value.rs
+@@ -1816,6 +1816,7 @@
+ #[repr(C)]
+ #[derive(Clone)]
+ pub struct ImageResourceContext {
++    pub derpbird_authority_id: u64,
+     pub(crate) base_url: RetainedString,
+     pub(crate) has_base_url: bool,
+     pub(crate) has_parent_style_sheet_origin_clean: bool,
+@@ -4460,6 +4461,7 @@
+             url_type,
+             url_modifiers: unsafe { RetainedRequestUrlModifierList::from_raw(url_modifiers, url_modifier_count) },
+             resource_context: ImageResourceContext {
++                derpbird_authority_id: 0,
+                 base_url: RetainedString::from_units(resource_base_url.units().expect("invalid base URL text")),
+                 has_base_url: has_resource_base_url,
+                 has_parent_style_sheet_origin_clean: false,

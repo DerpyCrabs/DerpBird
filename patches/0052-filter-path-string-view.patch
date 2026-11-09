@@ -1,0 +1,11 @@
+--- a/Libraries/LibWebView/Application.cpp
++++ b/Libraries/LibWebView/Application.cpp
+@@ -898,7 +898,7 @@
+     for (auto const& path : paths) {
+         auto status = TRY(Core::File::stat(path));
+         JsonArray stamp;
+-        stamp.must_append(TRY(String::from_utf8(path)));
++        stamp.must_append(TRY(String::from_utf8(path.view())));
+         stamp.must_append(TRY(String::formatted("{}:{}:{}:{}:{}", status.st_dev, status.st_ino, status.st_size, status.st_mtime, status.st_ctime)));
+ #if defined(AK_OS_MACOS)
+         stamp.must_append(static_cast<i64>(status.st_mtimespec.tv_nsec));

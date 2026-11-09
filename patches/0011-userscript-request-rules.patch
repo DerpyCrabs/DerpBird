@@ -1,0 +1,49 @@
+--- a/Libraries/LibWeb/Fetch/Fetching/Fetching.cpp
++++ b/Libraries/LibWeb/Fetch/Fetching/Fetching.cpp
+@@ -1,3 +1,4 @@
++#include <LibWeb/Page/DerpBirdWebRequestRegistration.h>
+ /*
+  * Copyright (c) 2022-2023, Linus Groh <linusg@serenityos.org>
+  * Copyright (c) 2023, Luke Wilde <lukew@serenityos.org>
+@@ -2579,7 +2580,8 @@
+             stored_response = select_response_from_cache(*http_cache, *http_request);
+ 
+             // 2. If storedResponse is non-null, then:
+-            if (http_request->derpbird_popup_source.has_value()) stored_response = nullptr;
++            if (http_request->derpbird_popup_source.has_value()
++                || DerpBirdWebRequestRegistration::has_rules(Bindings::principal_host_defined_page(realm))) stored_response = nullptr;
+             if (stored_response) {
+                 // WebContent's optional memory cache bypasses ResourceLoader and
+                 // RequestServer; apply the same response condition before using it.
+--- a/Libraries/LibWeb/Loader/ResourceLoader.cpp
++++ b/Libraries/LibWeb/Loader/ResourceLoader.cpp
+@@ -26,6 +26,7 @@
+ #include <LibWeb/Loader/GeneratedPagesLoader.h>
+ #include <LibWeb/Loader/LoadRequest.h>
+ #include <LibWeb/Loader/ResourceLoader.h>
++#include <LibWeb/Page/DerpBirdWebRequestRegistration.h>
+ #include <LibWeb/Page/DerpBirdResponseFiltering.h>
+ #include <LibWeb/Page/Page.h>
+ #include <LibWeb/Platform/EventLoopPlugin.h>
+@@ -309,6 +310,21 @@
+     if (is_port_blocked(url.port_or_default())) {
+         log_failure(request, ByteString::formatted("Port #{} is blocked", url.port_or_default()));
+         return { .blocked = true };
++    }
++
++    if (auto page = request.page(); page && DerpBirdWebRequestRegistration::has_rules(*page)) {
++        using Type = DerpBirdWebRequestRules::Type;
++        auto kind = ContentBlocker::resource_type_from_fetch_metadata(request.destination(), request.initiator_type(), request.request_mode());
++        auto type = request.derpbird_subframe_navigation || kind == ContentBlocker::ResourceType::Subdocument ? Type::SubFrame
++            : kind == ContentBlocker::ResourceType::Script ? Type::Script
++            : kind == ContentBlocker::ResourceType::XMLHttpRequest ? Type::XHR : Type::Other;
++        auto result = DerpBirdWebRequestRegistration::evaluate(*page, url, type);
++        if (result.is_error()) return { .blocked = true, .matched_rule = "Userscript request policy limit"_string };
++        if (result.value().has_value()) {
++            auto decision = result.release_value().release_value();
++            if (decision.cancel || decision.redirect.has_value())
++                return { .blocked = decision.cancel, .matched_rule = "Userscript webRequest"_string, .rewritten_url = move(decision.redirect) };
++        }
+     }
+ 
+     if (request.derpbird_approved_navigation) return {};
