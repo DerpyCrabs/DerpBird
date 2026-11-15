@@ -10,7 +10,7 @@ import { decodeStyleSnapshot, decodeStyleMatchStatus, type UserStylePort } from 
 
 export interface WebUIChannel { sendMessage(name: string, data: unknown): void }
 interface Response { requestId: number; ok: boolean; value?: unknown; error?: string }
-export interface WebUIPort extends NativePort { readonly pageSources: PageSourcesPort; autofill(token: string, id?: string): Promise<void>; readonly proxy: ProxyPort; readonly importer: ImportPort; readonly styles: UserStylePort; readonly scripts: UserScriptPort; readonly credentials: CredentialPort; onSourceChange(listener: () => void): () => void; close(): void }
+export interface WebUIPort extends NativePort { devtoolsRequest(payload: Record<string, unknown>): Promise<unknown>; onDevTools(listener: (value: unknown) => void): () => void; readonly pageSources: PageSourcesPort; autofill(token: string, id?: string): Promise<void>; readonly proxy: ProxyPort; readonly importer: ImportPort; readonly styles: UserStylePort; readonly scripts: UserScriptPort; readonly credentials: CredentialPort; onSourceChange(listener: () => void): () => void; close(): void }
 
 /** Adapter for Ladybird's document-scoped WebUI IPC. Never used on content pages. */
 export function createWebUIPort(
@@ -20,6 +20,7 @@ export function createWebUIPort(
 ): WebUIPort {
   let nextId = 1;
   let closed = false;
+  const devtoolsListeners = new Set<(value: unknown) => void>();
   const sourceListeners = new Set<() => void>();
   const listeners = new Set<(snapshot: unknown) => void>();
   const pending = new Map<number, {
@@ -76,6 +77,7 @@ export function createWebUIPort(
     const detail = (event as CustomEvent<unknown>).detail;
     if (!detail || typeof detail !== 'object') return;
     const { name, data } = detail as { name?: unknown; data?: unknown };
+    if (name === 'derpbird.devtools') { for (const listener of devtoolsListeners) listener(data); return; }
     if (name === 'derpbird.sources-changed') { for (const listener of sourceListeners) listener(); return; }
     if (name === 'derpbird.snapshot') {
       for (const listener of listeners) listener(data);
@@ -100,6 +102,8 @@ export function createWebUIPort(
   document.addEventListener('WebUIMessage', receive);
   return {
     version: 1,
+    devtoolsRequest: payload => rpc(payload),
+    onDevTools(listener) { devtoolsListeners.add(listener); return () => { devtoolsListeners.delete(listener); }; },
     async autofill(token, id) { await rpc(id ? { type: "credentials.autofill", token, id } : { type: "credentials.autofill-dismiss" }); },
     proxy: {
       get: async () => decodeProxySnapshot(await rpc({ type: 'proxy.get' })),
@@ -180,6 +184,7 @@ export function createWebUIPort(
       if (closed) return;
       closed = true;
       sourceListeners.clear();
+      devtoolsListeners.clear();
       document.removeEventListener('WebUILoaded', flush);
       document.removeEventListener('WebUIMessage', receive);
       listeners.clear();

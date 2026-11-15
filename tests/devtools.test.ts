@@ -1,0 +1,8 @@
+import {describe,expect,test} from 'bun:test';
+import {indexJSON,visibleTree,searchTree,revealMatch,windowRange,filterRequests,type RequestRecord} from '../src/devtools/model';
+describe('DevTools response search',()=>{
+ test('finds hidden nested values and reveals every ancestor',()=>{const rows=indexJSON({data:[{owner:{name:'Needle'}}]});const hits=searchTree(rows,'needle');expect(hits).toHaveLength(1);expect(visibleTree(rows,new Set([0])).some(r=>r.id===hits[0])).toBe(false);expect(visibleTree(rows,revealMatch(rows,new Set([0]),hits[0]!)).some(r=>r.value==='"Needle"')).toBe(true);expect(searchTree(rows,'needle',true)).toHaveLength(0);});
+ test('finds keys and literal punctuation without regex interpretation',()=>{const rows=indexJSON({'a.b':'[x]','empty':null});expect(searchTree(rows,'a.b')).toHaveLength(1);expect(searchTree(rows,'[x]')).toHaveLength(1);expect(searchTree(rows,'missing')).toEqual([]);});
+ test('keeps large response and request rendering bounded',()=>{const rows=indexJSON({items:Array.from({length:12000},(_,i)=>({id:i,name:`item-${i}`}))});const hits=searchTree(rows,'item-11999');expect(hits).toHaveLength(1);const visible=visibleTree(rows,revealMatch(rows,new Set([0]),hits[0]!));expect(visible.some(r=>r.id===hits[0])).toBe(true);const range=windowRange(10000,250000,800);expect(range.end-range.start).toBeLessThanOrEqual(47);expect(range.start).toBeGreaterThan(9000);});
+ test('filter composes status method and URL',()=>{const rows=[{url:'https://test/api/projects',method:'GET',status:200,type:'Fetch/XHR'},{url:'https://test/api/projects',method:'POST',status:404,type:'Fetch/XHR'}] as RequestRecord[];expect(filterRequests(rows,'projects status:404 method:POST','All')).toEqual([rows[1]!]);});
+});

@@ -45,7 +45,7 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
       controller.openTabMenu(tabId, Math.max(8, Math.min(x, window.innerWidth - 250)), Math.max(8, Math.min(y, window.innerHeight - 240)));
 
     };
-    const tabCommand = (type: 'tab.back' | 'tab.forward' | 'tab.reload' | 'tab.stop' | 'tab.find' | 'tab.bookmark' | 'tab.site-settings' | 'tab.zoom-in' | 'tab.zoom-out' | 'tab.zoom-reset') => {
+    const tabCommand = (type: 'tab.inspect' | 'tab.back' | 'tab.forward' | 'tab.reload' | 'tab.stop' | 'tab.find' | 'tab.bookmark' | 'tab.site-settings' | 'tab.zoom-in' | 'tab.zoom-out' | 'tab.zoom-reset') => {
       if (active) controller.send({ type, tabId: active.id });
     };
     return <main class={`shell ${model.layout} ${model.wrapTabs ? 'wrap-tabs' : ''}`} style={{ '--sidebar-width': `${model.sidebarResizeWidth ?? model.sidebarWidth}px` }}>
@@ -148,6 +148,7 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
         </div>
         <Button role="menuitem" variant="ghost" disabled={!active} onClick={() => { controller.setPanel(null); tabCommand('tab.find'); }}>Find in page <kbd>Ctrl F</kbd></Button>
         <Button role="menuitem" variant="ghost" disabled={!active} onClick={() => { controller.setPanel(null); tabCommand('tab.bookmark'); }}>Bookmark page <kbd>Ctrl D</kbd></Button>
+        <Button role="menuitem" variant="ghost" aria-label="Inspect" disabled={!active || !model.connected} onClick={() => { controller.setPanel(null); tabCommand('tab.inspect'); }}>Inspect <kbd>F12</kbd></Button>
         <details class="menu-tools"><summary role="menuitem">Content blocking</summary>
         <Button role="menuitem" variant="ghost" disabled={!active || !!active.private} onClick={() => { if (active) { controller.setPanel(null); controller.send({ type: 'blocking.pick', tabId: active.id }); } }}>Block element…</Button>
         <Button role="menuitem" variant="ghost" disabled={!active} onClick={() => { if (active) { controller.setPanel(null); controller.send({ type: 'blocking.zap', tabId: active.id }); } }}>Hide element until reload…</Button>

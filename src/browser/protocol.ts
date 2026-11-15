@@ -55,7 +55,7 @@ export type Command =
   | { readonly type: 'shell.viewport'; readonly captureInput?: boolean; readonly rect: SurfaceRect; readonly overlays: readonly SurfaceRect[] }
   | { readonly type: 'tab.create' | 'window.new'; readonly url?: string; readonly private: boolean }
   | { readonly type: 'tab.activate'; readonly tabId: string; readonly focus?: 'tab' }
-  | { readonly type: 'tab.close' | 'tab.back' | 'tab.forward' | 'tab.reload' | 'tab.stop' | 'tab.duplicate' | 'tab.close-others' | 'tab.close-right' | 'tab.find' | 'tab.bookmark' | 'tab.site-settings' | 'tab.zoom-in' | 'tab.zoom-out' | 'tab.zoom-reset'; readonly tabId: string }
+  | { readonly type: 'tab.inspect' | 'tab.close' | 'tab.back' | 'tab.forward' | 'tab.reload' | 'tab.stop' | 'tab.duplicate' | 'tab.close-others' | 'tab.close-right' | 'tab.find' | 'tab.bookmark' | 'tab.site-settings' | 'tab.zoom-in' | 'tab.zoom-out' | 'tab.zoom-reset'; readonly tabId: string }
   | { readonly type: 'tab.navigate' | 'tab.navigate-input'; readonly tabId: string; readonly url: string }
   | { readonly type: 'tab.pin' | 'tab.mute'; readonly tabId: string; readonly value: boolean }
   | { readonly type: 'tab.split'; readonly tabId: string; readonly targetId: string; readonly edge: 'left' | 'right' | 'top' | 'bottom' }

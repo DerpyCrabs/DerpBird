@@ -36,3 +36,6 @@ foreach(source IN LISTS suites)
     set_tests_properties(${suite} PROPERTIES TIMEOUT 180 LABELS engine
         ENVIRONMENT "LADYBIRD_SOURCE_DIR=${ENGINE_SOURCE}")
 endforeach()
+
+find_package(Qt6 REQUIRED COMPONENTS Core)
+target_link_libraries(TestDerpBirdDevTools PRIVATE Qt6::Core)
