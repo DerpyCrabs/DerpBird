@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run DerpBird document fixtures with the built Ladybird test-web engine."""
 from pathlib import Path
+from build_config import engine_build
 import shutil
 import subprocess
 import tempfile
@@ -26,7 +27,7 @@ with tempfile.TemporaryDirectory(prefix='document-styles-', dir=artifacts) as te
     for kind in ('input', 'expected', 'data'):
         shutil.copytree(root / 'tests/engine' / kind, suite / 'Text' / kind, dirs_exist_ok=True)
     result = subprocess.run([
-        str(engine / 'Build/release/bin/test-web'), '--test-path', str(suite),
+        str(engine_build() / 'bin/test-web'), '--test-path', str(suite),
         '--results-dir', str(artifacts / 'document-style-results'),
         '--test-concurrency', '1', '--per-test-timeout', '30', '--verify-style',
     ], cwd=root)

@@ -1,6 +1,8 @@
 import sys
 import tempfile
 import unittest
+import os
+from unittest.mock import patch
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
@@ -8,6 +10,12 @@ from ui_resources import resource_directories, sync_built_ui, verify_built_ui
 
 
 class UIResourcesTest(unittest.TestCase):
+    def setUp(self):
+        # These fixtures must never deploy into an explicitly selected real build.
+        environment = patch.dict(os.environ, {}, clear=True)
+        environment.start()
+        self.addCleanup(environment.stop)
+
     def test_stale_runtime_is_rejected_and_sync_preserves_unrelated_resources(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

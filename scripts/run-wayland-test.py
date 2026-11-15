@@ -8,6 +8,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+from build_config import engine_build
 import socket
 import subprocess
 import tempfile
@@ -35,7 +36,7 @@ print(f'Wayland socket accepts connections: {endpoint}', flush=True)
 if args.check_environment:
     raise SystemExit(0)
 
-binary = root / 'vendor/ladybird/Build/release/bin/Ladybird'
+binary = engine_build() / 'bin/Ladybird'
 if not binary.is_file():
     raise SystemExit('Build Ladybird before running the Wayland test.')
 verify_built_ui(root)

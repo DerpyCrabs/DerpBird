@@ -2,6 +2,7 @@
 """Check popup dismissal with real page clicks in an isolated Wayland session."""
 import argparse, importlib.util, json, os, signal, socket, subprocess, tempfile, time, sys
 from pathlib import Path
+from build_config import engine_build
 root = Path(__file__).resolve().parents[1]
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--environment', required=True, type=Path)
@@ -20,7 +21,7 @@ with tempfile.TemporaryDirectory(prefix='derpbird-dismissal-') as tmp:
     log = (out/'browser.log').open('w')
     keyboard_device = subprocess.Popen(['wtype', '-s', '600000'], env=env, stdout=log, stderr=subprocess.STDOUT)
     time.sleep(.2)
-    proc = subprocess.Popen([str(root/'vendor/ladybird/Build/release/bin/Ladybird'), '--profile-path', str(profile), f'--devtools={port}', 'about:blank'], env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+    proc = subprocess.Popen([str(engine_build()/'bin/Ladybird'), '--profile-path', str(profile), f'--devtools={port}', 'about:blank'], env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     pointer = module.Pointer(env, [1200, 800])
     def evaluate(code, url='about:derpbird'):
         script = out/'eval.js'; script.write_text(code)

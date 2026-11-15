@@ -1,4 +1,4 @@
-"""Verify the committed engine fork and its generated resources."""
+"""Verify synchronized working sources and idempotent preparation."""
 from pathlib import Path
 import subprocess
 import unittest
@@ -9,19 +9,18 @@ ENGINE = ROOT / 'vendor/ladybird'
 
 class EngineSourceTest(unittest.TestCase):
     @unittest.skipUnless((ROOT / 'dist/index.html').is_file(), 'Build the UI before testing preparation')
-    def test_preparation_preserves_git_state(self):
+    def test_preparation_is_idempotent(self):
         def status(path):
             return subprocess.check_output(['git', '-C', str(path), 'status', '--porcelain', '--untracked-files=all'])
+        subprocess.run(['python3', str(ROOT / 'scripts/prepare-engine.py')], check=True, capture_output=True)
         before = (status(ROOT), status(ENGINE))
+        generated = ROOT / 'native/WebContent/DerpBirdJSONResponseRuntime.h'
+        modified = generated.stat().st_mtime_ns
         subprocess.run(['python3', str(ROOT / 'scripts/prepare-engine.py')], check=True, capture_output=True)
         self.assertEqual((status(ROOT), status(ENGINE)), before,
-                         'Preparing the engine must not modify committed sources or create untracked files')
-
-    def test_engine_sources_are_committed(self):
-        for name in ['UI/Qt/DerpBirdChrome.cpp', 'Libraries/LibWeb/Page/DerpBirdCredentialFields.h',
-                     'Base/res/ladybird/about-pages/downloads.html']:
-            committed = subprocess.check_output(['git', '-C', str(ENGINE), 'show', f'HEAD:{name}'])
-            self.assertEqual(committed, (ENGINE / name).read_bytes(), name)
+                         'A second preparation must not alter the synchronized working tree')
+        self.assertEqual(generated.stat().st_mtime_ns, modified,
+                         'Unchanged generated headers must preserve timestamps')
 
     def test_deployed_content_blocker_dependency_matches_source(self):
         source = ROOT / 'third_party/adblock'

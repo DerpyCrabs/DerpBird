@@ -1,6 +1,7 @@
 """Keep the checkout's compiled Ladybird resource tree on the prepared UI revision."""
 from pathlib import Path
 import shutil
+from build_config import engine_build
 
 
 def ui_resource_files(directory: Path) -> dict[str, bytes]:
@@ -17,7 +18,7 @@ def ui_resource_files(directory: Path) -> dict[str, bytes]:
 def resource_directories(root: Path) -> tuple[Path, Path]:
     engine = root / 'vendor/ladybird'
     return (engine / 'Base/res/ladybird/about-pages',
-            engine / 'Build/release/share/Lagom/ladybird/about-pages')
+            engine_build(root) / 'share/Lagom/ladybird/about-pages')
 
 
 def sync_built_ui(root: Path) -> bool:

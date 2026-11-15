@@ -3,9 +3,10 @@
 import os
 from pathlib import Path
 import sys
+from build_config import engine_build
 
 root = Path(__file__).resolve().parents[1]
-binary = root / 'vendor/ladybird/Build/release/bin/Ladybird'
+binary = engine_build() / 'bin/Ladybird'
 if not binary.is_file():
     raise SystemExit('DerpBird engine is not built yet. Run bun run build:engine first.')
 data_home = Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local/share')))

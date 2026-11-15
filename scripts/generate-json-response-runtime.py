@@ -54,4 +54,6 @@ return output.join('');
 runtime=prefix+source+suffix
 assert ')DERPJSON"' not in runtime
 header='// Generated from third_party/ublock-resources/jsonpath.js (GPL-3.0-or-later).\n#pragma once\nnamespace Web {\ninline constexpr auto derpbird_json_response_runtime = R"DERPJSON('+runtime+')DERPJSON"sv;\n}\n'
-(root/'native/WebContent/DerpBirdJSONResponseRuntime.h').write_text(header)
+target = root/'native/WebContent/DerpBirdJSONResponseRuntime.h'
+if not target.exists() or target.read_text() != header:
+    target.write_text(header)

@@ -1,14 +1,15 @@
 cmake_minimum_required(VERSION 3.30)
 project(DerpBirdNativeTests LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
 enable_testing()
-add_executable(test-secret-clipboard secret-clipboard.cpp)
+# Requires a compositor and an input serial; built only when explicitly selected.
+add_executable(test-secret-clipboard EXCLUDE_FROM_ALL secret-clipboard.cpp)
 target_include_directories(test-secret-clipboard PRIVATE ../../native/Qt)
 target_link_libraries(test-secret-clipboard PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
 target_compile_options(test-secret-clipboard PRIVATE -Wall -Wextra -Werror)
-# Interactive native Wayland check; requires a compositor and an input serial.
-# Run explicitly, not as a headless ctest test.
+# Pure geometry/lifecycle test: no compositor is needed.
 add_executable(test-content-surface content-surface.cpp)
 target_include_directories(test-content-surface PRIVATE ../../native/Qt)
 target_link_libraries(test-content-surface PRIVATE Qt6::Core Qt6::Gui)
@@ -19,7 +20,7 @@ set(DERPBIRD_ENGINE_BUILD "" CACHE PATH "Configured Ladybird build with compiled
 if(DERPBIRD_ENGINE_BUILD)
     set(ENGINE_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/ladybird")
     # Explicit corpus input, never an empty/default ctest pass.
-    add_executable(blocker-corpus blocker-corpus.cpp)
+    add_executable(blocker-corpus EXCLUDE_FROM_ALL blocker-corpus.cpp)
     target_compile_options(blocker-corpus PRIVATE -O2)
     target_include_directories(blocker-corpus PRIVATE
         "${ENGINE_SOURCE}" "${ENGINE_SOURCE}/Libraries" "${DERPBIRD_ENGINE_BUILD}"
@@ -262,7 +263,7 @@ if(DERPBIRD_ENGINE_BUILD)
     add_test(NAME password-secret-service-restart COMMAND "${Python3_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/run-secret-restart.py" "$<TARGET_FILE:test-secret-store>")
     set_tests_properties(password-secret-service-restart PROPERTIES TIMEOUT 50)
-    add_executable(benchmark-script-values script-values-benchmark.cpp)
+    add_executable(benchmark-script-values EXCLUDE_FROM_ALL script-values-benchmark.cpp)
     target_compile_options(benchmark-script-values PRIVATE -O2)
     target_include_directories(benchmark-script-values PRIVATE ../../native/WebUI
         "${ENGINE_SOURCE}" "${ENGINE_SOURCE}/Libraries" "${DERPBIRD_ENGINE_BUILD}"
@@ -271,7 +272,7 @@ if(DERPBIRD_ENGINE_BUILD)
         "${DERPBIRD_ENGINE_BUILD}/lib/liblagom-database.so"
         "${DERPBIRD_ENGINE_BUILD}/lib/liblagom-core.so"
         "${DERPBIRD_ENGINE_BUILD}/lib/liblagom-ak.so")
-    add_executable(benchmark-user-styles style-benchmark.cpp)
+    add_executable(benchmark-user-styles EXCLUDE_FROM_ALL style-benchmark.cpp)
     target_compile_options(benchmark-user-styles PRIVATE -O2)
     target_include_directories(benchmark-user-styles PRIVATE ../../native/WebContent
         "${ENGINE_SOURCE}" "${ENGINE_SOURCE}/Libraries" "${DERPBIRD_ENGINE_BUILD}"
@@ -302,4 +303,18 @@ if(DERPBIRD_ENGINE_BUILD)
         "${DERPBIRD_ENGINE_BUILD}/lib/liblagom-url.so"
         "${DERPBIRD_ENGINE_BUILD}/lib/liblagom-ak.so")
     add_test(NAME proxy-routing COMMAND test-proxy-routing)
+endif()
+
+# Every test is bounded. Preserve tighter service-specific limits above.
+get_property(derpbird_tests DIRECTORY PROPERTY TESTS)
+foreach(test IN LISTS derpbird_tests)
+    get_property(timeout TEST ${test} PROPERTY TIMEOUT)
+    if(NOT timeout)
+        set_tests_properties(${test} PROPERTIES TIMEOUT 90)
+    endif()
+    set_tests_properties(${test} PROPERTIES LABELS fast)
+endforeach()
+if(DERPBIRD_ENGINE_BUILD)
+    set_tests_properties(userscript-dependency-install userscript-value-requests
+        PROPERTIES LABELS "slow;integration")
 endif()

@@ -3,6 +3,7 @@
 import argparse, base64, hashlib, json, os, signal, socket, subprocess, tempfile, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from build_config import engine_build
 from threading import Thread
 
 root = Path(__file__).resolve().parents[1]
@@ -50,7 +51,7 @@ browser=None
 log=(output/'browser.log').open('w')
 def start():
     global browser
-    browser=subprocess.Popen([str(root/'vendor/ladybird/Build/release/bin/Ladybird'),'--profile-path',str(profile.resolve()),f'--devtools={devtools}','about:blank'],env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+    browser=subprocess.Popen([str(engine_build()/'bin/Ladybird'),'--profile-path',str(profile.resolve()),f'--devtools={devtools}','about:blank'],env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
 def stop():
     if browser and browser.poll() is None:
         os.killpg(browser.pid,signal.SIGTERM)
