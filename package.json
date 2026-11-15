@@ -15,6 +15,7 @@
     "test:overlay": "python3 -m unittest discover -s tests/build -v",
     "test:native:unit": "python3 scripts/workflow.py native",
     "test:native:engine": "python3 scripts/workflow.py native --engine",
+    "test:split:engine": "python3 scripts/test-split-view.py",
     "test:shell:engine": "python3 scripts/test-native-regressions.py --suite TestDerpBirdShell",
     "test:styles:engine": "python3 scripts/workflow.py styles",
     "test:native:regressions": "python3 scripts/test-native-regressions.py",

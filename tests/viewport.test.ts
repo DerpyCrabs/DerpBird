@@ -39,3 +39,20 @@ test('coalesces geometry notifications, deduplicates updates, and tears down', a
  test('native page covers fractional boundaries below the transparent shell', () => {
   expect(surfaceRect({left: 0, top: 104.375, right: 799.75, bottom: 412.5}, 0, 'cover')).toEqual({x: 0, y: 104, width: 800, height: 309});
 });
+
+
+test('drag capture preserves the viewport instead of excluding its pixels', async () => {
+  const window = new Window();
+  window.document.body.innerHTML = '<div id="app"><section id="content-surface"><div class="split-drag-surface" hidden></div></section></div>';
+  const commands: Command[] = [];
+  const close = observeViewport(window.document as unknown as Document, command => commands.push(command), () => true);
+  const overlay = window.document.querySelector('.split-drag-surface') as unknown as HTMLElement;
+  try {
+    overlay.hidden = false;
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(commands.at(-1)).toMatchObject({ type: 'shell.viewport', captureInput: true, overlays: [] });
+    overlay.hidden = true;
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(commands.at(-1)).not.toHaveProperty('captureInput');
+  } finally { close(); await window.happyDOM.close(); }
+});

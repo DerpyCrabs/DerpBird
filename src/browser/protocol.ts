@@ -21,7 +21,9 @@ export interface ScriptCommand { readonly id: string; readonly script: string; r
 export interface ScriptCommandEvent { readonly keyboard: boolean; readonly key: string; readonly ctrlKey: boolean; readonly altKey: boolean; readonly shiftKey: boolean; readonly metaKey: boolean }
 export interface BlockingLog { readonly tabId: string; readonly entries: readonly { readonly id: number; readonly url: string; readonly kind: string; readonly rule?: string }[] }
 export interface CredentialAutofill { readonly token: string; readonly origin: string; readonly x: number; readonly y: number; readonly items: readonly Credential[] }
+export interface SplitView { readonly id: string; readonly firstTabId: string; readonly secondTabId: string; readonly axis: 'horizontal' | 'vertical'; readonly ratio: number }
 export interface BrowserSnapshot {
+  readonly splits?: readonly SplitView[];
   readonly proxyProfile?: string;
   readonly credentialAutofill?: CredentialAutofill | null;
   readonly addressSuggestions?: { readonly query: number; readonly items: readonly { readonly text: string; readonly title: string; readonly source?: 'search' | 'history' | 'bookmark' | 'page' | 'settings'; readonly subtitle?: string; readonly favicon?: string }[] };
@@ -50,12 +52,15 @@ export type Command =
   | { readonly type: 'shell.set-sidebar-width'; readonly width: number }
   | { readonly type: 'shell.set-wrap-tabs'; readonly value: boolean }
   | { readonly type: 'browser.open-page'; readonly page: BrowserPage }
-  | { readonly type: 'shell.viewport'; readonly rect: SurfaceRect; readonly overlays: readonly SurfaceRect[] }
+  | { readonly type: 'shell.viewport'; readonly captureInput?: boolean; readonly rect: SurfaceRect; readonly overlays: readonly SurfaceRect[] }
   | { readonly type: 'tab.create' | 'window.new'; readonly url?: string; readonly private: boolean }
   | { readonly type: 'tab.activate'; readonly tabId: string; readonly focus?: 'tab' }
   | { readonly type: 'tab.close' | 'tab.back' | 'tab.forward' | 'tab.reload' | 'tab.stop' | 'tab.duplicate' | 'tab.close-others' | 'tab.close-right' | 'tab.find' | 'tab.bookmark' | 'tab.site-settings' | 'tab.zoom-in' | 'tab.zoom-out' | 'tab.zoom-reset'; readonly tabId: string }
   | { readonly type: 'tab.navigate' | 'tab.navigate-input'; readonly tabId: string; readonly url: string }
   | { readonly type: 'tab.pin' | 'tab.mute'; readonly tabId: string; readonly value: boolean }
+  | { readonly type: 'tab.split'; readonly tabId: string; readonly targetId: string; readonly edge: 'left' | 'right' | 'top' | 'bottom' }
+  | { readonly type: 'split.switch'; readonly tabId: string }
+  | { readonly type: 'split.resize'; readonly tabId: string; readonly ratio: number }
   | { readonly type: 'tab.tree-move'; readonly tabId: string; readonly targetId: string; readonly placement: 'before' | 'inside' | 'after' }
   | { readonly type: 'tab.new-child' | 'tab.ungroup' | 'tab.close-group'; readonly tabId: string }
   | { readonly type: 'tab.move'; readonly tabId: string; readonly index: number }
@@ -104,6 +109,21 @@ export function decodeSnapshot(value: unknown): BrowserSnapshot {
   }
   if (!(s.activeTabId === null && tabs.length === 0) && !(typeof s.activeTabId === 'string' && ids.has(s.activeTabId)))
     throw new Error('Invalid active tab');
+  const rawSplits = s.splits ?? [];
+  if (!Array.isArray(rawSplits)) throw new Error('Invalid split views');
+  const splitTabs = new Set<string>(), splitIds = new Set<string>();
+  const splits: SplitView[] = rawSplits.map((value: unknown) => {
+    const split = value as SplitView;
+    if (!split || typeof split.id !== 'string' || !split.id || splitIds.has(split.id)
+      || !ids.has(split.firstTabId) || !ids.has(split.secondTabId) || split.firstTabId === split.secondTabId
+      || splitTabs.has(split.firstTabId) || splitTabs.has(split.secondTabId)
+      || !['horizontal', 'vertical'].includes(split.axis) || !Number.isFinite(split.ratio) || split.ratio < .2 || split.ratio > .8)
+      throw new Error('Invalid split view');
+    const first = byId.get(split.firstTabId)!, second = byId.get(split.secondTabId)!;
+    if (first.private !== second.private || first.pinned || second.pinned) throw new Error('Invalid split members');
+    splitIds.add(split.id); splitTabs.add(first.id); splitTabs.add(second.id);
+    return Object.freeze({id:split.id,firstTabId:first.id,secondTabId:second.id,axis:split.axis,ratio:split.ratio});
+  });
   const rawCommands = s.scriptCommands ?? [];
   if (!Array.isArray(rawCommands) || rawCommands.length > 256) throw new Error('Invalid script commands');
   const commandIds = new Set<string>();
@@ -161,7 +181,7 @@ export function decodeSnapshot(value: unknown): BrowserSnapshot {
   if (credentialProposal && tabs.find(tab => tab.id === s.activeTabId)?.private !== false)
     throw new Error('Credential suggestion requires an ordinary active tab');
   if (s.proxyProfile !== undefined && (typeof s.proxyProfile !== 'string' || s.proxyProfile.length > 256)) throw new Error('Invalid proxy profile');
-  return Object.freeze({ ...(s.proxyProfile === undefined ? {} : { proxyProfile: s.proxyProfile as string }), credentialAutofill, addressSuggestions, dynamicRules: s.dynamicRules as string | undefined, filterProposal, blockingLog, scriptCommands: Object.freeze(scriptCommands), credentialProposal, version: protocolVersion, revision: s.revision as number, preferences, tabs: Object.freeze(tabs), activeTabId: s.activeTabId as string | null });
+  return Object.freeze({ splits: Object.freeze(splits), ...(s.proxyProfile === undefined ? {} : { proxyProfile: s.proxyProfile as string }), credentialAutofill, addressSuggestions, dynamicRules: s.dynamicRules as string | undefined, filterProposal, blockingLog, scriptCommands: Object.freeze(scriptCommands), credentialProposal, version: protocolVersion, revision: s.revision as number, preferences, tabs: Object.freeze(tabs), activeTabId: s.activeTabId as string | null });
 }
 
 export function navigationTarget(input: string): string {

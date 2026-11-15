@@ -35,8 +35,11 @@ int main()
     state.accept(viewport, { bounds });
     check(!state.placement(bounds).visible(), "Fully excluded content must hide, not use an empty QWidget mask");
 
-    state.accept(viewport, {});
+    state.accept(viewport, {}, true);
+    check(state.captures_input(), "A drag hands page input to the shell");
+    check(state.placement(bounds).visible_region == initial.visible_region, "Input capture does not blank the page preview");
     state.invalidate();
+    check(!state.captures_input(), "Navigation revokes input capture");
     check(!state.placement(bounds).visible(), "Navigation revokes old geometry");
     check(!state.placement(QRect(0, 0, 1600, 900)).visible(), "Resize cannot revive a stale document's geometry");
     state.accept(viewport, {});

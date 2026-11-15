@@ -23,7 +23,7 @@ button:focus-visible:where([data-input-method="keyboard"] *), input:focus-visibl
 .tab:hover { background: #292c2f; }
 .tab > button:first-child { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; padding: 5px 7px; text-align: left; font-size: 13px; }
 .tab-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.close-tab { padding: 4px; opacity: 0; pointer-events: none; }
+.close-tab { padding: 4px; margin-right: 6px; opacity: .5; flex-shrink: 0; }
 .tab:hover .close-tab { opacity: .5; pointer-events: auto; }
 .close-tab:hover, .close-tab:focus-visible:where([data-input-method="keyboard"] *) { opacity: 1; pointer-events: auto; }
 .new-tab { justify-content: flex-start; font-size: 13px; color: #b4b8bc; flex-shrink: 0; }
@@ -184,9 +184,6 @@ p.subtle { font-size: 12px; color: #7e858b; }
 .vertical .tab[data-drop=after] { box-shadow: 0 2px #9cbaad; }
 .horizontal .tab[data-drop=before] { box-shadow: -2px 0 #9cbaad; }
 .horizontal .tab[data-drop=after] { box-shadow: 2px 0 #9cbaad; }
-.move-to-group { max-height: 180px; overflow: auto; }
-.move-to-group summary { padding: 5px 8px; font-size: 12px; cursor: pointer; }
-.move-to-group button { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Focus is a single border; it never changes the address field's geometry. */
 .address input:focus-visible:where([data-input-method="keyboard"] *) { outline: none; outline-offset: 0; border-color: #9cbaad; box-shadow: none; }
@@ -453,3 +450,23 @@ p.subtle { font-size: 12px; color: #7e858b; }
 
 /* Native dialog backdrops are covered by the shell viewport mask as well. */
 dialog.style-manager::backdrop, dialog.blocking-log::backdrop { background: #0005; }
+
+/* Paired pages occupy the same strip space as an ordinary tab. */
+.tab-unit { display: flex; min-width: 0; flex-shrink: 0; }
+.tab-unit > .tab { flex: 1; min-width: 0; width: 0; }
+.horizontal .tab-unit { width: 180px; }
+.split-tab > .tab + .tab { border-left: 1px solid #3b3e42; }
+.split-tab:hover > .tab { background: #292c2f; }
+.tab { touch-action: none; user-select: none; }
+.content-surface { position: relative; }
+.split-divider { position: absolute; background: var(--background); z-index: 2; touch-action: none; }
+.split-divider.horizontal { top: 0; bottom: 0; left: calc((100% - 6px) * var(--split-ratio)); width: 6px; cursor: col-resize; }
+.split-divider.vertical { left: 0; right: 0; top: calc((100% - 6px) * var(--split-ratio)); height: 6px; cursor: row-resize; }
+.split-divider:hover, .split-divider:focus-visible { background: #555b61; }
+.split-drag-surface { position: absolute; inset: 0; z-index: 3; }
+.split-drag-surface[hidden] { display: none; }
+.split-drag-surface[data-edge]::after { content: ''; position: absolute; background: #8a929b33; border: 1px solid #8a929b; pointer-events: none; }
+.split-drag-surface[data-edge=left]::after { inset: 0 50% 0 0; }
+.split-drag-surface[data-edge=right]::after { inset: 0 0 0 50%; }
+.split-drag-surface[data-edge=top]::after { inset: 0 0 50% 0; }
+.split-drag-surface[data-edge=bottom]::after { inset: 50% 0 0 0; }

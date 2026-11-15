@@ -1,3 +1,4 @@
+import { observeSplitInteractions } from './browser/splits';
 import { observeShellDismissal } from './browser/shell-interaction';
 import { openPageSources } from './ui/PageSources';
 import type { PageSourcesPort, SourceKind } from './browser/page-sources';
@@ -160,6 +161,7 @@ const updateTimer = webui ? setInterval(() => { void syncFolders(); }, 3_600_000
 const autofillPort = (window.derpbird as (NativePort & { autofill?: (token: string, id?: string) => Promise<void> }) | undefined)?.autofill ?? webui?.autofill;
 const autofill = autofillPort ? (token: string, id?: string) => { void autofillPort(token, id).catch(error => controller.reportError(error)); } : undefined;
 const mounted = mount(document.getElementById('app')!, shellView(controller, showStyles, showScripts, showCredentials, showImport, autofill, showProxy, showPageSources), controller.source);
+const stopSplitInteractions = observeSplitInteractions(document, controller);
 const stopSidebarResize = observeSidebarResize(document, controller.previewSidebarWidth, controller.setSidebarWidth);
 const stopActiveTab = observeActiveTab(document);
 const stopViewport = observeViewport(document, command => controller.send(command), () => controller.state().connected);
@@ -186,7 +188,7 @@ window.addEventListener('pagehide', () => {
   stopShellDismissal();
   stopViewport();
   stopActiveTab();
-  stopSidebarResize();
+  stopSplitInteractions(); stopSidebarResize();
   styleManager?.dispose();
   scriptManager?.dispose();
   credentialManager?.dispose();

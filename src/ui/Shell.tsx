@@ -2,7 +2,7 @@ import { ShellMenu, ShellPopover, ShellDialog } from './Overlay';
 import Palette from '@effectweb/lucide/icons/palette';
 import CodeXml from '@effectweb/lucide/icons/code-xml';
 import type { SourceKind } from '../browser/page-sources';
-import { canDropTab, tabDropPlacement } from '../browser/tab-tree';
+import { tabUnits, splitFor } from '../browser/splits';
 import type { CapturedCredential } from '../browser/credential-protocol';
 import { list, view } from 'effectweb';
 import { Button } from './button';
@@ -38,11 +38,9 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
     const contextSiblings = model.browser.tabs.filter(tab => tab.parentId === contextTab?.parentId && tab.pinned === contextTab?.pinned);
     const contextSiblingIndex = contextSiblings.findIndex(tab => tab.id === contextTab?.id);
     const parents = new Set(model.browser.tabs.flatMap(tab => tab.parentId ? [tab.parentId] : []));
-    const clearDropMarkers = () => document.querySelectorAll<HTMLElement>('[data-drop]').forEach(node => node.removeAttribute('data-drop'));
-    const dropPlacement = (event: DragEvent, node: HTMLElement) => {
-      const rect = node.getBoundingClientRect();
-      return model.layout === 'vertical' ? tabDropPlacement(event.clientY - rect.top, rect.height) : tabDropPlacement(event.clientX - rect.left, rect.width);
-    };
+    const units = tabUnits(model.browser);
+    const activeSplit = splitFor(model.browser, active?.id);
+    const contextSplit = splitFor(model.browser, contextTab?.id);
     const openTabMenu = (tabId: string, x: number, y: number) => {
       controller.openTabMenu(tabId, Math.max(8, Math.min(x, window.innerWidth - 250)), Math.max(8, Math.min(y, window.innerHeight - 240)));
 
@@ -74,42 +72,12 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
         <Button variant="ghost" size="icon" class="proxy-switcher-button" aria-label="Proxy switcher" aria-haspopup="dialog" title={`Proxy · ${model.browser.proxyProfile === 'direct' ? 'Direct connection' : model.browser.proxyProfile === 'system' || !model.browser.proxyProfile ? 'System proxy' : model.browser.proxyProfile}`} disabled={!model.connected || !openProxy || !!active?.private} onClick={() => { controller.setPanel(null); openProxy?.(); }}><Globe size={17}/>{model.browser.proxyProfile && !['direct', 'system'].includes(model.browser.proxyProfile) ? <span class="proxy-active-dot"/> : null}</Button>
         <Button variant="ghost" size="icon" aria-label="Menu" aria-controls="browser-menu-popup" aria-expanded={model.panel === 'menu'} onClick={() => controller.setPanel(model.panel ? null : 'menu')}><Menu size={17}/></Button>
       </header>
-      <aside class="tabs" aria-label="Tabs" onDragOver={event => {
-        if ((event.target as Element).closest('.tab')) return;
-        if (event.dataTransfer?.types.includes('application/x-derpbird-tab')) { event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'; }
-      }} onDrop={event => {
-        if ((event.target as Element).closest('.tab')) return;
-        event.preventDefault(); clearDropMarkers();
-        const id = event.dataTransfer?.getData('application/x-derpbird-tab');
-        const last = model.browser.tabs.findLast(tab => !tab.parentId && tab.id !== id);
-        if (id && last && canDropTab(model.browser.tabs, id, last.id, 'after')) controller.send({ type: 'tab.tree-move', tabId: id, targetId: last.id, placement: 'after' });
-      }}>
+      <aside class="tabs" aria-label="Tabs">
         <div class="tab-list" role="tablist" aria-orientation={model.layout}>
-          {list(model.browser.tabs, tab => tab.id, (tab, index) => <div class={`tab ${tab.id === model.browser.activeTabId ? 'active' : ''} ${tab.parentId ? 'tree-child' : ''} ${parents.has(tab.id) ? 'tree-root' : ''}`}
+          {list(units, unit => unit.id, unit => <div class={`tab-unit ${unit.tabs.length === 2 ? 'split-tab' : ''}`}>{list(unit.tabs, tab => tab.id, tab => <div class={`tab ${unit.tabs.some(member => member.id === model.browser.activeTabId) ? 'active' : ''} ${tab.parentId ? 'tree-child' : ''} ${parents.has(tab.id) ? 'tree-root' : ''}`}
             data-group={tab.parentId ?? (parents.has(tab.id) ? tab.id : undefined)}
-            data-group-end={tab.parentId && model.browser.tabs[index + 1]?.parentId !== tab.parentId ? 'true' : undefined}
-            draggable={true} onDragStart={event => {
-              event.dataTransfer?.setData('application/x-derpbird-tab', tab.id);
-              event.dataTransfer?.setData('text/plain', tab.id);
-              if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
-              event.currentTarget.closest('.tab-list')?.setAttribute('data-drag-tab', tab.id);
-            }} onDragEnd={event => { clearDropMarkers(); event.currentTarget.closest('.tab-list')?.removeAttribute('data-drag-tab'); }}
-            onDragLeave={event => { if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) event.currentTarget.removeAttribute('data-drop'); }}
-            onDragOver={event => {
-              const source = event.currentTarget.closest('.tab-list')?.getAttribute('data-drag-tab');
-              const placement = dropPlacement(event, event.currentTarget);
-              clearDropMarkers();
-              if (source && canDropTab(model.browser.tabs, source, tab.id, placement)) {
-                event.preventDefault(); event.stopPropagation();
-                if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-                event.currentTarget.dataset.drop = placement;
-              }
-            }} onDrop={event => {
-              event.preventDefault(); event.stopPropagation(); clearDropMarkers();
-              const id = event.dataTransfer?.getData('application/x-derpbird-tab');
-              const placement = dropPlacement(event, event.currentTarget);
-              if (id && canDropTab(model.browser.tabs, id, tab.id, placement)) controller.send({ type: 'tab.tree-move', tabId: id, targetId: tab.id, placement });
-            }} onAuxClick={event => { if (event.button === 1) { event.preventDefault(); controller.send({ type: 'tab.close', tabId: tab.id }); } }} onContextMenu={event => { event.preventDefault(); openTabMenu(tab.id, event.clientX, event.clientY); }}>
+            data-group-end={tab.parentId && model.browser.tabs[model.browser.tabs.indexOf(tab) + 1]?.parentId !== tab.parentId ? 'true' : undefined}
+            draggable={false} onAuxClick={event => { if (event.button === 1) { event.preventDefault(); controller.send({ type: 'tab.close', tabId: tab.id }); } }} onContextMenu={event => { event.preventDefault(); openTabMenu(tab.id, event.clientX, event.clientY); }}>
 
             <button role="tab" aria-busy={tab.loading} data-tab-id={tab.id} onKeyDown={event => {
               if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
@@ -128,17 +96,19 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
               tabs[target]?.focus();
               const tabId = tabs[target]?.dataset.tabId;
               if (tabId) controller.send({ type: 'tab.activate', tabId, focus: 'tab' });
-            }} tabindex={tab.id === model.browser.activeTabId ? 0 : -1} aria-selected={tab.id === model.browser.activeTabId} onClick={() => controller.send({ type: 'tab.activate', tabId: tab.id })} title={`${tab.title || 'New tab'}\n${tab.url}`}>
+            }} tabindex={tab.id === model.browser.activeTabId ? 0 : -1} aria-selected={tab.id === model.browser.activeTabId} onClick={() => controller.send({ type: 'tab.activate', tabId: tab.id })} title={model.tabMenu ? undefined : `${tab.title || 'New tab'}\n${tab.url}`}>
               <span class="tab-icon" aria-hidden="true">{tab.loading ? <LoaderCircle class="tab-loading" size={16}/> : tab.pinned ? <Pin size={13}/> : tab.favicon ? <img class="tab-favicon" src={tab.favicon} alt=""/> : <File class="tab-placeholder" size={16}/>}</span>
               <span class="tab-title">{tab.title || 'New tab'}</span>{tab.muted ? <VolumeX size={13} aria-label="Muted"/> : tab.audible ? <Volume2 size={13} aria-label="Playing audio"/> : null}{tab.private ? <span aria-label="Private">◈</span> : null}
             </button>
             {!tab.pinned ? <button class="close-tab" aria-label={`Close ${tab.title || 'tab'}`} onClick={() => controller.send({ type: 'tab.close', tabId: tab.id })}><X size={13}/></button> : null}
-          </div>)}
+          </div>)}</div>)}
         </div>
         <Button variant="ghost" class="new-tab" title="New tab (Ctrl+T)" aria-label="New tab" disabled={!model.connected} onClick={() => controller.send({ type: 'tab.create', private: active?.private ?? false })}><Plus size={16}/><span class="new-tab-label">New tab</span></Button>
       </aside>
       <div id="sidebar-resize" role="separator" aria-label="Resize tab sidebar" aria-orientation="vertical" aria-valuemin={120} aria-valuemax={600} aria-valuenow={model.sidebarResizeWidth ?? model.sidebarWidth} tabindex={model.layout === 'vertical' ? 0 : -1} title="Drag to resize · double-click to reset"/>
       <section id="content-surface" class="content-surface" aria-label="Page">
+        {activeSplit ? <div class={`split-divider ${activeSplit.axis}`} role="separator" aria-label="Resize split" aria-orientation={activeSplit.axis === 'horizontal' ? 'vertical' : 'horizontal'} aria-valuemin={20} aria-valuemax={80} aria-valuenow={Math.round(activeSplit.ratio * 100)} tabindex={0} style={{ '--split-ratio': activeSplit.ratio }} data-tab-id={activeSplit.firstTabId}/> : null}
+        <div class="split-drag-surface" hidden={true}/>
         {!model.connected ? <div class="welcome"><div class="mark">d<span>b</span></div><h1>New tab</h1><p>Open the desktop browser.</p><p class="subtle">Browser connection unavailable.</p></div> : null}
       </section>
       {login && autofill ? <ShellMenu class="credential-autofill" aria-label="Saved logins" initialFocus={false} anchor={{ getBoundingClientRect: () => new DOMRect(login.x, login.y, 280, 0) }} onDismiss={() => autofill(login.token)}>
@@ -147,12 +117,9 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
         <small>{login.origin}</small>
       </ShellMenu> : null}
       {model.tabMenu && contextTab ? <ShellMenu class="tab-menu" aria-label="Tab actions" initialFocus="surface" trigger={() => Array.from(document.querySelectorAll<HTMLElement>('[role=tab]')).find(tab => tab.dataset.tabId === contextTab.id)} anchor={{ getBoundingClientRect: () => new DOMRect(model.tabMenu!.x, model.tabMenu!.y, 0, 0) }} onDismiss={() => controller.closeTabMenu()}>
-        <Button variant="ghost" role="menuitem" disabled={contextTab.pinned} onClick={() => controller.tabMenuAction('new-child')}>{parents.has(contextTab.id) || contextTab.parentId ? 'New tab in group' : 'Create group with new tab'}</Button>
+        {contextSplit ? <Button variant="ghost" role="menuitem" onClick={() => { controller.closeTabMenu(); controller.send({ type: 'split.switch', tabId: contextTab.id }); }}>{contextSplit.axis === 'horizontal' ? 'Switch to top and bottom' : 'Switch to side by side'}</Button> : null}
         {contextTab.parentId || parents.has(contextTab.id) ? <Button variant="ghost" role="menuitem" onClick={() => controller.tabMenuAction('ungroup')}>{contextTab.parentId ? 'Move out of group' : 'Ungroup tabs'}</Button> : null}
-        {!contextTab.pinned && !parents.has(contextTab.id) ? <details class="move-to-group"><summary role="menuitem">Move to group</summary>
-          {list(model.browser.tabs.filter(target => !target.parentId && !target.pinned && target.id !== contextTab.id && target.id !== contextTab.parentId), target => target.id, target => <Button variant="ghost" role="menuitem" title={target.title || target.url} onClick={() => { controller.closeTabMenu(); controller.send({ type: 'tab.tree-move', tabId: contextTab.id, targetId: target.id, placement: 'inside' }); }}>{target.title || 'New tab'}</Button>)}
-        </details> : null}
-        <hr/>
+        {contextSplit || contextTab.parentId || parents.has(contextTab.id) ? <hr/> : null}
         <Button variant="ghost" role="menuitem" onClick={() => controller.tabMenuAction('duplicate')}>Duplicate tab</Button>
         <Button variant="ghost" role="menuitem" onClick={() => controller.tabMenuAction('pin')}>{contextTab.pinned ? 'Unpin tab' : 'Pin tab'}</Button>
         <Button variant="ghost" role="menuitem" onClick={() => controller.tabMenuAction('mute')}>{contextTab.muted ? 'Unmute' : 'Mute'}</Button>

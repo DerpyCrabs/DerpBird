@@ -60,8 +60,8 @@ export function createController(port?: NativePort) {
   const send = (command: Command) => {
     if (disposed) return;
     if (!port || !state.connected) { report(new Error('Browser connection unavailable')); return; }
-    const replacePending = command.type === 'shell.viewport' || command.type === 'browser.suggest';
-    const lane = command.type === 'shell.viewport' ? 'viewport' : command.type === 'browser.suggest' ? 'autocomplete' : 'command';
+    const replacePending = command.type === 'shell.viewport' || command.type === 'browser.suggest' || command.type === 'split.resize';
+    const lane = command.type === 'split.resize' ? 'split-resize' : command.type === 'shell.viewport' ? 'viewport' : command.type === 'browser.suggest' ? 'autocomplete' : 'command';
     owner.run([lane],
       Effect.tryPromise({ try: () => port.request(command), catch: error => error }).pipe(Effect.catch(error => Effect.sync(() => report(error)))), replacePending ? 'latest-queued' : 'queue');
   };
