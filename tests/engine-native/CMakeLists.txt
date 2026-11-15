@@ -20,7 +20,7 @@ target_include_directories(derpbird-test-runtime PUBLIC
 # Use the existing engine libraries, without compiling the hundreds of upstream
 # test translation units included in TestLibWeb and TestLibWebView.
 foreach(library IN ITEMS test webview web webcommon compositing gfx gc core ak url
-        filesystem ipc threading requests http imagedecoderclient imagedecoders
+        filesystem ipc threading requests http imagedecoderclient imagedecoders gamepad
         crypto regex unicode textcodec database dns)
     target_link_libraries(derpbird-test-runtime PUBLIC "${DERPBIRD_ENGINE_BUILD}/lib/liblagom-${library}.so")
 endforeach()
@@ -32,7 +32,7 @@ foreach(source IN LISTS suites)
     get_filename_component(suite "${source}" NAME_WE)
     add_executable(${suite} "${source}")
     target_link_libraries(${suite} PRIVATE derpbird-test-runtime)
-    add_test(NAME ${suite} COMMAND ${suite} --tests --suite ${suite})
+    add_test(NAME ${suite} COMMAND ${suite} --suite ${suite})
     set_tests_properties(${suite} PROPERTIES TIMEOUT 180 LABELS engine
         ENVIRONMENT "LADYBIRD_SOURCE_DIR=${ENGINE_SOURCE}")
 endforeach()

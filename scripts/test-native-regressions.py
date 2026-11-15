@@ -43,7 +43,7 @@ def run_suite(source, output_directory, timeout):
     try:
         if not expected:
             raise RuntimeError(f'No test cases found in {source}')
-        command = [str(suites_build() / source.stem), '--tests', '--suite', source.stem]
+        command = [str(suites_build() / source.stem), '--suite', source.stem]
         code, listing = run(command + ['--list'], timeout)
         available = re.findall(r'^\s*' + re.escape(source.stem) + r'::(\w+)\s*$', listing, re.M)
         if code or sorted(available) != sorted(expected):

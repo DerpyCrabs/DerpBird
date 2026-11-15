@@ -1,4 +1,6 @@
 #include <DerpBirdScriptInstall.h>
+#include <DerpBirdSourceTask.h>
+#include <QHash>
 #include <DerpBirdNetworkRequest.h>
 #include <DerpBirdValueHost.h>
 #include <LibGfx/SystemTheme.h>
@@ -111,12 +113,32 @@ int main(int argc, char** argv)
         items.values()[0].as_object().set("metadata"sv, move(metadata));
         return items;
     };
+    QHash<u64, QPointer<Ladybird::DerpBirdSourceTask>> dependency_requests;
+    u64 next_dependency_request = 1;
+    auto dependency_transport = [&]() -> Ladybird::DerpBirdScriptInstall::Transport {
+        return {
+            .request = [&](JsonValue payload, Function<void(ErrorOr<JsonValue>)> completion) {
+                auto id = next_dependency_request++;
+                auto url = URL::Parser::basic_parse(*payload.as_object().get_string("url"sv));
+                VERIFY(url.has_value());
+                auto* task = new Ladybird::DerpBirdSourceTask(nullptr, *url, *payload.as_object().get_integer<size_t>("limit"sv), true,
+                    [&, id, completion = move(completion)](auto response) mutable {
+                        dependency_requests.remove(id);
+                        completion(move(response));
+                    });
+                dependency_requests.insert(id, task);
+                task->start();
+                return id;
+            },
+            .cancel = [&](u64 id) { delete dependency_requests.take(id).data(); },
+        };
+    };
     auto install = [&](JsonArray items, QString const& folder_config = {}) -> ErrorOr<JsonArray> {
         Optional<ErrorOr<JsonArray>> result;
         auto* task = new Ladybird::DerpBirdScriptInstall(nullptr, move(items), [&](auto value) {
             VERIFY(QThread::currentThread() == qt.thread());
             result = move(value);
-        }, folder_config);
+        }, dependency_transport(), folder_config);
         task->start();
         if (!folder_config.isEmpty()) VERIFY(!result.has_value());
         while (!result.has_value()) {
@@ -162,7 +184,7 @@ int main(int argc, char** argv)
         [cancelled_completions](auto value) {
             ++*cancelled_completions;
             VERIFY(value.is_error());
-        }, config_path);
+        }, dependency_transport(), config_path);
     cancelled->start();
     VERIFY(*cancelled_completions == 0);
     delete cancelled;

@@ -222,9 +222,15 @@ int main(int argc, char** argv)
         VERIFY(result.is_error()); // Shutdown revokes reply capability, not accepted persistence.
         write_replied = true;
     });
-    bool drained = false;
+    bool drained = false, disconnected = false;
     host.shutdown([&] { drained = true; });
-    Core::EventLoop::current().spin_until([&] { return drained; });
+    // The Hub receives an explicit app shutdown before the UI connection closes.
+    // Both callers must complete after the same accepted write has drained.
+    host.shutdown([&] { disconnected = true; });
+    Core::EventLoop::current().spin_until([&] { return drained && disconnected; });
+    bool already_closed = false;
+    host.shutdown([&] { already_closed = true; });
+    VERIFY(already_closed);
     VERIFY(write_replied);
     VERIFY(request(*normal, { Protocol::Method::Open, true, "one"_string, {}, {} }).is_error());
     {
