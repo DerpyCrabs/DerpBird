@@ -29,5 +29,5 @@ launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IX
 # Desktop-entry Exec quoting differs from shell quoting; percent is a field marker.
 exe = str(launcher).replace('\\', '\\\\').replace('"', '\\"').replace('`', '\\`').replace('$', '\\$').replace('%', '%%')
 desktop.write_text('[Desktop Entry]\nVersion=1.0\nType=Application\nName=DerpBird\nComment=Browse with Ladybird\nExec="' + exe + '" %U\nIcon=derpbird\nTerminal=false\nCategories=Network;WebBrowser;\nMimeType=text/html;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;\nStartupNotify=true\n')
-icon.write_text('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#171b22"/><path d="M18 17v24a9 9 0 1 0 9-9h-9m28-15v24a9 9 0 1 1-9-9h9" fill="none" stroke="#adc6ff" stroke-width="5" stroke-linecap="round"/></svg>\n')
+icon.write_text((root / 'packaging/derpbird.svg').read_text())
 print(f'Installed {desktop}\nLauncher: {launcher}\nKeep this checkout at {root}.')

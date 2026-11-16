@@ -1,0 +1,4 @@
+#!/bin/sh
+export DERPBIRD_EXECUTABLE=${DERPBIRD_EXECUTABLE:-/usr/bin/derpbird}
+export DERPBIRD_STYLE_WORKER=/usr/lib/derpbird/bin/style-compiler.worker.js
+exec /usr/lib/derpbird/bin/derpbird-mcp "$@"

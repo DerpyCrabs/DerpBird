@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=DerpBird
+Comment=Browse with DerpBird
+Exec=/usr/bin/derpbird %U
+Icon=derpbird
+Terminal=false
+Categories=Network;WebBrowser;
+MimeType=text/html;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;
+StartupNotify=true

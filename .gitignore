@@ -11,3 +11,7 @@ __pycache__/
 core
 
 third_party/adblock/target/
+
+# Local Arch packaging
+/pkg/
+*.pkg.tar.*

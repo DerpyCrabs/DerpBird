@@ -7,7 +7,7 @@ export interface StyleCompiler {
   cancel(): void;
   close(): void;
 }
-export function createStyleCompiler(loadImport?: (url: string, signal?: AbortSignal) => Promise<DownloadedSource>): StyleCompiler {
+export function createStyleCompiler(loadImport?: (url: string, signal?: AbortSignal) => Promise<DownloadedSource>, workerURL?: URL): StyleCompiler {
   let cancel: (() => void) | undefined;
   let closed = false;
   let bundledSource: string | undefined;
@@ -43,7 +43,9 @@ export function createStyleCompiler(loadImport?: (url: string, signal?: AbortSig
           // Internal resource URLs have opaque origins in Ladybird. Fetch the
           // bundled compiler as the shell, then give its worker a local Blob URL.
           let url: URL;
-          if (typeof window !== 'undefined') {
+          if (workerURL) {
+            url = workerURL;
+          } else if (typeof window !== 'undefined') {
             const asset = await import('./style-compiler.worker?worker&url');
             url = new URL(asset.default, import.meta.url);
           } else {

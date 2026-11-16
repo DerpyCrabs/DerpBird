@@ -17,6 +17,11 @@ for directory, destination in [('HTTP', 'Libraries/LibHTTP'), ('WebUI', 'Librari
         target = source / destination / file.name
         if not target.exists() or target.read_bytes() != file.read_bytes():
             shutil.copyfile(file, target)
+# Share one icon between the desktop launcher and the native Qt window.
+icon_source = root / 'packaging/derpbird.svg'
+icon_target = source / 'UI/Qt/derpbird.svg'
+if not icon_target.exists() or icon_target.read_bytes() != icon_source.read_bytes():
+    shutil.copyfile(icon_source, icon_target)
 # The content-blocker fork is source-controlled, not a mutable Cargo cache.
 blocker_source = root / 'third_party/adblock'
 blocker_target = source / 'Libraries/LibWeb/ContentBlocker/Rust/adblock'

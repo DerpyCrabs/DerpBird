@@ -1,0 +1,4 @@
+#!/bin/sh
+export DERPBIRD_UI=1
+profile=${DERPBIRD_PROFILE:-${XDG_DATA_HOME:-$HOME/.local/share}/derpbird/profile}
+exec /usr/lib/derpbird/bin/Ladybird --profile-path "$profile" "$@"

@@ -1,3 +1,4 @@
+import { pathToFileURL } from 'node:url';
 import { parseUserScript } from '../browser/user-scripts';
 import { createStyleCompiler } from '../browser/style-compiler';
 import { decodeDownloadedSource } from '../browser/source-files';
@@ -38,7 +39,7 @@ export async function manageSource(browser: AgentBrowser, kind: 'scripts' | 'sty
         signal?.addEventListener('abort', cancel, { once: true });
         try { return decodeDownloadedSource(await browser.currentShell({ type: 'styles.fetch', url, downloadToken })); }
         finally { signal?.removeEventListener('abort', cancel); }
-      });
+      }, process.env.DERPBIRD_STYLE_WORKER ? pathToFileURL(process.env.DERPBIRD_STYLE_WORKER) : undefined);
       const compiled = await compiler.compile(args.source, args.values ?? previous?.usercss?.values ?? {}, { sourceURL: previous?.sourceBaseURL ?? previous?.sourceURL }).finally(() => compiler.close());
       item = { ...previous, id, source: args.source, name: args.name ?? compiled.metadata?.name ?? previous?.name ?? 'Agent style', enabled: previous?.enabled ?? true, sections: compiled.sections,
         ...(compiled.metadata ? { usercss: { values: compiled.values } } : {}), ...(compiled.imports ? { imports: compiled.imports } : {}) };
