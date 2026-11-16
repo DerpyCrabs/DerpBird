@@ -39,3 +39,30 @@ test('split state drives direction, ratio, children and closing either member',a
   expect(s.tabs.some((t:any)=>t.id===(closeId==='research'?'accessibility':'research'))).toBe(true);
  }
 });
+
+test('workspace switching preserves pins and active tab; reopen follows native window history', async()=>{
+ const f=createBirdFixture('vertical',canDropTab);f.enableWorkspaces();
+ await f.port.request({type:'tab.pin',tabId:'research',value:true});
+ await f.port.request({type:'tab.activate',tabId:'board'});
+ await f.port.request({type:'tab.close',tabId:'release'});
+ f.switchWorkspace('personal-space');
+ expect(f.snapshot().tabs.map(t=>t.id)).toEqual(['reading','weekend']);
+ await f.port.request({type:'tab.reopen'});expect(f.snapshot().tabs.some(t=>t.id==='release')).toBe(true);
+ f.switchWorkspace('research-space');expect(f.snapshot().activeTabId).toBe('board');
+ expect(f.snapshot().tabs.find(t=>t.id==='research')?.pinned).toBe(true);
+ await f.port.request({type:'tab.reopen'});expect(f.snapshot().tabs.some(t=>t.id==='release')).toBe(false);
+ f.createWorkspace('Fresh');expect(f.snapshot().tabs).toHaveLength(1);
+ await f.port.request({type:'tab.create',url:'about:blank',private:false});expect(f.snapshot().tabs).toHaveLength(2);
+ f.switchWorkspace('personal-space');expect(f.snapshot().activeTabId).toBe('release');
+});
+
+test('Default-only workspace snapshots stay valid and creation retains original tabs',()=>{
+ const f=createBirdFixture('vertical',canDropTab);f.enableWorkspaces(true);
+ expect(f.workspaces().items.map(w=>w.name)).toEqual(['Default']);
+ expect(decodeSnapshot(f.snapshot()).tabs).toHaveLength(6);
+ f.createWorkspace('Project','code','lilac');
+ expect(f.workspaces().items).toHaveLength(2);
+ expect(decodeSnapshot(f.snapshot()).tabs).toHaveLength(1);
+ f.switchWorkspace('research-space');
+ expect(decodeSnapshot(f.snapshot()).tabs).toHaveLength(6);
+});

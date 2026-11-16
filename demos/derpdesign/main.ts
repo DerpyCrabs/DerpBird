@@ -39,6 +39,7 @@ runScenario(async ({conditions})=>{
  let proxy:any={revision:1,active:'system',options:{schemaVersion:2,'+Office':{name:'Office',profileType:'FixedProfile',color:'#6b94c4',fallbackProxy:{scheme:'http',host:'proxy.example.test',port:8080},bypassList:[]}}};
  let manager:any;
  const show=()=>{if(manager){manager.toggle();return;}manager=openProxyManager(document.querySelector('#style-manager-host')!,proxyFixture?.port??{get:async()=>structuredClone(proxy),replace:async(s:any)=>{proxy={...structuredClone(s),revision:proxy.revision+1};return structuredClone(proxy)}},()=>{manager=undefined},'https://example.test/0')};
+ if(conditions.workspaceDemo)fixture.enableWorkspaces(conditions.singleDefault===true,conditions.pinCount===9?9:3);
  const controller=createController(port);
  const mounted=mount(document.querySelector('#app')!,shellView(controller,undefined,undefined,undefined,undefined,undefined,show,undefined),controller.source);
  await controller.ready;
@@ -48,6 +49,8 @@ runScenario(async ({conditions})=>{
  const focusKey=(event:KeyboardEvent)=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='l'){event.preventDefault();focusAddress(document,controller);}};
  document.addEventListener('keydown',focusKey);
  const layoutDemo = conditions.layoutDemo ? await (await import('./layout-demo')).mountLayoutDemo(controller, conditions, fixture) : undefined;
+ if(conditions.workspaceEdit)controller.openWorkspaceEditor(controller.state().browser.workspaces?.active);
+ if(conditions.workspaceCreate)controller.openWorkspaceEditor();
  const splitDemo = conditions.splitDemo ? (await import('./split-demo')).mountSplitDemo(controller,conditions,fixture) : undefined;
  if(conditions.proxyDemo)show();
  if(conditions.manager)show();

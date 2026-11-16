@@ -1,0 +1,20 @@
+{"steps":[
+ {"action":"assert","selector":".workspace-shortcuts","styles":{"display":"none"}},
+ {"action":"assert","selector":".workspace-trigger","exists":false},
+ {"action":"capture","label":"default-only"},
+ {"action":"click","selector":"button[aria-label=Menu]"},
+ {"action":"click","selector":"[aria-label='New workspace']"},
+ {"action":"assert","selector":".workspace-popover","contains":"New workspace"},
+ {"action":"type","selector":"input[name=workspace-name]","text":"Project"},
+ {"action":"click","selector":"[aria-label='code icon']"},
+ {"action":"click","selector":"[aria-label='lilac color']"},
+ {"action":"click","selector":".workspace-primary"},
+ {"action":"assert","selector":".workspace-shortcuts","styles":{"display":"flex"}},
+ {"action":"assert","selector":"[aria-label='Switch to Project']","exists":true},
+ {"action":"assert","selector":"[data-tab-id=research]","exists":false},
+ {"action":"click","selector":".new-tab"},
+ {"action":"assert","selector":"[role=tab]","contains":"New tab"},
+ {"action":"click","selector":"[aria-label='Switch to Default']"},
+ {"action":"assert","selector":"[data-tab-id=research]","exists":true},
+ {"action":"capture","label":"first-workspace-created"}
+]}

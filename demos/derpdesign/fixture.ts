@@ -1,3 +1,4 @@
+import { favicon } from './favicons';
 import { layoutFromSettings, layoutToSettings, type ChromeLayout } from '../../src/browser/chrome-layout';
 import type {NativePort,Command,Tab,BrowserSnapshot,SplitView} from '../../src/browser/protocol';
 type MutableTab={-readonly [K in keyof Tab]:Tab[K]};
@@ -13,7 +14,7 @@ export function createBirdFixture(layout:'horizontal'|'vertical',canDrop:CanDrop
  const pair=(id:string)=>splits.find(s=>s.firstTabId===id||s.secondTabId===id);
  const dissolve=(id:string)=>{splits=splits.filter(s=>s!==pair(id));};
  const closed:MutableTab[][]=[];const listeners=new Set<(s:unknown)=>void>();
- const snapshot=():BrowserSnapshot=>structuredClone({version:1,revision,preferences,activeTabId,tabs,splits,addressSuggestions});
+ const snapshot=():BrowserSnapshot=>structuredClone({version:1,revision,preferences,activeTabId,tabs,splits,addressSuggestions,workspaces:workspaces() as BrowserSnapshot['workspaces']});
  const get=(id:string)=>{const tab=tabs.find(t=>t.id===id);if(!tab)throw Error('Unknown fixture tab '+id);return tab;};
  const block=(id:string)=>tabs.filter(t=>t.id===id||t.parentId===id);
  const end=(id:string)=>{let i=tabs.findIndex(t=>t.id===id);while(tabs[i+1]?.parentId===id)i++;return i+1;};
@@ -38,6 +39,10 @@ export function createBirdFixture(layout:'horizontal'|'vertical',canDrop:CanDrop
   // Geometry is consumed by the native compositor, which this fixture does not simulate.
   if(c.type==='shell.viewport')return;
   switch(c.type){
+   case 'workspace.switch':switchWorkspace(c.id);return;
+   case 'workspace.create':createWorkspace(c.name,c.icon,c.color);return;
+   case 'workspace.update':{const w=spaces.find(w=>w.id===c.id);if(!w)throw Error('Unknown workspace');Object.assign(w,{name:c.name,icon:c.icon,color:c.color});publish();return;}
+
    case 'tab.split':{
     const source=get(c.tabId),target=get(c.targetId);
     if(source===target||source.pinned||target.pinned||source.private!==target.private)throw Error('Invalid fixture split');
@@ -94,5 +99,28 @@ export function createBirdFixture(layout:'horizontal'|'vertical',canDrop:CanDrop
   }
   revision++;const next=snapshot();listeners.forEach(listener=>listener(structuredClone(next)));
  }};
- return {port,snapshot,dispose(){listeners.clear();}};
+ type Workspace = {id:string;name:string;icon:string;color:string;tabs:MutableTab[];activeTabId:string|null;splits:SplitView[]};
+ const spaces:Workspace[]=[{id:'default',name:'Default',icon:'research',color:'sage',tabs:[],activeTabId,splits:[]}];let workspaceId='default';
+ const saveSpace=()=>{const w=spaces.find(w=>w.id===workspaceId);if(w)Object.assign(w,{tabs:structuredClone(tabs),activeTabId,splits:structuredClone(splits)});};
+ const publish=()=>{revision++;const next=snapshot();listeners.forEach(listener=>listener(structuredClone(next)));};
+ function switchWorkspace(id:string){const w=spaces.find(w=>w.id===id);if(!w)throw Error('Unknown workspace');saveSpace();workspaceId=id;tabs=structuredClone(w.tabs);activeTabId=w.activeTabId;splits=structuredClone(w.splits);addressSuggestions=undefined;publish();}
+ function enableWorkspaces(singleDefault=false,pinCount=3){spaces.length=0;workspaceId='research-space';
+  const pin=makeTab('handbook','Figma','https://www.figma.com/');pin.pinned=true;pin.favicon=favicon('figma');
+  const board=makeTab('board','GitHub','https://github.com/');board.pinned=true;board.favicon=favicon('github');
+  const docs=makeTab('docs','MDN Web Docs','https://developer.mozilla.org/');docs.pinned=true;docs.favicon=favicon('mdn');
+  const extra=[['notion','Notion','https://www.notion.so/'],['linear','Linear','https://linear.app/'],['globe','Web platform','https://web.dev/'],['github','DerpBird repository','https://github.com/example/derpbird'],['figma','Component library','https://www.figma.com/library'],['mdn','CSS reference','https://developer.mozilla.org/en-US/docs/Web/CSS']].slice(0,Math.max(0,pinCount-3)).map(([mark,title,url],i)=>{const t=makeTab(`pin-${i+4}`,title,url);t.pinned=true;t.favicon=favicon(mark);return t;});
+  tabs.unshift(pin,board,docs,...extra);
+  spaces.push({id:workspaceId,name:singleDefault?'Default':'Research',icon:'research',color:'sage',tabs:[],activeTabId,splits:[]});saveSpace();
+  if(!singleDefault){
+   const home=makeTab('reading','Reading list','https://example.test/reading');home.pinned=true;home.favicon=favicon('notion');
+   const weekend=makeTab('weekend','Weekend ideas','https://example.test/weekend');weekend.favicon=favicon('globe');
+   spaces.push({id:'personal-space',name:'Personal',icon:'home',color:'peach',tabs:[home,weekend],activeTabId:'weekend',splits:[]},
+    {id:'build-space',name:'Build',icon:'code',color:'lilac',tabs:[makeTab('build','Release checklist','https://example.test/build')],activeTabId:'build',splits:[]});
+  }
+  publish();
+ }
+ function createWorkspace(name:string,icon='research',color='sage'){const id=`workspace-${++serial}`;const tab=makeTab(`new-${++serial}`,'New tab','about:newtab');spaces.push({id,name,icon,color,tabs:[tab],activeTabId:tab.id,splits:[]});switchWorkspace(id);}
+ function renameWorkspace(name:string,icon:string,color:string){const w=spaces.find(w=>w.id===workspaceId);if(!w)throw Error('Unknown workspace');Object.assign(w,{name,icon,color});publish();}
+ const workspaces=()=>({active:workspaceId,items:spaces.map(w=>({id:w.id,name:w.name,icon:w.icon,color:w.color,count:w.id===workspaceId?tabs.length:w.tabs.length}))});
+ return {port,snapshot,enableWorkspaces,switchWorkspace,createWorkspace,renameWorkspace,workspaces,dispose(){listeners.clear();}};
 }
