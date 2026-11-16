@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Run production layout, Settings, URL focus and drag checks on an owned compositor."""
-import json, os, signal, subprocess, tempfile, time
+import json, os, signal, subprocess, tempfile, time, sys
 from pathlib import Path
 from build_config import engine_build
 root = Path(__file__).resolve().parents[1]
@@ -25,7 +25,7 @@ try:
     # Keep the seat's keyboard capability alive between short wtype commands.
     keyboard=subprocess.Popen(['wtype','-s','240000'],env=dict(os.environ,**json.loads(env_file.read_text())))
     print(out,flush=True)
-    subprocess.run(['python3',str(root/'scripts/test-split-view.py'),'--environment',str(env_file),'--output',str(out/'checks'),'--layouts','--browser',str(engine_build()/'bin/Ladybird')],cwd=root,check=True,timeout=240)
+    subprocess.run(['python3',str(root/'scripts/test-split-view.py'),'--environment',str(env_file),'--output',str(out/'checks'),('--workspaces' if '--workspaces' in sys.argv else '--layouts'),'--browser',str(engine_build()/'bin/Ladybird')],cwd=root,check=True,timeout=240)
 finally:
     if keyboard is not None:
         keyboard.terminate();keyboard.wait(timeout=5)

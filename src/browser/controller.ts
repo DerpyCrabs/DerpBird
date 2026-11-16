@@ -1,3 +1,4 @@
+import type { WorkspaceDraft } from './workspaces';
 import { paletteItems } from './address-palette';
 import type { PageSources } from './page-sources';
 import { Effect } from 'effect';
@@ -7,6 +8,7 @@ export type Panel = 'menu' | 'blocking' | null;
 export type { ChromeLayout } from './chrome-layout';
 import { type ChromeLayout, verticalLayout } from './chrome-layout';
 export interface ShellModel {
+  readonly workspaceEditor?: WorkspaceDraft | null;
   readonly chromeLayout?: ChromeLayout;
   readonly addressPaletteOpen?: boolean;
   readonly pageSources?: PageSources;
@@ -86,6 +88,19 @@ export function createController(port?: NativePort) {
   }
   return {
     ready,
+    openWorkspaceEditor(id?: string) {
+      const workspace = state.browser.workspaces?.items.find(w => w.id === id);
+      patch({panel:null, tabMenu:null, workspaceEditor:workspace ? {...workspace} : {name:'',icon:'research',color:'sage'}});
+    },
+    editWorkspace(value: Partial<WorkspaceDraft>) { if (state.workspaceEditor) patch({workspaceEditor:{...state.workspaceEditor,...value}}); },
+    closeWorkspaceEditor() { patch({workspaceEditor:null}); },
+    saveWorkspace() {
+      const draft = state.workspaceEditor;
+      if (!draft?.name.trim()) return;
+      send({type:draft.id ? 'workspace.update' : 'workspace.create', ...draft, name:draft.name.trim()});
+      patch({workspaceEditor:null});
+    },
+    switchWorkspace(id:string) { send({type:'workspace.switch',id}); patch({workspaceEditor:null,panel:null,tabMenu:null}); },
     source: owner.source,
     reportError: report,
     state: () => state,

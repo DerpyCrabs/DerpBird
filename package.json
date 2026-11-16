@@ -27,6 +27,7 @@
     "test:proxy": "python3 scripts/workflow.py proxy",
     "test:rendering:unit": "python3 -m unittest discover -s tests/rendering -v",
     "demo:register": "bun demos/derpdesign/register.ts",
+    "test:workspaces:engine": "python3 scripts/workflow.py build && python3 scripts/test-browser-layouts.py --workspaces",
     "test:layouts:engine": "python3 scripts/workflow.py build && python3 scripts/test-browser-layouts.py",
     "test:demos": "bun test demos/derpdesign/fixture.test.ts"
   },

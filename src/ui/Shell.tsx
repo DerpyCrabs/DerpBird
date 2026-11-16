@@ -1,3 +1,4 @@
+import { workspaceControls, workspaceEditor } from './Workspaces';
 import { AddressPalette } from './BrowserLayout';
 import { ShellMenu, ShellPopover, ShellDialog } from './Overlay';
 import Palette from '@effectweb/lucide/icons/palette';
@@ -52,7 +53,37 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
     const tabCommand = (type: 'tab.inspect' | 'tab.back' | 'tab.forward' | 'tab.reload' | 'tab.stop' | 'tab.find' | 'tab.bookmark' | 'tab.site-settings' | 'tab.zoom-in' | 'tab.zoom-out' | 'tab.zoom-reset') => {
       if (active) controller.send({ type, tabId: active.id });
     };
-    return <main class={`shell ${model.layout} ${model.wrapTabs ? 'wrap-tabs' : ''} ${arrangement ? `chrome-layout tabs-${arrangement.side} ${bottomAddress ? 'address-bottom' : ''} ${compact ? 'compact-chrome' : ''}` : ''}`} style={{ '--sidebar-width': `${model.sidebarResizeWidth ?? model.sidebarWidth}px` }}>
+    const renderTabUnit = (unit: ReturnType<typeof tabUnits>[number]) => <div class={`tab-unit ${unit.tabs.every(tab => tab.pinned) ? 'pinned-tab-unit' : ''} ${unit.tabs.length === 2 ? 'split-tab' : ''}`}>{list(unit.tabs, tab => tab.id, tab => <div class={`tab ${unit.tabs.some(member => member.id === model.browser.activeTabId) ? 'active' : ''} ${tab.parentId ? 'tree-child' : ''} ${parents.has(tab.id) ? 'tree-root' : ''}`}
+            data-group={tab.parentId ?? (parents.has(tab.id) ? tab.id : undefined)}
+            data-group-end={tab.parentId && model.browser.tabs[model.browser.tabs.indexOf(tab) + 1]?.parentId !== tab.parentId ? 'true' : undefined}
+            draggable={false} onAuxClick={event => { if (event.button === 1) { event.preventDefault(); controller.send({ type: 'tab.close', tabId: tab.id }); } }} onContextMenu={event => { event.preventDefault(); openTabMenu(tab.id, event.clientX, event.clientY); }}>
+
+            <button role="tab" aria-label={tab.title || 'New tab'} aria-busy={tab.loading} data-tab-id={tab.id} onKeyDown={event => {
+              if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
+                event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); openTabMenu(tab.id, rect.left, rect.bottom);
+                return;
+              }
+              if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+              const previousKey = model.layout === 'vertical' ? 'ArrowUp' : 'ArrowLeft';
+              const nextKey = model.layout === 'vertical' ? 'ArrowDown' : 'ArrowRight';
+              if (![previousKey, nextKey, 'Home', 'End'].includes(event.key)) return;
+              event.preventDefault();
+              const tabs = Array.from(event.currentTarget.closest('[role=tablist]')!.querySelectorAll<HTMLButtonElement>('[role=tab]'));
+              const index = tabs.indexOf(event.currentTarget);
+              const target = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === previousKey ? -1 : 1) + tabs.length) % tabs.length;
+              // Focus follows the keyboard immediately; selection remains native-authoritative.
+              tabs[target]?.focus();
+              const tabId = tabs[target]?.dataset.tabId;
+              if (tabId) controller.send({ type: 'tab.activate', tabId, focus: 'tab' });
+            }} tabindex={tab.id === model.browser.activeTabId ? 0 : -1} aria-selected={tab.id === model.browser.activeTabId} onClick={() => controller.send({ type: 'tab.activate', tabId: tab.id })} title={model.tabMenu ? undefined : `${tab.title || 'New tab'}\n${tab.url}`}>
+              <span class="tab-icon" aria-hidden="true">{tab.loading ? <LoaderCircle class="tab-loading" size={16}/> : tab.favicon ? <img class="tab-favicon" src={tab.favicon} alt=""/> : tab.pinned ? <Pin size={13}/> : <File class="tab-placeholder" size={16}/>}</span>
+              <span class="tab-title">{tab.title || 'New tab'}</span>{tab.muted ? <VolumeX size={13} aria-label="Muted"/> : tab.audible ? <Volume2 size={13} aria-label="Playing audio"/> : null}{tab.private ? <span aria-label="Private">◈</span> : null}
+            </button>
+            {!tab.pinned ? <button class="close-tab" aria-label={`Close ${tab.title || 'tab'}`} onClick={() => controller.send({ type: 'tab.close', tabId: tab.id })}><X size={13}/></button> : null}
+          </div>)}</div>;
+    const pins = model.browser.tabs.filter(tab => tab.pinned).length;
+    const columns = Math.max(1, Math.min(6, pins, model.layout === 'horizontal' ? 6 : Math.floor(((model.sidebarResizeWidth ?? model.sidebarWidth) - 8) / 36)));
+    return <main class={`shell ${pins > columns ? 'has-pin-rows' : ''} ${model.layout} ${model.wrapTabs ? 'wrap-tabs' : ''} ${arrangement ? `chrome-layout tabs-${arrangement.side} ${bottomAddress ? 'address-bottom' : ''} ${compact ? 'compact-chrome' : ''}` : ''}`} style={{ '--pin-columns': columns, '--sidebar-width': `${model.sidebarResizeWidth ?? model.sidebarWidth}px` }}>
       <div id="style-manager-host"/>
       <header class="navigation">
         <Button variant="ghost" size="icon" aria-label="Back" title="Back (Alt+Left)" disabled={!active?.canGoBack} onClick={() => tabCommand('tab.back')}><ArrowLeft size={17}/></Button>
@@ -79,36 +110,11 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
       </header>
       <aside class="tabs" aria-label="Tabs">
         <div class="tab-list" role="tablist" aria-orientation={model.layout}>
-          {list(units, unit => unit.id, unit => <div class={`tab-unit ${unit.tabs.length === 2 ? 'split-tab' : ''}`}>{list(unit.tabs, tab => tab.id, tab => <div class={`tab ${unit.tabs.some(member => member.id === model.browser.activeTabId) ? 'active' : ''} ${tab.parentId ? 'tree-child' : ''} ${parents.has(tab.id) ? 'tree-root' : ''}`}
-            data-group={tab.parentId ?? (parents.has(tab.id) ? tab.id : undefined)}
-            data-group-end={tab.parentId && model.browser.tabs[model.browser.tabs.indexOf(tab) + 1]?.parentId !== tab.parentId ? 'true' : undefined}
-            draggable={false} onAuxClick={event => { if (event.button === 1) { event.preventDefault(); controller.send({ type: 'tab.close', tabId: tab.id }); } }} onContextMenu={event => { event.preventDefault(); openTabMenu(tab.id, event.clientX, event.clientY); }}>
-
-            <button role="tab" aria-busy={tab.loading} data-tab-id={tab.id} onKeyDown={event => {
-              if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
-                event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); openTabMenu(tab.id, rect.left, rect.bottom);
-                return;
-              }
-              if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-              const previousKey = model.layout === 'vertical' ? 'ArrowUp' : 'ArrowLeft';
-              const nextKey = model.layout === 'vertical' ? 'ArrowDown' : 'ArrowRight';
-              if (![previousKey, nextKey, 'Home', 'End'].includes(event.key)) return;
-              event.preventDefault();
-              const tabs = Array.from(event.currentTarget.closest('[role=tablist]')!.querySelectorAll<HTMLButtonElement>('[role=tab]'));
-              const index = tabs.indexOf(event.currentTarget);
-              const target = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === previousKey ? -1 : 1) + tabs.length) % tabs.length;
-              // Focus follows the keyboard immediately; selection remains native-authoritative.
-              tabs[target]?.focus();
-              const tabId = tabs[target]?.dataset.tabId;
-              if (tabId) controller.send({ type: 'tab.activate', tabId, focus: 'tab' });
-            }} tabindex={tab.id === model.browser.activeTabId ? 0 : -1} aria-selected={tab.id === model.browser.activeTabId} onClick={() => controller.send({ type: 'tab.activate', tabId: tab.id })} title={model.tabMenu ? undefined : `${tab.title || 'New tab'}\n${tab.url}`}>
-              <span class="tab-icon" aria-hidden="true">{tab.loading ? <LoaderCircle class="tab-loading" size={16}/> : tab.pinned ? <Pin size={13}/> : tab.favicon ? <img class="tab-favicon" src={tab.favicon} alt=""/> : <File class="tab-placeholder" size={16}/>}</span>
-              <span class="tab-title">{tab.title || 'New tab'}</span>{tab.muted ? <VolumeX size={13} aria-label="Muted"/> : tab.audible ? <Volume2 size={13} aria-label="Playing audio"/> : null}{tab.private ? <span aria-label="Private">◈</span> : null}
-            </button>
-            {!tab.pinned ? <button class="close-tab" aria-label={`Close ${tab.title || 'tab'}`} onClick={() => controller.send({ type: 'tab.close', tabId: tab.id })}><X size={13}/></button> : null}
-          </div>)}</div>)}
+          {units.some(unit => unit.tabs.every(tab => tab.pinned)) ? <div class="pinned-tabs">{list(units.filter(unit => unit.tabs.every(tab => tab.pinned)), unit => unit.id, renderTabUnit)}</div> : null}
+          {list(units.filter(unit => !unit.tabs.every(tab => tab.pinned)), unit => unit.id, renderTabUnit)}
         </div>
         <Button variant="ghost" class="new-tab" title="New tab (Ctrl+T)" aria-label="New tab" disabled={!model.connected} onClick={() => controller.send({ type: 'tab.create', private: active?.private ?? false })}><Plus size={16}/><span class="new-tab-label">New tab</span></Button>
+        {workspaceControls(model,controller)}
       </aside>
       <div id="sidebar-resize" role="separator" aria-label="Resize tab sidebar" aria-orientation="vertical" aria-valuemin={120} aria-valuemax={600} aria-valuenow={model.sidebarResizeWidth ?? model.sidebarWidth} tabindex={model.layout === 'vertical' ? 0 : -1} title="Drag to resize · double-click to reset"/>
       <section id="content-surface" class="content-surface" aria-label="Page">
@@ -116,6 +122,7 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
         <div class="split-drag-surface" hidden={true}/>
         {!model.connected ? <div class="welcome"><div class="mark">d<span>b</span></div><h1>New tab</h1><p>Open the desktop browser.</p><p class="subtle">Browser connection unavailable.</p></div> : null}
       </section>
+      {workspaceEditor(model,controller)}
       {compact && model.addressPaletteOpen ? AddressPalette({ model, controller }) : null}
       {login && autofill ? <ShellMenu class="credential-autofill" aria-label="Saved logins" initialFocus={false} anchor={{ getBoundingClientRect: () => new DOMRect(login.x, login.y, 280, 0) }} onDismiss={() => autofill(login.token)}>
         <header><span>Saved logins</span></header>
@@ -146,6 +153,7 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
         <Button role="menuitem" variant="ghost" aria-label="New window" disabled={!model.connected} onClick={() => { controller.send({ type: 'window.new', private: false }); controller.setPanel(null); }}>New window <kbd>Ctrl N</kbd></Button>
         <Button role="menuitem" variant="ghost" aria-label="Private window" disabled={!model.connected} onClick={() => { controller.send({ type: 'window.new', private: true }); controller.setPanel(null); }}>Private window <kbd>Ctrl Shift N</kbd></Button>
         <Button role="menuitem" variant="ghost" disabled={!model.connected} onClick={() => { controller.send({ type: 'tab.reopen' }); controller.setPanel(null); }}>Reopen closed tab <kbd>Ctrl Shift T</kbd></Button>
+        {model.browser.workspaces ? <Button role="menuitem" variant="ghost" aria-label="New workspace" onClick={() => { controller.setPanel(null); controller.openWorkspaceEditor(); }}>New workspace</Button> : null}
         <hr/>
         <div class="zoom-controls" role="group" aria-label="Page zoom">
           <Button role="menuitem" variant="ghost" disabled={!active} aria-label="Zoom out" onClick={() => tabCommand('tab.zoom-out')}>−</Button>

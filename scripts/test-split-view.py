@@ -20,6 +20,7 @@ def main():
     parser.add_argument('--browser', type=Path, default=Path('vendor/ladybird/Build/release/bin/Ladybird'))
     parser.add_argument('--close-only', action='store_true')
     parser.add_argument('--layouts', action='store_true')
+    parser.add_argument('--workspaces', action='store_true')
     args = parser.parse_args()
     env = dict(os.environ, **json.loads(args.environment.read_text()), DERPBIRD_UI='1')
     assert 'artifacts' in env['XDG_RUNTIME_DIR'], 'Use an isolated test compositor'
@@ -237,8 +238,88 @@ def main():
         assert evaluate('document.querySelectorAll(".split-tab .tab.active").length') == 2
         assert evaluate('document.querySelectorAll(".split-tab [aria-selected=true]").length') == 1
         assert evaluate('new Set(Array.from(document.querySelectorAll(".split-tab .tab"),e=>getComputedStyle(e).backgroundColor)).size') == 1
+    def workspace_cases():
+        state = snapshot()
+        assert len(state['workspaces']['items']) == 1
+        assert evaluate("document.querySelector('.workspace-shortcuts').hidden")
+        original = {t['url'] for t in state['tabs']}
+        first = state['tabs'][0]['id']
+        command({'type':'tab.pin','tabId':first,'value':True})
+        # Open the real form from the menu, then submit with real keyboard input.
+        for selector in ['button[aria-label=Menu]', '[aria-label="New workspace"]']:
+            r=bounds(selector);click(r['x']+r['width']/2,r['y']+r['height']/2)
+        until('document.querySelector(".workspace-popover input")!==null')
+        subprocess.run(['wtype','Research'],env=env,check=True)
+        subprocess.run(['wtype','-k','Return'],env=env,check=True)
+        until('document.querySelectorAll(".workspace-shortcuts [aria-pressed]").length===2')
+        state=snapshot();research=state['workspaces']['active'];assert research!='default'
+        assert len(state['tabs'])==1 and all(t['url'] not in original for t in state['tabs']),state
+        command({'type':'workspace.update','id':research,'name':'Project','icon':'code','color':'lilac'})
+        command({'type':'shell.set-sidebar-width','width':240})
+        for i in range(9):
+            command({'type':'tab.create','private':False,'url':urls['Notes']+'?pin='+str(i)})
+            command({'type':'tab.pin','tabId':snapshot()['activeTabId'],'value':True})
+        until('document.querySelectorAll(".pinned-tab-unit").length===9')
+        rects=json.loads(evaluate('JSON.stringify([...document.querySelectorAll(".pinned-tab-unit")].map(e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}}))'))
+        assert len({r['y'] for r in rects})==2 and all(r['w']==32 and r['h']==32 for r in rects),rects
+        assert rects[5]['y']==rects[0]['y'] and rects[6]['y']>rects[0]['y'],rects
+        for _ in range(12):
+            subprocess.run(['wtype','-M','ctrl','-k','Tab','-m','ctrl'],env=env,check=True)
+        assert snapshot()['workspaces']['active']==research
+        # Closing the sole tab of a fresh workspace keeps its page selection local.
+        command({'type':'workspace.create','name':'Temporary','icon':'leaf','color':'blue'})
+        temporary=snapshot()['workspaces']['active']
+        command({'type':'tab.close','tabId':snapshot()['activeTabId']})
+        time.sleep(.3)
+        assert snapshot()['workspaces']['active']==temporary
+        command({'type':'workspace.switch','id':research})
+        capture('workspaces-nine-pins')
+        command({'type':'workspace.switch','id':'default'})
+        assert {t['url'] for t in snapshot()['tabs']}==original
+        command({'type':'workspace.switch','id':research})
+        current=snapshot();assert sum(t['pinned'] for t in current['tabs'])==9
+        ordinary=next(t for t in current['tabs'] if not t['pinned'])
+        command({'type':'tab.close-others','tabId':ordinary['id']})
+        time.sleep(.3)
+        command({'type':'workspace.switch','id':'default'})
+        assert {t['url'] for t in snapshot()['tabs']}==original
+        try:command({'type':'window.close'})
+        except (subprocess.CalledProcessError,AssertionError):pass
+        assert browser.wait(timeout=15)==0
+        launch()
+        state=snapshot();assert len(state['workspaces']['items'])==3,state
+        command({'type':'workspace.switch','id':research})
+        state=snapshot();assert sum(t['pinned'] for t in state['tabs'])==9,state
+        assert next(w for w in state['workspaces']['items'] if w['id']==research)['name']=='Project'
+        command({'type':'workspace.switch','id':'default'})
+        assert {t['url'] for t in snapshot()['tabs']}==original
+        assert sum(t['pinned'] for t in snapshot()['tabs'])==1
+        capture('workspaces-restored')
+        try:command({'type':'window.close'})
+        except (subprocess.CalledProcessError,AssertionError):pass
+        assert browser.wait(timeout=15)==0
+        persisted=(profile/'config/DerpBirdChrome.ini').read_bytes()
+        launch()
+        # Create the private window through the product command, close the ordinary
+        # one in the same source document, then target the sole remaining shell.
+        evaluate("window.ladybird.sendMessage('derpbird.request',{requestId:900001,payload:{type:'command',command:{type:'window.new',private:true}}});window.ladybird.sendMessage('derpbird.request',{requestId:900002,payload:{type:'command',command:{type:'window.close'}}});true")
+        until('document.querySelectorAll("[role=tab]").length===1')
+        assert all(t['private'] for t in snapshot()['tabs'])
+        assert len(snapshot()['workspaces']['items'])==1
+        command({'type':'workspace.create','name':'Private only','icon':'home','color':'peach'})
+        command({'type':'tab.pin','tabId':snapshot()['activeTabId'],'value':True})
+        try:command({'type':'window.close'})
+        except (subprocess.CalledProcessError,AssertionError):pass
+        assert browser.wait(timeout=15)==0
+        assert (profile/'config/DerpBirdChrome.ini').read_bytes()==persisted,'Private workspaces were persisted'
+        (args.output/'report.json').write_text(json.dumps({'passed':True,'checks':['real form keyboard creation','hidden Default controls','workspace switch isolation','rename and icon/color','9 pins 6+3 at fixed size','bulk close isolation','restart persistence of workspaces and pins','Ctrl+Tab isolation','last tab close stays in workspace','private workspace isolation and no persistence']},indent=2))
+        print('Native workspace checks passed:',args.output,flush=True)
+
     try:
         launch(list(urls.values()))
+        if args.workspaces:
+            workspace_cases()
+            return
         if args.close_only:
             close_cases()
             (args.output/'report.json').write_text(json.dumps({'passed':True,'checks':['ordinary foreground/background close','both split halves with children','group parent close','final tab close']}))

@@ -1,6 +1,7 @@
 import { createWebUIPort } from './browser/webui-port';
 import { connectDevTools } from './devtools/native-port';
 import './style.css';
+import './ui/workspaces.css';
 
 // Both windows use the same trusted about: document; the native owner determines its role.
 async function start() {
