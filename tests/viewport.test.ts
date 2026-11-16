@@ -56,3 +56,22 @@ test('drag capture preserves the viewport instead of excluding its pixels', asyn
     expect(commands.at(-1)).not.toHaveProperty('captureInput');
   } finally { close(); await window.happyDOM.close(); }
 });
+
+for (const className of ['address-palette', 'style-manager']) test(`${className} captures modal input without hiding the page`, async () => {
+  const window = new Window();
+  const document = window.document;
+  document.body.innerHTML = '<div id="app"><section id="content-surface"></section></div>';
+  document.documentElement.getBoundingClientRect = () => new window.DOMRect(0, 0, 1000, 760);
+  document.getElementById('content-surface')!.getBoundingClientRect = () => new window.DOMRect(240, 0, 760, 760);
+  const commands: Command[] = [];
+  const stop = observeViewport(document as unknown as Document, command => commands.push(command), () => true);
+  try {
+    const dialog = document.createElement('dialog');dialog.className = className;
+    dialog.getBoundingClientRect = () => new window.DOMRect(300, 200, 600, 300);
+    dialog.setAttribute('open', '');document.getElementById('app')!.append(dialog);
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(commands.at(-1)).toEqual({type:'shell.viewport',rect:{x:240,y:0,width:760,height:760},overlays:[],captureInput:true});
+    dialog.remove();await new Promise(resolve => setTimeout(resolve, 30));
+    expect(commands.at(-1)).toEqual({type:'shell.viewport',rect:{x:240,y:0,width:760,height:760},overlays:[]});
+  } finally {stop();await window.happyDOM.close();}
+});

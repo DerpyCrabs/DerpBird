@@ -539,6 +539,46 @@ assert(document.querySelector('.proxy-popup [role=alert]')?.textContent.includes
 for(const choice of document.querySelectorAll<HTMLButtonElement>('.proxy-profile-list button')) {assert(choice.disabled);choice.click();}
 await settle();assert.deepEqual(proxyState,beforeFailedSite,'failed site lookup must never change global routing');
 button('Proxy switcher').click();await settle();
+// Every shipped arrangement preserves keyed tab/group nodes and a stable URL input.
+const layouts = [
+  {preset:'classic',side:'left',address:'top'}, {preset:'bottom',side:'left',address:'bottom'},
+  ...['left','right'].flatMap(side=>[{preset:'compact',side,address:'top'},...['top','bottom'].map(address=>({preset:'sidebar',side,address}))]),
+];
+for (const chromeLayout of layouts) {
+  const next = () => ({...state(),preferences:{...preferences,layout:['sidebar','compact'].includes(chromeLayout.preset)?'vertical':'horizontal',chromeLayout},tabs:[tab('a'),{...tab('b'),parentId:'a'}]});
+  notify?.(next());await settle();
+  const row=document.querySelector('[data-tab-id=a]');
+  const group=document.querySelector('[data-tab-id=b]');
+  assert(group?.parentElement?.classList.contains('tree-child'));
+  const compact=chromeLayout.preset==='compact';
+  // Native Ctrl+L and in-shell Ctrl+L share this production focus path.
+  window.dispatchEvent(new window.Event('derpbird-focus-address'));await settle();
+  const input=document.querySelector<HTMLInputElement>(compact?'#palette-location':'#location')!;
+  assert(input,`missing address input for ${JSON.stringify(chromeLayout)}`);
+  assert.equal(document.activeElement,input);
+  input.value='typed.example';input.dispatchEvent(new window.Event('input',{bubbles:true}));await settle();
+  window.dispatchEvent(new window.Event('derpbird-focus-address'));await settle();
+  assert.equal(input.value,'typed.example','repeated Ctrl+L preserves the draft');
+  assert.equal(input.selectionStart,0);assert.equal(input.selectionEnd,input.value.length);
+  input.setSelectionRange(3,7);
+  notify?.(next());await settle();
+  assert.equal(document.querySelector(compact?'#palette-location':'#location'),input,'native updates must not replace the input');
+  assert.equal(document.activeElement,input,'native updates must not steal focus');
+  assert.equal(input.value,'typed.example');assert.equal(input.selectionStart,3);assert.equal(input.selectionEnd,7);
+  assert.equal(document.querySelector('[data-tab-id=a]'),row,'layout snapshots retain tab nodes');
+  assert.equal(document.querySelector('[data-tab-id=b]'),group,'layout snapshots retain group nodes');
+  if(compact){
+    assert.equal(document.querySelectorAll('.address-suggestions').length,0,'compact mode has only one suggestion surface');
+    input.dispatchEvent(new window.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));await settle();
+    assert(!document.querySelector('.address-palette'));
+    button('Open address palette').click();await settle();
+    assert(document.querySelector('.address-palette'));
+    button('Close address palette').click();await settle();
+    assert(!document.querySelector('.address-palette'));
+  } else {
+    input.dispatchEvent(new window.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));await settle();
+  }
+}
 window.dispatchEvent(new window.Event('pagehide')); await settle();
 assert(unsubscribed, 'page teardown must unsubscribe native bridge');
 await window.happyDOM.close();

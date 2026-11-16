@@ -19,6 +19,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--browser', type=Path, default=Path('vendor/ladybird/Build/release/bin/Ladybird'))
     parser.add_argument('--close-only', action='store_true')
+    parser.add_argument('--layouts', action='store_true')
     args = parser.parse_args()
     env = dict(os.environ, **json.loads(args.environment.read_text()), DERPBIRD_UI='1')
     assert 'artifacts' in env['XDG_RUNTIME_DIR'], 'Use an isolated test compositor'
@@ -159,6 +160,79 @@ def main():
         while len(snapshot()['tabs']) > 1: close(snapshot()['tabs'][-1]['id'], True)
         r = bounds('.close-tab'); click(r['x']+r['width']/2, r['y']+r['height']/2)
         assert browser.wait(timeout=15) == 0, 'Browser crashed while closing its final tab'
+    def layout_cases():
+        arrangements = [dict(preset='classic', side='left', address='top'), dict(preset='bottom', side='left', address='bottom')]
+        for side in ['left', 'right']:
+            arrangements += [dict(preset='sidebar', side=side, address=address) for address in ['top', 'bottom']]
+            arrangements.append(dict(preset='compact', side=side, address='top'))
+        command({'type':'browser.open-page','page':'settings'})
+        until('document.querySelector(".layout-settings") !== null', 'about:settings')
+        settings_id=snapshot()['activeTabId']
+        for index, layout in enumerate(arrangements):
+            command({'type':'tab.activate','tabId':settings_id})
+            def choose(name, value):
+                evaluate('document.querySelector('+json.dumps('input[name="'+name+'"][value="'+value+'"]')+').click();true','about:settings')
+            choose('browser-layout',layout['preset'])
+            if layout['preset'] in ['sidebar','compact']:
+                until('document.querySelector("input[name=tab-side]") !== null','about:settings')
+                choose('tab-side',layout['side'])
+            if layout['preset']=='sidebar':choose('address-position',layout['address'])
+            expected=dict(layout)
+            # Compact mode retains the last full-width address preference.
+            if layout['preset']=='compact':expected['address']='bottom'
+            until('document.querySelector(".shell").classList.contains('+json.dumps('horizontal' if layout['preset'] in ['classic','bottom'] else 'vertical')+')')
+            assert snapshot()['preferences']['chromeLayout']==expected, snapshot()['preferences']
+            command({'type':'tab.activate','tabId':ids['Notes']})
+            page=bounds('#content-surface')
+            until('Math.abs(innerWidth-'+str(page['width'])+')<=2',urls['Notes'])
+            image=capture('layout-'+str(index))
+            # A real page must paint all the way to the shell edges.
+            for x,y in [(page['x']+page['width']/2,page['y']+page['height']/2),(page['x']+page['width']-2,page['y']+page['height']-2)]:
+                assert image.getpixel((round(x),round(y)))[:3]==(232,228,218), ('unpainted content',layout,x,y)
+            evaluate('window.layoutKeys=[];document.addEventListener("keydown",e=>layoutKeys.push([e.key,e.ctrlKey]));window.addEventListener("derpbird-focus-address",()=>layoutKeys.push("native-focus"));true')
+            click(page['x']+page['width']/2,page['y']+page['height']/2)
+            subprocess.run(['wtype','-s','100','-M','ctrl','-k','l','-m','ctrl'],env=env,check=True,timeout=10)
+            selector='#palette-location' if layout['preset']=='compact' else '#location'
+            try:until('document.activeElement===document.querySelector('+json.dumps(selector)+')')
+            except AssertionError:
+                capture('focus-failed')
+                print(evaluate('JSON.stringify({active:document.activeElement?.id,keys:window.layoutKeys,focus:document.hasFocus()})'),flush=True)
+                raise
+            if layout['preset']=='compact':
+                opened=capture('palette-open-'+str(index))
+                # The dialog must overlay, not erase, the separate native page.
+                sample=(round(page['x']+page['width']-20),round(page['y']+page['height']-20))
+                before=image.getpixel(sample)[:3];after=opened.getpixel(sample)[:3]
+                assert after[0]>after[2]+5 and after[0]>80, ('page replaced by gray behind palette',before,after)
+                popup=bounds('.address-palette')
+                corner=opened.getpixel((round(popup['x']+1),round(popup['y']+1)))[:3]
+                assert corner[0]>corner[2]+2, ('opaque rectangle behind rounded dialog corner',corner)
+                click(page['x']+page['width']-20,page['y']+page['height']-20)
+                until('document.querySelector(".address-palette")===null')
+                subprocess.run(['wtype','-M','ctrl','-k','l','-m','ctrl'],env=env,check=True,timeout=10)
+                until('document.activeElement===document.querySelector("#palette-location")')
+            evaluate('window.layoutInput=document.querySelector('+json.dumps(selector)+');layoutInput.value="typed.example";layoutInput.dispatchEvent(new Event("input",{bubbles:true}));layoutInput.setSelectionRange(2,6);true')
+            command({'type':'tab.mute','tabId':ids['Release'],'value':index%2==0})
+            assert evaluate('document.activeElement===layoutInput&&layoutInput.value==="typed.example"&&layoutInput.selectionStart===2&&layoutInput.selectionEnd===6'), 'URL input flicker'
+            if layout['preset']=='compact':evaluate('document.querySelector('+json.dumps('[aria-label="Close address palette"]')+').click();true')
+            else:subprocess.run(['wtype','-k','Escape'],env=env,check=True,timeout=10)
+            drag(tab_center(ids['Release']),tab_center(ids['Notes']))
+            assert next(t for t in snapshot()['tabs'] if t['id']==ids['Release']).get('parentId')==ids['Notes']
+            before=snapshot()['tabs'];drag(tab_center(ids['Notes']),tab_center(ids['Checklist']),cancel=True)
+            assert snapshot()['tabs']==before, 'Cancelled drag changed groups'
+            command({'type':'tab.ungroup','tabId':ids['Release']})
+            assert all('parentId' not in t for t in snapshot()['tabs'])
+        try:command({'type':'window.close'})
+        except (subprocess.CalledProcessError,AssertionError):pass
+        assert browser.wait(timeout=15)==0
+        launch()
+        assert snapshot()['preferences']['chromeLayout']==expected, 'Layout lost on restart'
+        command({'type':'tab.activate','tabId':next(t['id'] for t in snapshot()['tabs'] if t['url']=='about:settings')})
+        until('document.querySelector("input[name=browser-layout][value=compact]:checked")!==null','about:settings')
+        assert evaluate('document.querySelector("input[name=tab-side][value=right]").checked','about:settings')
+        capture('settings-restored')
+        (args.output/'report.json').write_text(json.dumps({'passed':True,'layouts':arrangements,'checks':['real Settings controls','native saved preferences','native content edge coverage','native Ctrl+L','URL node/focus/caret stability','drag grouping','Escape cancellation','ungroup','restart and Settings restoration']},indent=2))
+        print('Native browser layouts passed:',args.output)
     def check_pair_highlight():
         assert evaluate('document.querySelectorAll(".split-tab .tab.active").length') == 2
         assert evaluate('document.querySelectorAll(".split-tab [aria-selected=true]").length') == 1
@@ -173,6 +247,9 @@ def main():
         state = snapshot()
         (args.output / 'initial.json').write_text(json.dumps(state, indent=2))
         ids = {tab['title']: tab['id'] for tab in state['tabs']}
+        if args.layouts:
+            layout_cases()
+            return
         command({'type': 'shell.set-layout', 'layout': 'horizontal'})
         command({'type': 'tab.activate', 'tabId': ids['Notes']})
         for method in ['middle', 'target', 'script']: open_child('Notes', method)

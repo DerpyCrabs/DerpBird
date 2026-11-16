@@ -1,0 +1,33 @@
+import { expect, test } from 'bun:test';
+import { Window } from 'happy-dom';
+import { observeSidebarResize } from '../src/browser/sidebar-resize';
+
+for (const side of ['left', 'right']) test(`${side} sidebar resize survives a replaced handle and cancels without saving`, () => {
+  const window = new Window({ width: 1000 });
+  const document = window.document;
+  document.body.innerHTML = `<main class="shell tabs-${side}"><aside class="tabs"></aside><div id="sidebar-resize"></div></main>`;
+  const tabs = document.querySelector('.tabs')!;
+  tabs.getBoundingClientRect = () => new window.DOMRect(0, 0, 240, 760);
+  let handle = document.getElementById('sidebar-resize')!;
+  handle.setPointerCapture = () => {};
+  handle.hasPointerCapture = () => false;
+  const values: number[] = [];
+  const previews: (number | null)[] = [];
+  const stop = observeSidebarResize(document as unknown as Document, value => previews.push(value), value => values.push(value));
+  const pointer = (type: string, x: number) => new window.PointerEvent(type, { bubbles: true, pointerId: 1, button: 0, clientX: x });
+  handle.dispatchEvent(pointer('pointerdown', 500));
+  const replacement = handle.cloneNode() as typeof handle;
+  handle.replaceWith(replacement);
+  document.dispatchEvent(pointer('pointermove', 550));
+  document.dispatchEvent(pointer('pointerup', 550));
+  expect(values).toEqual([side === 'right' ? 190 : 290]);
+  handle = replacement;
+  handle.setPointerCapture = () => {};
+  handle.hasPointerCapture = () => false;
+  handle.dispatchEvent(pointer('pointerdown', 500));
+  document.dispatchEvent(pointer('pointercancel', 550));
+  expect(values).toHaveLength(1);
+  expect(previews.at(-1)).toBeNull();
+  stop();
+  window.close();
+});

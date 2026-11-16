@@ -1,3 +1,4 @@
+import { AddressPalette } from './BrowserLayout';
 import { ShellMenu, ShellPopover, ShellDialog } from './Overlay';
 import Palette from '@effectweb/lucide/icons/palette';
 import CodeXml from '@effectweb/lucide/icons/code-xml';
@@ -27,6 +28,9 @@ import type { ShellController, ShellModel } from '../browser/controller';
 
 export function shellView(controller: ShellController, openStyles?: () => void, openScripts?: () => void, openCredentials?: (proposal?: CapturedCredential) => void, openImport?: () => void, autofill?: (token: string, id?: string) => void, openProxy?: () => void, openPageSources?: (kind: SourceKind) => void) {
   return view<ShellModel>(model => {
+    const arrangement = model.chromeLayout;
+    const compact = arrangement?.preset === 'compact';
+    const bottomAddress = arrangement?.preset === 'bottom' || (arrangement?.preset === 'sidebar' && arrangement.address === 'bottom');
     const login = model.browser.credentialAutofill;
     const active = model.browser.tabs.find(tab => tab.id === model.browser.activeTabId);
     const addressSuggestions = model.addressSuggestionsOpen && model.browser.addressSuggestions ? model.browser.addressSuggestions.items : [];
@@ -48,20 +52,20 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
     const tabCommand = (type: 'tab.inspect' | 'tab.back' | 'tab.forward' | 'tab.reload' | 'tab.stop' | 'tab.find' | 'tab.bookmark' | 'tab.site-settings' | 'tab.zoom-in' | 'tab.zoom-out' | 'tab.zoom-reset') => {
       if (active) controller.send({ type, tabId: active.id });
     };
-    return <main class={`shell ${model.layout} ${model.wrapTabs ? 'wrap-tabs' : ''}`} style={{ '--sidebar-width': `${model.sidebarResizeWidth ?? model.sidebarWidth}px` }}>
+    return <main class={`shell ${model.layout} ${model.wrapTabs ? 'wrap-tabs' : ''} ${arrangement ? `chrome-layout tabs-${arrangement.side} ${bottomAddress ? 'address-bottom' : ''} ${compact ? 'compact-chrome' : ''}` : ''}`} style={{ '--sidebar-width': `${model.sidebarResizeWidth ?? model.sidebarWidth}px` }}>
       <div id="style-manager-host"/>
       <header class="navigation">
         <Button variant="ghost" size="icon" aria-label="Back" title="Back (Alt+Left)" disabled={!active?.canGoBack} onClick={() => tabCommand('tab.back')}><ArrowLeft size={17}/></Button>
         <Button variant="ghost" size="icon" aria-label="Forward" title="Forward (Alt+Right)" disabled={!active?.canGoForward} onClick={() => tabCommand('tab.forward')}><ArrowRight size={17}/></Button>
         <Button variant="ghost" size="icon" aria-label={active?.loading ? 'Stop' : 'Reload'} title={active?.loading ? 'Stop loading (Esc)' : 'Reload (Ctrl+R)'} disabled={!active} onClick={() => tabCommand(active?.loading ? 'tab.stop' : 'tab.reload')}>{active?.loading ? <X size={17}/> : <RotateCw size={17}/>}</Button>
-        <form class="address" onSubmit={event => {
+        <form class="address" hidden={compact} onSubmit={event => {
           event.preventDefault();
           const input = event.currentTarget.elements.namedItem('location') as HTMLInputElement;
           controller.navigate(addressSuggestions[model.addressSelection]?.text ?? input.value);
         }}>
           <Button type="button" variant="ghost" size="icon" class="site-settings" aria-label="Site settings" title="Site permissions and security" disabled={!active || !/^https?:/.test(active.url)} onClick={() => tabCommand('tab.site-settings')}><SlidersHorizontal size={15}/></Button>
           <input id="location" name="location" aria-label="Address or search" placeholder="Search or enter address" value={model.addressInput ?? (active?.url === 'about:blank' ? '' : active?.url ?? '')} onFocus={event => controller.focusAddress(event.currentTarget.value)} onInput={event => controller.editAddress(event.currentTarget.value)} onKeyDown={event => { if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); controller.selectAddress(event.key === 'ArrowDown' ? 1 : -1); } if (event.key === 'Escape') { event.preventDefault(); controller.dismissAddress(); } }} role="combobox" aria-expanded={addressSuggestions.length > 0} aria-controls="address-suggestions" aria-activedescendant={model.addressSelection >= 0 ? `address-option-${model.addressSelection}` : undefined} autocomplete="off" spellcheck={false}/>
-          {addressSuggestions.length ? <ShellPopover class="address-suggestions" aria-label="Address suggestions" initialFocus={false} trigger={() => document.getElementById('location')} onDismiss={reason => reason === 'escape-key' ? controller.dismissAddress() : controller.blurAddress()}><div id="address-suggestions" role="listbox">{list(addressSuggestions, item => item.text, (item, index) => <button type="button" role="option" id={`address-option-${index}`} aria-selected={model.addressSelection === index} onPointerDown={event => event.preventDefault()} onClick={() => controller.navigate(item.text)}><span class="suggestion-icon" aria-hidden="true">{item.favicon ? <img class="suggestion-favicon" src={item.favicon} alt=""/> : item.source === 'history' ? <History size={16}/> : item.source === 'bookmark' ? <Bookmark size={16}/> : item.source === 'settings' ? <SlidersHorizontal size={16}/> : item.source === 'search' ? <Search size={16}/> : <Globe size={16}/>}</span><span class="suggestion-copy"><strong>{item.title}</strong><small>{suggestionDetails(item)}</small></span><span class="suggestion-enter" aria-hidden="true">↵</span></button>)}</div></ShellPopover> : null}
+          {!compact && addressSuggestions.length ? <ShellPopover side={bottomAddress ? 'top' : 'bottom'} class="address-suggestions" aria-label="Address suggestions" initialFocus={false} trigger={() => document.getElementById('location')} onDismiss={reason => reason === 'escape-key' ? controller.dismissAddress() : controller.blurAddress()}><div id="address-suggestions" role="listbox">{list(addressSuggestions, item => item.text, (item, index) => <button type="button" role="option" id={`address-option-${index}`} aria-selected={model.addressSelection === index} onPointerDown={event => event.preventDefault()} onClick={() => controller.navigate(item.text)}><span class="suggestion-icon" aria-hidden="true">{item.favicon ? <img class="suggestion-favicon" src={item.favicon} alt=""/> : item.source === 'history' ? <History size={16}/> : item.source === 'bookmark' ? <Bookmark size={16}/> : item.source === 'settings' ? <SlidersHorizontal size={16}/> : item.source === 'search' ? <Search size={16}/> : <Globe size={16}/>}</span><span class="suggestion-copy"><strong>{item.title}</strong><small>{suggestionDetails(item)}</small></span><span class="suggestion-enter" aria-hidden="true">↵</span></button>)}</div></ShellPopover> : null}
         </form>
         {model.browser.credentialProposal && openCredentials ? <Button variant="ghost" class="credential-suggestion" title={`Password for ${model.browser.credentialProposal.origin}`} onClick={() => openCredentials(model.browser.credentialProposal!)}>Save password?</Button> : null}
         {(['styles', 'scripts'] as const).map(kind => {
@@ -71,6 +75,7 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
         })}
         <Button variant="ghost" size="icon" class="proxy-switcher-button" aria-label="Proxy switcher" aria-haspopup="dialog" title={`Proxy · ${model.browser.proxyProfile === 'direct' ? 'Direct connection' : model.browser.proxyProfile === 'system' || !model.browser.proxyProfile ? 'System proxy' : model.browser.proxyProfile}`} disabled={!model.connected || !openProxy || !!active?.private} onClick={() => { controller.setPanel(null); openProxy?.(); }}><Globe size={17}/>{model.browser.proxyProfile && !['direct', 'system'].includes(model.browser.proxyProfile) ? <span class="proxy-active-dot"/> : null}</Button>
         <Button variant="ghost" size="icon" aria-label="Menu" aria-controls="browser-menu-popup" aria-expanded={model.panel === 'menu'} onClick={() => controller.setPanel(model.panel ? null : 'menu')}><Menu size={17}/></Button>
+        {compact ? <button class="compact-address" id="compact-location" aria-label="Open address palette" title={active?.url || 'Search or enter address'} onClick={() => controller.openAddressPalette()}><Globe size={15}/><span>{active?.url && active.url !== 'about:blank' ? active.url.replace(/^https?:\/\//, '').split('/')[0] : 'Search or enter address'}</span><kbd>Ctrl L</kbd></button> : null}
       </header>
       <aside class="tabs" aria-label="Tabs">
         <div class="tab-list" role="tablist" aria-orientation={model.layout}>
@@ -111,6 +116,7 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
         <div class="split-drag-surface" hidden={true}/>
         {!model.connected ? <div class="welcome"><div class="mark">d<span>b</span></div><h1>New tab</h1><p>Open the desktop browser.</p><p class="subtle">Browser connection unavailable.</p></div> : null}
       </section>
+      {compact && model.addressPaletteOpen ? AddressPalette({ model, controller }) : null}
       {login && autofill ? <ShellMenu class="credential-autofill" aria-label="Saved logins" initialFocus={false} anchor={{ getBoundingClientRect: () => new DOMRect(login.x, login.y, 280, 0) }} onDismiss={() => autofill(login.token)}>
         <header><span>Saved logins</span></header>
         <div class="credential-autofill-items">{list(login.items, entry => entry.id, entry => <Button variant="ghost" role="menuitem" data-credential-id={entry.id} onClick={() => autofill(login.token, entry.id)}>{entry.username || 'No username'}</Button>)}</div>

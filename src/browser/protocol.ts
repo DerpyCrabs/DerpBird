@@ -1,3 +1,4 @@
+import { decodeChromeLayout, type ChromeLayout } from './chrome-layout';
 import { decodeCapturedCredential, decodeCredential, type Credential, type CapturedCredential } from './credential-protocol';
 export const protocolVersion = 1 as const;
 export interface Tab {
@@ -16,7 +17,7 @@ export interface Tab {
   readonly favicon?: string;
   readonly private: boolean;
 }
-export interface ShellPreferences { readonly sidebarWidth?: number; readonly wrapTabs?: boolean; readonly layout: 'vertical' | 'horizontal' }
+export interface ShellPreferences { readonly chromeLayout?: ChromeLayout; readonly sidebarWidth?: number; readonly wrapTabs?: boolean; readonly layout: 'vertical' | 'horizontal' }
 export interface ScriptCommand { readonly id: string; readonly script: string; readonly label: string; readonly title: string; readonly accessKey: string; readonly autoClose: boolean }
 export interface ScriptCommandEvent { readonly keyboard: boolean; readonly key: string; readonly ctrlKey: boolean; readonly altKey: boolean; readonly shiftKey: boolean; readonly metaKey: boolean }
 export interface BlockingLog { readonly tabId: string; readonly entries: readonly { readonly id: number; readonly url: string; readonly kind: string; readonly rule?: string }[] }
@@ -48,6 +49,7 @@ export type Command =
   | { readonly type: 'blocking.log'; readonly visible: boolean }
   | { readonly type: 'blocking.refresh' | 'blocking.clear'; readonly tabId: string }
   | { readonly type: 'script.command'; readonly tabId: string; readonly id: string; readonly event: ScriptCommandEvent }
+  | { readonly type: 'shell.set-chrome-layout'; readonly layout: ChromeLayout }
   | { readonly type: 'shell.set-layout'; readonly layout: ShellPreferences['layout'] }
   | { readonly type: 'shell.set-sidebar-width'; readonly width: number }
   | { readonly type: 'shell.set-wrap-tabs'; readonly value: boolean }
@@ -83,7 +85,7 @@ export function decodeSnapshot(value: unknown): BrowserSnapshot {
     throw new Error('Invalid shell preferences');
   if (prefs.sidebarWidth !== undefined && (!Number.isInteger(prefs.sidebarWidth) || (prefs.sidebarWidth as number) < 120 || (prefs.sidebarWidth as number) > 600)) throw new Error('Invalid sidebar width');
   if (prefs.wrapTabs !== undefined && typeof prefs.wrapTabs !== 'boolean') throw new Error('Invalid tab wrapping preference');
-  const preferences: ShellPreferences = Object.freeze({ ...(prefs.sidebarWidth === undefined ? {} : { sidebarWidth: prefs.sidebarWidth as number }), ...(prefs.wrapTabs === undefined ? {} : { wrapTabs: prefs.wrapTabs as boolean }), layout: prefs.layout as ShellPreferences['layout'] });
+  const preferences: ShellPreferences = Object.freeze({ ...(prefs.chromeLayout === undefined ? {} : { chromeLayout: decodeChromeLayout(prefs.chromeLayout) }), ...(prefs.sidebarWidth === undefined ? {} : { sidebarWidth: prefs.sidebarWidth as number }), ...(prefs.wrapTabs === undefined ? {} : { wrapTabs: prefs.wrapTabs as boolean }), layout: prefs.layout as ShellPreferences['layout'] });
   const ids = new Set<string>();
   const tabs: Tab[] = s.tabs.map((item: unknown) => {
     if (!item || typeof item !== 'object') throw new Error('Invalid tab');

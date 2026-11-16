@@ -6,5 +6,5 @@ export default defineConfig({
   base: './',
   // Stylus dispatches AST visitors using constructor.name.
   worker: { format: 'iife', rollupOptions: { output: { codeSplitting: false, keepNames: true } } },
-  build: { target: 'es2023', sourcemap: true },
+  build: { target: 'es2023', sourcemap: true, rollupOptions: { input: { index: 'index.html', 'settings-layout': 'src/settings-layout.tsx' }, output: { entryFileNames: 'assets/[name].js' } } },
 });

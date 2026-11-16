@@ -35,7 +35,7 @@ export function observeSplitInteractions(document: Document, controller: Pick<Sh
   const content = document.getElementById('content-surface');
   const overlay = document.querySelector<HTMLElement>('.split-drag-surface');
   if (!content || !overlay) return () => {};
-  type Drag = { pointer: number; x: number; y: number; tabId: string; started: boolean };
+  type Drag = { pointer: number; x: number; y: number; tabId: string; started: boolean; layout: string };
   let drag: Drag | undefined;
   let resize: { pointer: number; split: SplitView; ratio: number } | undefined;
   let suppressClick = false;
@@ -47,6 +47,7 @@ export function observeSplitInteractions(document: Document, controller: Pick<Sh
     if (frame !== undefined) window.cancelAnimationFrame(frame);
     frame = undefined;
   };
+  const layoutKey = () => JSON.stringify(controller.state().chromeLayout ?? controller.state().layout);
   const down = (event: PointerEvent) => {
     if (event.button !== 0 || !(event.target instanceof window.Element)) return;
     suppressClick = false;
@@ -61,7 +62,7 @@ export function observeSplitInteractions(document: Document, controller: Pick<Sh
     }
     const tab = event.target.closest<HTMLElement>('[role=tab]');
     if (!tab?.dataset.tabId) return;
-    drag = { pointer: event.pointerId, x: event.clientX, y: event.clientY, tabId: tab.dataset.tabId, started: false };
+    drag = { pointer: event.pointerId, x: event.clientX, y: event.clientY, tabId: tab.dataset.tabId, started: false, layout: layoutKey() };
   };
   const targetAt = (event: PointerEvent) => {
     const row = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('.tab');
@@ -86,13 +87,14 @@ export function observeSplitInteractions(document: Document, controller: Pick<Sh
       return;
     }
     if (!drag || drag.pointer !== event.pointerId) return;
+    if (drag.layout !== layoutKey()) { reset(); return; }
     if (!drag.started && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 5) return;
     drag.started = true; suppressClick = true; overlay.hidden = false;
     event.preventDefault(); clearMarkers();
     const browser = controller.state().browser;
     const source = browser.tabs.find(tab => tab.id === drag!.tabId);
     const active = browser.tabs.find(tab => tab.id === browser.activeTabId);
-    const edge = source && active && source !== active && !source.pinned && !active.pinned ? edgeAt(event) : undefined;
+    const edge = source && active && source !== active && source.private === active.private && !source.pinned && !active.pinned ? edgeAt(event) : undefined;
     if (edge) overlay.dataset.edge = edge; else overlay.removeAttribute('data-edge');
     const target = targetAt(event);
     if (target.tabId && canDropTab(browser.tabs, drag.tabId, target.tabId, target.placement)) target.row!.dataset.drop = target.placement;
@@ -103,6 +105,7 @@ export function observeSplitInteractions(document: Document, controller: Pick<Sh
       reset(); return;
     }
     if (!drag || drag.pointer !== event.pointerId) return;
+    if (drag.layout !== layoutKey()) { reset(); return; }
     if (drag.started) {
       const browser = controller.state().browser;
       const edge = overlay.dataset.edge as ReturnType<typeof splitEdge>;

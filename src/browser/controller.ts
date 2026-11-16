@@ -1,9 +1,14 @@
+import { paletteItems } from './address-palette';
 import type { PageSources } from './page-sources';
 import { Effect } from 'effect';
 import { modelOwner } from 'effectweb';
 import { decodeSnapshot, navigationTarget, type ScriptCommand, type BrowserPage, type BrowserSnapshot, type Command, type NativePort } from './protocol';
 export type Panel = 'menu' | 'blocking' | null;
+export type { ChromeLayout } from './chrome-layout';
+import { type ChromeLayout, verticalLayout } from './chrome-layout';
 export interface ShellModel {
+  readonly chromeLayout?: ChromeLayout;
+  readonly addressPaletteOpen?: boolean;
   readonly pageSources?: PageSources;
   readonly sidebarWidth: number;
   readonly sidebarResizeWidth: number | null;
@@ -49,12 +54,14 @@ export function createController(port?: NativePort) {
         const old = previous.get(tab.id);
         return old && Object.keys(old).length === Object.keys(tab).length && (Object.keys(tab) as (keyof typeof tab)[]).every(key => old[key] === tab[key]) ? old : tab;
       });
+      const nextLayout = next.preferences.chromeLayout ?? {preset: next.preferences.layout === 'vertical' ? 'sidebar' : 'classic', side:'left', address:'top'} as ChromeLayout;
+      const layoutChanged = state.chromeLayout && JSON.stringify(state.chromeLayout) !== JSON.stringify(nextLayout);
       const activeChanged = next.activeTabId !== state.browser.activeTabId;
       const navigationArrived = pendingNavigation && next.tabs.some(tab => tab.id === pendingNavigation!.tabId && tab.url !== pendingNavigation!.previousURL);
       if (activeChanged || navigationArrived) {
         pendingNavigation = null;
       }
-      patch({ ...(activeChanged || navigationArrived ? { addressInput: null, addressSuggestionsOpen: false, addressSelection: -1, addressQuery: state.addressQuery + 1 } : {}), ...next.preferences, ...(state.sidebarResizeWidth === next.preferences.sidebarWidth ? { sidebarResizeWidth: null } : {}), browser: { ...next, tabs, addressSuggestions: next.addressSuggestions?.query === state.addressQuery ? next.addressSuggestions : state.browser.addressSuggestions }, connected: true, error: null, tabMenu: state.tabMenu && tabs.some(tab => tab.id === state.tabMenu!.tabId) ? state.tabMenu : null });
+      patch({ ...(activeChanged || navigationArrived || layoutChanged ? { addressPaletteOpen: false, addressInput: null, addressSuggestionsOpen: false, addressSelection: -1, addressQuery: state.addressQuery + 1 } : {}), ...next.preferences, chromeLayout: nextLayout, ...(state.sidebarResizeWidth === next.preferences.sidebarWidth ? { sidebarResizeWidth: null } : {}), browser: { ...next, tabs, addressSuggestions: next.addressSuggestions?.query === state.addressQuery ? next.addressSuggestions : state.browser.addressSuggestions }, connected: true, error: null, tabMenu: state.tabMenu && tabs.some(tab => tab.id === state.tabMenu!.tabId) ? state.tabMenu : null });
     } catch (error) { report(error); }
   };
   const send = (command: Command) => {
@@ -120,6 +127,25 @@ export function createController(port?: NativePort) {
     previewSidebarWidth: (sidebarResizeWidth: number | null) => patch({ sidebarResizeWidth }),
     setSidebarWidth: (width: number) => send({ type: 'shell.set-sidebar-width', width }),
     setWrapTabs: (value: boolean) => send({ type: 'shell.set-wrap-tabs', value }),
+    setChromeLayout(chromeLayout: ChromeLayout) {
+      if (state.connected) send({ type: 'shell.set-chrome-layout', layout: chromeLayout });
+      else patch({ chromeLayout, layout: verticalLayout(chromeLayout) ? 'vertical' : 'horizontal', addressPaletteOpen: false, addressSuggestionsOpen: false, addressInput: null });
+    },
+    selectPaletteItem(direction: number) {
+      const count = paletteItems(state).length;
+      if (count) patch({addressSelection: state.addressSelection < 0 ? (direction < 0 ? count - 1 : 0) : (state.addressSelection + direction + count) % count});
+    },
+    choosePaletteItem(index: number) {
+      const item = paletteItems(state)[index];
+      if (item?.source === 'tab') {
+        send({type:'tab.activate',tabId:item.id});
+        this.dismissAddress();
+      } else this.navigate(item?.text ?? state.addressInput ?? '');
+    },
+    openAddressPalette() {
+      const input = state.browser.tabs.find(tab => tab.id === state.browser.activeTabId)?.url ?? '';
+      patch({ addressPaletteOpen: true, addressInput: input === 'about:blank' ? '' : input, addressSelection: -1, addressSuggestionsOpen: false });
+    },
     blurAddress() {
       patch({ addressSuggestionsOpen: false, addressSelection: -1, addressQuery: state.addressQuery + 1 });
     },
@@ -138,9 +164,9 @@ export function createController(port?: NativePort) {
     selectAddress(direction: number) {
       const suggestions = state.browser.addressSuggestions;
       if (!suggestions?.items.length) return;
-      patch({ addressSelection: (state.addressSelection + direction + suggestions.items.length) % suggestions.items.length });
+      patch({ addressSelection: state.addressSelection < 0 ? (direction < 0 ? suggestions.items.length - 1 : 0) : (state.addressSelection + direction + suggestions.items.length) % suggestions.items.length });
     },
-    dismissAddress() { pendingNavigation = null; patch({ addressInput: null, addressSuggestionsOpen: false, addressSelection: -1, addressQuery: state.addressQuery + 1 }); },
+    dismissAddress() { pendingNavigation = null; patch({ addressPaletteOpen: false, addressInput: null, addressSuggestionsOpen: false, addressSelection: -1, addressQuery: state.addressQuery + 1 }); },
     navigate(input: string) {
       if (!input.trim()) return;
       try {
@@ -148,10 +174,12 @@ export function createController(port?: NativePort) {
         const tabId = state.browser.activeTabId;
         pendingNavigation = tabId ? { tabId, previousURL: state.browser.tabs.find(tab => tab.id === tabId)?.url ?? '' } : null;
         send(tabId ? { type: 'tab.navigate-input', tabId, url: input } : { type: 'tab.create', url, private: false });
-        patch({ addressInput: input, addressSuggestionsOpen: false, addressSelection: -1, addressQuery: state.addressQuery + 1 });
+        patch({ addressPaletteOpen: false, addressInput: input, addressSuggestionsOpen: false, addressSelection: -1, addressQuery: state.addressQuery + 1 });
       } catch (error) { report(error); }
     },
-    setLayout: (layout: ShellModel['layout']) => state.connected ? send({ type: 'shell.set-layout', layout }) : patch({ layout }),
+    setLayout(layout: ShellModel['layout']) {
+      if (state.connected) send({ type: 'shell.set-layout', layout }); else patch({ layout });
+    },
     setPanel(panel: Panel) {
       if (panel === 'blocking' || state.panel === 'blocking') send({ type: 'blocking.log', visible: panel === 'blocking' });
       patch({ panel, dynamicDraft: panel === 'blocking' ? state.dynamicDraft : null, tabMenu: null, blockingSearch: panel === 'blocking' ? state.blockingSearch : '' });

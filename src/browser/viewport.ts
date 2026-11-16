@@ -22,9 +22,10 @@ export function observeViewport(document: Document, send: (command: Command) => 
     // The page is below the transparent shell: cover fractional edges instead of
     // leaving an uncovered strip between the toolbar and the native surface.
     const rect = surfaceRect(content.getBoundingClientRect(), 0, 'cover');
-    const overlays = Array.from(document.querySelectorAll('.address-suggestions, .browser-menu, .tab-menu, .error, .style-manager, .blocking-log, .credential-autofill, .split-divider'), element => surfaceRect(element.getBoundingClientRect()));
-    if (document.querySelector('dialog[open]')) overlays.push(surfaceRect(document.documentElement.getBoundingClientRect(), 0, 'cover'));
-    const captureInput = !!document.querySelector('.split-drag-surface:not([hidden])');
+    // Input capture raises the transparent shell above the native page. Keep
+    // the entire page painted, including behind rounded dialog corners/shadows.
+    const captureInput = !!document.querySelector('dialog[open], .split-drag-surface:not([hidden])');
+    const overlays = captureInput ? [] : Array.from(document.querySelectorAll('.address-suggestions, .browser-menu, .tab-menu, .error, .style-manager, .blocking-log, .credential-autofill, .split-divider'), element => surfaceRect(element.getBoundingClientRect()));
     const command = { type: 'shell.viewport', rect, overlays, ...(captureInput ? { captureInput: true } : {}) } as const;
     const serialized = JSON.stringify(command);
     if (serialized === previous) return;

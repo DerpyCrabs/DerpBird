@@ -13,6 +13,7 @@ type Props = {
   readonly onDismiss: (reason: OverlayChangeCause['reason']) => void;
   readonly trigger?: () => HTMLElement | null | undefined;
   readonly initialFocus?: boolean | 'surface';
+  readonly side?: 'top' | 'bottom';
   readonly anchor?: { readonly getBoundingClientRect: () => DOMRect };
 };
 // Base UI owns light dismissal, Escape, focus containment, positioning and
@@ -28,13 +29,13 @@ function surface(kind: 'popover' | 'menu' | 'dialog') {
     if (kind !== 'dialog') owner.own(observeShellDismissal({ deactivate: () => handle.hide({ reason: 'focus-out', event: new Event('blur') }) }));
     return { source: owner.source, lifetime: owner, handle, receive: (next: Props) => { owner.patch({ props: next }); handle.attachTrigger(next.trigger?.() ?? undefined); } };
   } }, view(model => {
-    const { onDismiss: _, trigger: __, initialFocus, anchor, children, ...props } = model.props;
+    const { onDismiss: _, trigger: __, initialFocus, anchor, side = 'bottom', children, ...props } = model.props;
     const handle = model.actions.handle;
     const firstFocus = initialFocus === 'surface' ? () => handle.popup() : initialFocus;
     const finalFocus = () => shouldRestoreShellFocus();
     if (kind === 'dialog') return <DialogPopup {...props} dialog={handle} initialFocus={firstFocus} finalFocus={finalFocus}>{children}</DialogPopup>;
-    if (kind === 'menu') return <MenuPopup {...props} menu={handle as ReturnType<typeof createMenu>} anchor={anchor} side="bottom" align="end" initialFocus={firstFocus} finalFocus={finalFocus}>{children}</MenuPopup>;
-    return <PopoverPopup {...props} popover={handle} anchor={anchor} side="bottom" align="end" initialFocus={firstFocus} finalFocus={finalFocus}>{children}</PopoverPopup>;
+    if (kind === 'menu') return <MenuPopup {...props} menu={handle as ReturnType<typeof createMenu>} anchor={anchor} side={side} align="end" initialFocus={firstFocus} finalFocus={finalFocus}>{children}</MenuPopup>;
+    return <PopoverPopup {...props} popover={handle} anchor={anchor} side={side} align="end" initialFocus={firstFocus} finalFocus={finalFocus}>{children}</PopoverPopup>;
   }));
 }
 export const ShellPopover = surface('popover');
