@@ -25,6 +25,7 @@ export interface BlockingLog { readonly tabId: string; readonly entries: readonl
 export interface CredentialAutofill { readonly token: string; readonly origin: string; readonly x: number; readonly y: number; readonly items: readonly Credential[] }
 export interface SplitView { readonly id: string; readonly firstTabId: string; readonly secondTabId: string; readonly axis: 'horizontal' | 'vertical'; readonly ratio: number }
 export interface BrowserSnapshot {
+  readonly automation?: { readonly enabled: boolean; readonly clients: number; readonly endpoint: string };
   readonly workspaces?: Workspaces;
   readonly splits?: readonly SplitView[];
   readonly proxyProfile?: string;
@@ -44,6 +45,7 @@ export interface BrowserSnapshot {
 export type BrowserPage = 'history' | 'downloads' | 'bookmarks' | 'settings';
 export interface SurfaceRect { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
 export type Command =
+  | { readonly type: 'automation.set-enabled'; readonly enabled: boolean }
   | { readonly type: 'workspace.switch'; readonly id: string }
   | ({ readonly type: 'workspace.create' | 'workspace.update' } & WorkspaceDraft)
   | { readonly type: 'browser.suggest'; readonly input: string; readonly query: number }
@@ -187,7 +189,14 @@ export function decodeSnapshot(value: unknown): BrowserSnapshot {
   if (credentialProposal && tabs.find(tab => tab.id === s.activeTabId)?.private !== false)
     throw new Error('Credential suggestion requires an ordinary active tab');
   if (s.proxyProfile !== undefined && (typeof s.proxyProfile !== 'string' || s.proxyProfile.length > 256)) throw new Error('Invalid proxy profile');
-  return Object.freeze({ workspaces: decodeWorkspaces(s.workspaces), splits: Object.freeze(splits), ...(s.proxyProfile === undefined ? {} : { proxyProfile: s.proxyProfile as string }), credentialAutofill, addressSuggestions, dynamicRules: s.dynamicRules as string | undefined, filterProposal, blockingLog, scriptCommands: Object.freeze(scriptCommands), credentialProposal, version: protocolVersion, revision: s.revision as number, preferences, tabs: Object.freeze(tabs), activeTabId: s.activeTabId as string | null });
+  let automation: BrowserSnapshot['automation'];
+  if (s.automation !== undefined) {
+    const a = s.automation as Partial<NonNullable<BrowserSnapshot['automation']>> | null;
+    if (!a || typeof a.enabled !== 'boolean' || typeof a.endpoint !== 'string' || !Number.isSafeInteger(a.clients) || a.clients! < 0 || a.clients! > 16)
+      throw new Error('Invalid automation state');
+    automation = Object.freeze({ enabled: a.enabled, endpoint: a.endpoint, clients: a.clients! });
+  }
+  return Object.freeze({ ...(automation ? { automation } : {}), workspaces: decodeWorkspaces(s.workspaces), splits: Object.freeze(splits), ...(s.proxyProfile === undefined ? {} : { proxyProfile: s.proxyProfile as string }), credentialAutofill, addressSuggestions, dynamicRules: s.dynamicRules as string | undefined, filterProposal, blockingLog, scriptCommands: Object.freeze(scriptCommands), credentialProposal, version: protocolVersion, revision: s.revision as number, preferences, tabs: Object.freeze(tabs), activeTabId: s.activeTabId as string | null });
 }
 
 export function navigationTarget(input: string): string {

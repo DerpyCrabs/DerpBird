@@ -37,5 +37,7 @@ foreach(source IN LISTS suites)
         ENVIRONMENT "LADYBIRD_SOURCE_DIR=${ENGINE_SOURCE}")
 endforeach()
 
-find_package(Qt6 REQUIRED COMPONENTS Core)
+find_package(Qt6 REQUIRED COMPONENTS Core Network)
 target_link_libraries(TestDerpBirdDevTools PRIVATE Qt6::Core)
+target_link_libraries(TestDerpBirdAutomation PRIVATE Qt6::Core Qt6::Network)
+target_sources(TestDerpBirdAutomation PRIVATE "${ENGINE_SOURCE}/UI/Qt/StringUtils.cpp")

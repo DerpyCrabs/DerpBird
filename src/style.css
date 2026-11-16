@@ -149,7 +149,8 @@ p.subtle { font-size: 12px; color: #7e858b; }
 /* Browser controls must not animate geometry or shift under the pointer. */
 .navigation button, .tabs button, .browser-menu button, .tab-menu button { transition: none; transform: none; translate: none; }
 
-.navigation > button:not(.credential-suggestion) { width: 28px; height: 28px; padding: 5px; border-radius: 4px; }
+.navigation > button:not(.credential-suggestion):not(.automation-stop) { width: 28px; height: 28px; padding: 5px; border-radius: 4px; }
+.navigation > .automation-stop { flex-shrink: 0; width: auto; height: 28px; padding: 4px 8px; font-size: 12px; color: #b8ddc6; border: 1px solid #5c7b68; border-radius: 4px; }
 .address .site-settings { position: absolute; z-index: 1; left: 2px; top: 1px; width: 26px; height: 28px; padding: 5px; }
 .vertical .tabs { border-right: 1px solid #36393d; }
 .browser-menu button, .tab-menu button { min-height: 28px; height: 28px; padding: 4px 8px; border-radius: 4px; }

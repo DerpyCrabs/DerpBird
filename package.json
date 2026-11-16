@@ -29,11 +29,16 @@
     "demo:register": "bun demos/derpdesign/register.ts",
     "test:workspaces:engine": "python3 scripts/workflow.py build && python3 scripts/test-browser-layouts.py --workspaces",
     "test:layouts:engine": "python3 scripts/workflow.py build && python3 scripts/test-browser-layouts.py",
-    "test:demos": "bun test demos/derpdesign/fixture.test.ts"
+    "test:demos": "bun test demos/derpdesign/fixture.test.ts",
+    "agent:mcp": "bun src/automation/server.ts",
+    "test:agent": "python3 scripts/test-agent-browser.py",
+    "test:agent:captures": "bun scripts/test-agent-captures.ts"
   },
   "dependencies": {
+    "@effectweb/base-ui": "0.15.0",
     "@effectweb/lucide": "file:../EffectWeb/packages/lucide",
     "@effectweb/shadcn": "file:../EffectWeb/packages/shadcn",
+    "@modelcontextprotocol/server": "^2.4.0",
     "colorjs.io": "0.7.1",
     "effect": "4.1.0",
     "effectweb": "file:../EffectWeb/packages/runtime",
@@ -41,11 +46,12 @@
     "postcss": "8.5.32",
     "stylus-lang-bundle": "github:openstyles/stylus-lang-bundle#ad941359ffd800eb6a16fa8459902573e7d5e240",
     "usercss-meta": "0.12.0",
-    "@effectweb/base-ui": "0.15.0"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@derpdesign/harness": "file:../DerpDesign/packages/harness",
     "@effectweb/compiler": "file:../EffectWeb/packages/compiler",
+    "@modelcontextprotocol/client": "^2.4.0",
     "@tailwindcss/vite": "4.3.3",
     "@types/bun": "1.4.4",
     "happy-dom": "21.0.4",
