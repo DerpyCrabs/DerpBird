@@ -13,13 +13,16 @@ import Download from '@effectweb/lucide/icons/download';
 import Settings from '@effectweb/lucide/icons/settings-2';
 import ArrowUp from '@effectweb/lucide/icons/arrow-up';
 import ArrowDown from '@effectweb/lucide/icons/arrow-down';
+import ChevronRight from '@effectweb/lucide/icons/chevron-right';
+import AlertTriangle from '@effectweb/lucide/icons/triangle-alert';
 import Trash from '@effectweb/lucide/icons/trash-2';
 import { exportSource } from '../browser/source-files';
-import { conditionTypes, decodeProxySnapshot, exportProxyBackup, importProxyBackup, proxyProfiles, type ProxyEndpoint, type ProxyOptions, type ProxyPort, type ProxyProfile, type ProxyRule, type ProxySnapshot } from '../browser/proxy-protocol';
-interface Model { settings: boolean; creating: boolean; snapshot: ProxySnapshot | null; options: ProxyOptions; active: string; selected: string; busy: boolean; dirty: boolean; error: string; message: string; search: string; page: number; newName: string; newType: string; discard: boolean }
+import { conditionTypes, decodeProxySnapshot, setDomainProxy, domainRulesKey, type ProxySite, exportProxyBackup, importProxyBackup, proxyProfiles, type ProxyEndpoint, type ProxyOptions, type ProxyPort, type ProxyProfile, type ProxyRule, type ProxySnapshot } from '../browser/proxy-protocol';
+interface Model { site: ProxySite | null; failuresOpen: boolean; undo: ProxySnapshot | null; lastProxy: string; settings: boolean; creating: boolean; snapshot: ProxySnapshot | null; options: ProxyOptions; active: string; selected: string; busy: boolean; dirty: boolean; error: string; message: string; search: string; page: number; newName: string; newType: string; discard: boolean }
 export function openProxyManager(host: HTMLElement, port: ProxyPort, onClosed: () => void, currentURL = '') {
-  let state: Model = { settings: false, creating: false, snapshot: null, options: { schemaVersion: 2 }, active: 'system', selected: '', busy: false, dirty: false, error: '', message: '', search: '', page: 0, newName: '', newType: 'FixedProfile', discard: false };
+  let state: Model = { site: null, failuresOpen: false, undo: null, lastProxy: '', settings: false, creating: false, snapshot: null, options: { schemaVersion: 2 }, active: 'system', selected: '', busy: false, dirty: false, error: '', message: '', search: '', page: 0, newName: '', newType: 'FixedProfile', discard: false };
   const owner = modelOwner(state);
+  const siteScoped = !!port.site && /^https?:/.test(currentURL);
   let disposed = false;
   const patch = (change: Partial<Model>) => { if (!disposed) { state = { ...state, ...change }; owner.patch(change); } };
   const run = (work: () => Promise<void>) => {
@@ -47,6 +50,7 @@ export function openProxyManager(host: HTMLElement, port: ProxyPort, onClosed: (
   };
   const removeProfile = () => {
     const name = state.selected;
+    if (Object.values((state.options[domainRulesKey] ?? {}) as Record<string, string>).includes(name)) { patch({ error: 'This profile is used by a domain rule. Change those routes before deleting it.' }); return; }
     if (proxyProfiles(state.options).some(p => p.name !== name && (p.defaultProfileName === name || p.rules?.some(r => r.profileName === name)))) { patch({ error: 'This profile is used by a rule or default. Change those references before deleting it.' }); return; }
     const options = { ...state.options }; delete options[`+${name}`];
     if (options['-startupProfileName'] === name) options['-startupProfileName'] = 'direct';
@@ -70,8 +74,28 @@ export function openProxyManager(host: HTMLElement, port: ProxyPort, onClosed: (
     if (!disposed) focusShellElement(state.settings ? host.querySelector<HTMLElement>('[aria-label="Close proxy settings"]') : host.querySelector<HTMLElement>('[aria-pressed="true"]') ?? host.querySelector<HTMLElement>('.proxy-profile-option'));
   });
   const openSettings = () => { patch({ settings: true }); focusFirst(); };
+  const refreshSite = async () => {
+    if (port.site && /^https?:/.test(currentURL)) {
+      const site = await port.site(currentURL);
+      patch({ site, ...(site.proxied && site.profile !== 'system' ? { lastProxy: site.profile } : {}) });
+    }
+  };
+  const siteTarget = () => state.lastProxy || proxyProfiles(state.options).find(p => p.profileType === 'FixedProfile')?.name;
+  const routeHost = (host: string, target: string) => run(async () => {
+    const previous = state.snapshot!;
+    accept(await port.replace(setDomainProxy(previous, host, target), currentURL));
+    await refreshSite();
+    patch({ undo: previous, message: target === 'direct' ? 'Proxy disabled' : 'Proxy enabled' });
+  });
+  const undoSite = () => run(async () => {
+    if (!state.undo) return;
+    accept(await port.replace({ ...state.undo, revision: state.snapshot!.revision }, currentURL));
+    await refreshSite(); patch({ undo: null, message: '' });
+  });
   const choose = (active: string) => run(async () => {
-    if (active !== state.snapshot!.active) await port.replace({ ...state.snapshot!, active });
+    if (siteScoped && !state.site) throw new Error('Could not determine proxy routing for this page. Reopen the switcher to retry.');
+    if (state.site) await port.replace(setDomainProxy(state.snapshot!, state.site.host, active), currentURL);
+    else if (active !== state.snapshot!.active) await port.replace({ ...state.snapshot!, active });
     dispose(); onClosed();
   });
   const pickFile = () => host.querySelector<HTMLInputElement>('[type=file]')?.click();
@@ -94,19 +118,25 @@ export function openProxyManager(host: HTMLElement, port: ProxyPort, onClosed: (
     return <div class="proxy-auth-row"><span>{label}</span><label>Username<input aria-label={`${label} username`} value={value.username ?? ''} autocomplete="off" onInput={e => update('username', e.currentTarget.value)}/></label><label>Password<input type="password" aria-label={`${label} password`} value={value.password ?? ''} autocomplete="off" onInput={e => update('password', e.currentTarget.value)}/></label></div>;
   };
   const render = view<Model>(m => {
-    const profiles = proxyProfiles(m.options), profile = profiles.find(p => p.name === m.selected);
+    const profiles = proxyProfiles(m.options), active = m.site?.profile ?? m.active, target = siteTarget(), profile = profiles.find(p => p.name === m.selected);
     if (!m.settings) {
       const anchor = document.querySelector('[aria-label="Proxy switcher"]')?.getBoundingClientRect();
       const top = (anchor?.bottom ?? 36) + 6;
       return <ShellMenu onDismiss={close} trigger={() => document.querySelector('button[aria-label="Proxy switcher"]')} class="style-manager proxy-popup" style={{ maxHeight: `calc(100vh - ${top + 8}px)` }} aria-label="Proxy profiles">
         <div class="proxy-popup-heading"><strong>Proxy</strong>{m.busy ? <span>{m.snapshot ? 'Switching…' : 'Loading…'}</span> : null}</div>
         <div class="proxy-profile-list">
-          <button role="menuitemradio" class="proxy-profile-option" aria-pressed={m.active === 'direct'} disabled={m.busy || !m.snapshot} onClick={() => choose('direct')}><Globe size={17}/><span><strong>Direct connection</strong></span>{m.active === 'direct' ? <Check size={16}/> : null}</button>
-          <button role="menuitemradio" class="proxy-profile-option" aria-pressed={m.active === 'system'} disabled={m.busy || !m.snapshot} onClick={() => choose('system')}><Monitor size={17}/><span><strong>System proxy</strong></span>{m.active === 'system' ? <Check size={16}/> : null}</button>
-          {profiles.length ? <div class="proxy-popup-divider"/> : null}
-          {profiles.map(p => <button role="menuitemradio" class="proxy-profile-option" title={p.name} aria-pressed={m.active === p.name} disabled={m.busy} onClick={() => choose(p.name)}><span class="proxy-color" style={{ backgroundColor: color(p) }}/><span><strong>{p.name}</strong><small>{profileDetail(p)}</small></span>{m.active === p.name ? <Check size={16}/> : null}</button>)}
+          <button role="menuitemradio" class="proxy-profile-option" aria-pressed={active === 'direct'} disabled={m.busy || !m.snapshot || (siteScoped && !m.site)} onClick={() => choose('direct')}><Globe size={17}/><span><strong>Direct connection</strong></span>{active === 'direct' ? <Check size={16}/> : null}</button>
+          <button role="menuitemradio" class="proxy-profile-option" aria-pressed={active === 'system'} disabled={m.busy || !m.snapshot || (siteScoped && !m.site)} onClick={() => choose('system')}><Monitor size={17}/><span><strong>System proxy</strong></span>{active === 'system' ? <Check size={16}/> : null}</button>
+          {profiles.map(p => <button role="menuitemradio" class="proxy-profile-option" title={p.name} aria-pressed={active === p.name} disabled={m.busy || (siteScoped && !m.site)} onClick={() => choose(p.name)}><span class="proxy-color" style={{ backgroundColor: color(p) }}/><span><strong>{p.name}</strong></span>{active === p.name ? <Check size={16}/> : null}</button>)}
         </div>
 
+        {m.site ? <div class="proxy-site-actions">
+          <div class="proxy-popup-divider"/>
+          <button id="site-proxy-toggle" role="menuitemcheckbox" aria-checked={m.site.proxied} class="proxy-profile-option" disabled={m.busy || (!m.site.proxied && !target)} title={target ? 'Change proxy routing only for this domain' : 'Add a proxy profile in Proxy settings'} onClick={() => routeHost(m.site!.host, m.site!.proxied ? 'direct' : target!)}><Network size={17}/><span><strong>Proxy this domain</strong></span><i class="site-proxy-switch"><i/></i></button>
+          <button id="site-proxy-failures" role="menuitem" aria-expanded={m.failuresOpen} class="proxy-profile-option" onClick={() => patch({ failuresOpen: !m.failuresOpen })}><AlertTriangle size={17}/><span><strong>Failed requests</strong></span><span class="site-proxy-count">{m.site.failures.reduce((n, f) => n + f.count, 0)}</span><ChevronRight size={13}/></button>
+          {m.failuresOpen ? <div class="site-proxy-requests">{m.site.failures.length ? m.site.failures.map(f => <div class="site-proxy-request"><span title={f.error}>{f.host}</span><small>{f.count}</small><button data-host={f.host} disabled={m.busy || (!f.proxied && !target)} aria-label={`${f.proxied ? 'Remove proxy rule for' : 'Proxy'} ${f.host}`} title={`${f.error}. ${f.proxied ? 'Using proxy. Disable for this host' : 'Use proxy on next reload'}`} onClick={() => routeHost(f.host, f.proxied ? 'direct' : target!)}>{f.proxied ? <Check size={15}/> : <Plus size={15}/>}</button></div>) : <div class="site-proxy-empty">No failed requests</div>}</div> : null}
+          {m.undo ? <div class="site-proxy-notice" role="status"><span>{m.message}</span><button id="site-proxy-undo" disabled={m.busy} onClick={undoSite}>Undo</button></div> : null}
+        </div> : null}
         {m.error ? <p role="alert">{m.error}</p> : null}
         <button role="menuitem" class="proxy-popup-settings" disabled={m.busy} onClick={openSettings}><Settings size={16}/><span>Proxy settings</span></button>
       </ShellMenu>;
@@ -149,6 +179,6 @@ export function openProxyManager(host: HTMLElement, port: ProxyPort, onClosed: (
   });
   const mounted = mount(host, render, owner.source);
   const dispose = () => { if (disposed) return; disposed = true; mounted.dispose(); void Effect.runPromise(owner.close()); };
-  run(async () => { accept(await port.get()); focusFirst(); });
+  run(async () => { accept(await port.get()); await refreshSite(); focusFirst(); });
   return { dispose, toggle: () => { if (!state.settings) close(); } };
 }

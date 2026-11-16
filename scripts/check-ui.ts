@@ -2,6 +2,7 @@ import { Window } from 'happy-dom';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { strict as assert } from 'node:assert';
+import {decodeProxySnapshot, domainRulesKey, type ProxySnapshot} from '../src/browser/proxy-protocol';
 import type { Command } from '../src/browser/protocol';
 
 const window = new Window({ url: 'http://127.0.0.1/' });
@@ -36,7 +37,15 @@ let preferences = { layout: 'vertical', compact: false, sidebarWidth: 196, wrapT
 let revision = 0;
 const scriptCommands=[{id:'menu1',script:'Example script',label:'Fixture action',title:'Tooltip',accessKey:'r',autoClose:false}];
 const state = () => ({ scriptCommands, version: 1, revision: ++revision, preferences, tabs: [tab('a'), tab('b')], activeTabId: 'a' });
+let proxyState:ProxySnapshot={revision:1,active:'direct',options:{schemaVersion:2,'+Proxy':{name:'Proxy',profileType:'FixedProfile',fallbackProxy:{scheme:'http',host:'127.0.0.1',port:1080}},[domainRulesKey]:{'a.example':'Proxy'}}};
+let rejectProxyWrite=false, rejectProxySite=false;
+const proxyRoute=(host:string)=>(proxyState.options[domainRulesKey] as Record<string,string> | undefined)?.[host]??proxyState.active;
 Object.assign(window, { derpbird: {
+  proxy: {
+    get:async()=>structuredClone(proxyState),
+    replace:async(next:ProxySnapshot,url?:string)=>{assert.equal(url,'https://a.example/');if(rejectProxyWrite)throw Error('Proxy settings changed in another window');assert.equal(next.revision,proxyState.revision);proxyState={...decodeProxySnapshot(structuredClone(next)),revision:next.revision+1};return structuredClone(proxyState)},
+    site:async(url:string)=>{if(rejectProxySite)throw Error('Page changed');return ({url,host:'a.example',profile:proxyRoute('a.example'),proxied:proxyRoute('a.example')!=='direct',failures:[{host:'cdn.example',count:2,error:'Unable to connect',profile:proxyRoute('cdn.example'),proxied:proxyRoute('cdn.example')!=='direct'}]})},
+  },
   version: 1,
   autofill: async (token: string, id?: string) => { autofillActions.push({ token, id }); },
   importer: {
@@ -470,6 +479,66 @@ document.querySelector('.credential-autofill button')!.focus();
 assert.deepEqual(autofillActions.at(-1), { token: '7', id: undefined });
 notify?.({ ...state(), credentialAutofill: null }); await settle();
 assert(!document.querySelector('.credential-autofill'));
+// Production proxy popup: scoped mutations, matching selection and truthful failures.
+proxyState.options['+auto switch']={name:'auto switch',profileType:'SwitchProfile',defaultProfileName:'direct',rules:[]};
+button('Proxy switcher').click(); await settle();
+const proxyControl=(id:string)=>{const b=document.getElementById(id) as unknown as HTMLButtonElement;assert(b,id);return b};
+assert.equal(proxyControl('site-proxy-toggle').getAttribute('aria-checked'),'true');
+assert(document.querySelector('.proxy-profile-option[aria-pressed=true]')?.textContent.includes('Proxy'));
+assert.equal(document.getElementById('site-proxy-condition'),null);
+assert.equal(document.querySelector('.proxy-profile-list [title="Proxy"]')?.textContent,'Proxy');
+assert.equal(document.querySelector('.proxy-profile-list [title="auto switch"]')?.textContent,'auto switch');
+assert.equal(document.querySelector('.proxy-profile-list small'),null,'profile options have no subtitles');
+proxyControl('site-proxy-toggle').click(); await settle();
+assert.equal(proxyControl('site-proxy-toggle').getAttribute('aria-checked'),'false');
+assert(document.querySelector('.proxy-profile-option[aria-pressed=true]')?.textContent.includes('Direct connection'));
+assert.equal(proxyState.active,'direct');
+assert.deepEqual(proxyState.options[domainRulesKey],{});
+proxyControl('site-proxy-undo').click(); await settle();
+assert.equal(proxyControl('site-proxy-toggle').getAttribute('aria-checked'),'true');
+rejectProxyWrite=true;proxyControl('site-proxy-toggle').click();await settle();
+assert(document.querySelector('.proxy-popup [role=alert]')?.textContent.includes('another window'));
+assert.equal(proxyControl('site-proxy-toggle').getAttribute('aria-checked'),'true');
+rejectProxyWrite=false;
+proxyControl('site-proxy-failures').click(); await settle();
+button('Proxy cdn.example').click(); await settle();
+assert.equal((proxyState.options[domainRulesKey] as Record<string,string>)['cdn.example'],'Proxy');
+assert.equal((proxyState.options[domainRulesKey] as Record<string,string>)['a.example'],'Proxy');
+assert(proxyControl('site-proxy-failures').textContent.includes('2'),'adding a rule must not erase failures');
+assert(document.querySelector('[aria-label="Remove proxy rule for cdn.example"]'));
+// Failed-host removal and undo must preserve the page's route and failure evidence.
+button('Remove proxy rule for cdn.example').click();await settle();
+assert.equal((proxyState.options[domainRulesKey] as Record<string,string>)['cdn.example'],undefined);
+assert.equal((proxyState.options[domainRulesKey] as Record<string,string>)['a.example'],'Proxy');
+assert(proxyControl('site-proxy-failures').textContent.includes('2'));
+proxyControl('site-proxy-undo').click();await settle();
+assert.equal((proxyState.options[domainRulesKey] as Record<string,string>)['cdn.example'],'Proxy');
+// Collapsing and reopening the list does not change routes or counts.
+const beforeCollapse=structuredClone(proxyState);
+proxyControl('site-proxy-failures').click();await settle();
+assert.equal(document.querySelector('.site-proxy-request'),null);
+proxyControl('site-proxy-failures').click();await settle();
+assert(document.querySelector('[aria-label="Remove proxy rule for cdn.example"]'));
+assert.deepEqual(proxyState,beforeCollapse);
+const directChoice=document.querySelector('.proxy-profile-list button') as HTMLButtonElement;directChoice.click();await settle();
+assert(!document.querySelector('.proxy-popup'));
+button('Proxy switcher').click();await settle();
+assert.equal(proxyControl('site-proxy-toggle').getAttribute('aria-checked'),'false');
+assert.equal((proxyState.options[domainRulesKey] as Record<string,string>)['cdn.example'],'Proxy');
+button('Proxy switcher').click();await settle();
+proxyState={revision:proxyState.revision+1,active:'direct',options:{schemaVersion:2}};
+button('Proxy switcher').click();await settle();
+assert(proxyControl('site-proxy-toggle').disabled,'no configured proxy means no enabled toggle action');
+proxyControl('site-proxy-failures').click();await settle();
+assert(button('Proxy cdn.example').disabled,'failed-host proxy action also needs a configured proxy');
+button('Proxy switcher').click();await settle();
+rejectProxySite=true;
+const beforeFailedSite=structuredClone(proxyState);
+button('Proxy switcher').click();await settle();
+assert(document.querySelector('.proxy-popup [role=alert]')?.textContent.includes('Page changed'));
+for(const choice of document.querySelectorAll<HTMLButtonElement>('.proxy-profile-list button')) {assert(choice.disabled);choice.click();}
+await settle();assert.deepEqual(proxyState,beforeFailedSite,'failed site lookup must never change global routing');
+button('Proxy switcher').click();await settle();
 window.dispatchEvent(new window.Event('pagehide')); await settle();
 assert(unsubscribed, 'page teardown must unsubscribe native bridge');
 await window.happyDOM.close();

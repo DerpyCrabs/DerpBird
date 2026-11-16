@@ -9,7 +9,7 @@ export interface ProxyProfile {
 }
 export interface ProxyOptions { schemaVersion: number; [key: string]: unknown }
 export interface ProxySnapshot { revision: number; active: string; options: ProxyOptions }
-export interface ProxyPort { get(): Promise<ProxySnapshot>; replace(snapshot: ProxySnapshot): Promise<ProxySnapshot> }
+export interface ProxyPort { get(): Promise<ProxySnapshot>; replace(snapshot: ProxySnapshot, currentURL?: string): Promise<ProxySnapshot>; site?(url: string): Promise<ProxySite> }
 export const conditionTypes = ['HostWildcardCondition', 'UrlWildcardCondition', 'HostRegexCondition', 'UrlRegexCondition', 'KeywordCondition', 'BypassCondition', 'IpCondition', 'TrueCondition', 'FalseCondition'] as const;
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 export function proxyProfiles(options: ProxyOptions): ProxyProfile[] { return Object.entries(options).filter(([key]) => key.startsWith('+')).map(([, value]) => value as ProxyProfile); }
@@ -56,6 +56,13 @@ export function validateProxyOptions(value: unknown, active?: string): ProxyOpti
       }
     }
   }
+  if (options['-derpbirdDomainRules'] !== undefined) {
+    const rules = options['-derpbirdDomainRules'];
+    if (!object(rules) || Object.keys(rules).length > 20000) throw new Error('Invalid domain proxy rules.');
+    for (const [host, target] of Object.entries(rules)) {
+      if (host.length > 253 || proxyHost(`https://${host}/`) !== host || typeof target !== 'string' || !names.has(target)) throw new Error('Invalid domain proxy rule.');
+    }
+  }
   const visited = new Set<string>(), visiting = new Set<string>();
   const visit = (name: string) => {
     if (!names.has(name)) throw new Error(`Unknown proxy profile: ${name}.`);
@@ -79,3 +86,30 @@ export function decodeProxySnapshot(value: unknown): ProxySnapshot {
 }
 export function importProxyBackup(text: string): ProxyOptions { return validateProxyOptions(JSON.parse(text.replace(/^\uFEFF/, ''))); }
 export function exportProxyBackup(options: ProxyOptions): string { return JSON.stringify(validateProxyOptions(options), null, 2); }
+
+export interface ProxyFailure { host: string; count: number; error: string; profile: string; proxied: boolean }
+export interface ProxySite { url: string; host: string; profile: string; proxied: boolean; failures: ProxyFailure[] }
+export const domainRulesKey = '-derpbirdDomainRules';
+export function proxyHost(url: string): string {
+  const parsed = new URL(url);
+  if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Proxy rules require an HTTP or HTTPS page.');
+  if (/[*|]/.test(parsed.hostname)) throw new Error('Proxy rules require an exact hostname.');
+  return parsed.hostname.toLowerCase();
+}
+export function setDomainProxy(snapshot: ProxySnapshot, host: string, profile: string): ProxySnapshot {
+  if (proxyHost(`https://${host}/`) !== host) throw new Error('Invalid proxy domain.');
+  const options = structuredClone(snapshot.options);
+  const rules = { ...(options[domainRulesKey] as Record<string, string> | undefined), [host]: profile };
+  // A direct default needs no exception. A global proxy needs a direct exception
+  // so switching this domain off cannot affect other domains.
+  if (profile === 'direct' && snapshot.active === 'direct') delete rules[host];
+  options[domainRulesKey] = rules;
+  return decodeProxySnapshot({ ...snapshot, options });
+}
+export function decodeProxySite(value: unknown): ProxySite {
+  if (!object(value) || typeof value.url !== 'string' || typeof value.host !== 'string' || proxyHost(value.url) !== value.host || typeof value.profile !== 'string' || typeof value.proxied !== 'boolean' || !Array.isArray(value.failures) || value.failures.length > 256) throw new Error('Invalid site proxy response.');
+  for (const entry of value.failures) {
+    if (!object(entry) || typeof entry.host !== 'string' || proxyHost(`https://${entry.host}/`) !== entry.host || !Number.isSafeInteger(entry.count) || Number(entry.count) < 1 || typeof entry.error !== 'string' || entry.error.length > 4096 || typeof entry.profile !== 'string' || typeof entry.proxied !== 'boolean') throw new Error('Invalid failed request.');
+  }
+  return value as unknown as ProxySite;
+}

@@ -23,6 +23,8 @@ class Origin(BaseHTTPRequestHandler):
     def do_GET(self):
         origin_requests.append(self.path)
         body=b'<!doctype html><title>DIRECT fixture</title><h1>Direct</h1>'
+        if self.path.startswith('/failures'):
+            body=f'<!doctype html><title>Waiting</title><script>fetch("http://127.0.0.2:{origin.server_port}/failure").then(()=>document.title="Failure recorded").catch(()=>document.title="Failure recorded");</script>'.encode()
         self.send_response(200);self.send_header('Content-Type','text/html');self.send_header('Content-Length',str(len(body)));self.send_header('Cache-Control','no-store');self.end_headers();self.wfile.write(body)
     def log_message(self,*_): pass
 class Proxy(BaseHTTPRequestHandler):
@@ -108,6 +110,33 @@ try:
     snapshot=request({'type':'proxy.replace',**snapshot,'active':'direct'})
     navigate(f'http://127.0.0.1:{origin.server_port}/after-switch');title('DIRECT fixture');assert '/after-switch' in origin_requests
     results['direct_mode_after_proxy']=True
+    failure_url=f'http://127.0.0.1:{origin.server_port}/failures'
+    navigate(failure_url);title('Failure recorded')
+    site=request({'type':'proxy.site','url':failure_url})
+    assert site['profile']=='direct' and not site['proxied'],site
+    assert any(f['host']=='127.0.0.2' and f['count']>=1 for f in site['failures']),site
+    assert not rpc({'type':'proxy.site','url':'https://stale.invalid/'})['ok']
+    changed=json.loads(json.dumps(snapshot));changed['options']['-derpbirdDomainRules']={'127.0.0.2':'proxy'}
+    assert not rpc({'type':'proxy.replace',**changed,'currentURL':'https://stale.invalid/'})['ok']
+    snapshot=request({'type':'proxy.replace',**changed,'currentURL':failure_url})
+    site=request({'type':'proxy.site','url':failure_url})
+    assert site['failures'][0]['proxied'] and site['failures'][0]['count']>=1,site
+    navigate(failure_url);title('Failure recorded')
+    site=request({'type':'proxy.site','url':failure_url})
+    assert site['failures']==[],site
+    assert any('127.0.0.2:' in url and '/failure' in url for url in proxy_requests),proxy_requests
+    assert not site['proxied'],site
+    results['failed_requests_without_devtools_and_proxy_retry']=True
+    changed=json.loads(json.dumps(snapshot));changed['options']['-derpbirdDomainRules']['127.0.0.1']='proxy'
+    snapshot=request({'type':'proxy.replace',**changed,'currentURL':failure_url})
+    assert request({'type':'proxy.site','url':failure_url})['profile']=='proxy'
+    navigate(f'http://127.0.0.1:{origin.server_port}/domain-on');title('PROXIED fixture')
+    assert '/domain-on' not in origin_requests
+    changed=json.loads(json.dumps(snapshot));del changed['options']['-derpbirdDomainRules']['127.0.0.1']
+    snapshot=request({'type':'proxy.replace',**changed})
+    navigate(f'http://127.0.0.1:{origin.server_port}/domain-off');title('DIRECT fixture')
+    assert '/domain-off' in origin_requests
+    results['domain_toggle_preserves_global_default']=snapshot['active']=='direct'
     snapshot=request({'type':'proxy.replace',**snapshot,'active':'auto'})
     stop();start();until('!!window.ladybird&&!!document.querySelector("[role=tab]")')
     assert request({'type':'proxy.get'})==snapshot

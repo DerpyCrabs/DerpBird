@@ -1,5 +1,5 @@
 import { decodePageSources, type PageSourcesPort } from './page-sources';
-import { decodeProxySnapshot, type ProxyPort } from './proxy-protocol';
+import { decodeProxySite, decodeProxySnapshot, type ProxyPort } from './proxy-protocol';
 import { decodeImportStatus, decodeImportReport, type ImportPort } from './import-protocol';
 import { decodeSourceFolders, decodeDownloadedSource, sourceURL, sourceDownloadError } from './source-files';
 import { decodeCapturedCredential, validateCaptureToken, decodeCredentialExceptions, validateCredentialOrigin } from './credential-protocol';
@@ -107,7 +107,8 @@ export function createWebUIPort(
     async autofill(token, id) { await rpc(id ? { type: "credentials.autofill", token, id } : { type: "credentials.autofill-dismiss" }); },
     proxy: {
       get: async () => decodeProxySnapshot(await rpc({ type: 'proxy.get' })),
-      replace: async snapshot => decodeProxySnapshot(await rpc({ type: 'proxy.replace', ...decodeProxySnapshot(snapshot) })),
+      replace: async (snapshot, currentURL) => decodeProxySnapshot(await rpc({ type: 'proxy.replace', ...decodeProxySnapshot(snapshot), ...(currentURL ? { currentURL } : {}) })),
+      site: async url => decodeProxySite(await rpc({ type: 'proxy.site', url })),
     },
     importer: {
       status: async () => decodeImportStatus(await rpc({ type: 'import.status' })),

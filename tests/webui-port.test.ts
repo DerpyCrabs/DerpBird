@@ -247,3 +247,16 @@ test('import uses native profile and file-picker operations without sending CSV 
   f.message('derpbird.response', { requestId: 4, ok: true, value: null }); await dismiss;
   f.port.close();
 });
+
+test('proxy site IPC validates effective routes and guards mutations against navigation', async () => {
+  const f = setup(); f.ready();
+  const pending = f.port.proxy.site!('https://example.test/');
+  expect(f.sent[0].payload).toEqual({ type: 'proxy.site', url: 'https://example.test/' });
+  f.message('derpbird.response', { requestId: 1, ok: true, value: { url: 'https://example.test/', host: 'example.test', profile: 'direct', proxied: false, failures: [] } });
+  expect((await pending).proxied).toBe(false);
+  const save = f.port.proxy.replace({ revision: 2, active: 'direct', options: { schemaVersion: 2 } }, 'https://example.test/');
+  expect(f.sent[1].payload).toEqual({ type: 'proxy.replace', revision: 2, active: 'direct', options: { schemaVersion: 2 }, currentURL: 'https://example.test/' });
+  f.message('derpbird.response', { requestId: 2, ok: false, error: 'The active page changed; reopen the proxy switcher' });
+  await expect(save).rejects.toThrow('active page changed');
+  f.port.close();
+});
