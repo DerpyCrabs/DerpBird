@@ -25,7 +25,10 @@
     "test:fast": "python3 scripts/workflow.py fast",
     "test:native:fast": "python3 scripts/workflow.py native --engine --fast",
     "test:proxy": "python3 scripts/workflow.py proxy",
-    "test:rendering:unit": "python3 -m unittest discover -s tests/rendering -v"
+    "test:rendering:unit": "python3 -m unittest discover -s tests/rendering -v",
+    "demo:register": "bun demos/derpdesign/register.ts",
+    "test:layouts:engine": "python3 scripts/workflow.py build && python3 scripts/test-browser-layouts.py",
+    "test:demos": "bun test demos/derpdesign/fixture.test.ts"
   },
   "dependencies": {
     "@effectweb/lucide": "file:../EffectWeb/packages/lucide",
@@ -40,13 +43,14 @@
     "@effectweb/base-ui": "0.15.0"
   },
   "devDependencies": {
+    "@derpdesign/harness": "file:../DerpDesign/packages/harness",
     "@effectweb/compiler": "file:../EffectWeb/packages/compiler",
     "@tailwindcss/vite": "4.3.3",
     "@types/bun": "1.4.4",
+    "happy-dom": "21.0.4",
     "tailwindcss": "4.3.3",
     "typescript": "7.0.2",
-    "vite": "8.3.5",
-    "happy-dom": "21.0.4"
+    "vite": "8.3.5"
   },
   "patchedDependencies": {
     "@effectweb/base-ui@0.15.0": "patches/@effectweb%2Fbase-ui@0.15.0.patch"

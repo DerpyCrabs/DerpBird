@@ -1,0 +1,18 @@
+Proxy switcher UX concept — 15 November 2026
+
+Reference research
+- ZeroOmega actual popup screenshot: https://cy.terase.cn/2026/01/04/Web-zore-omega/use.jpg
+- Current popup structure: https://github.com/zero-peak/ZeroOmega/blob/master/omega-web/src/popup/index.html
+- Popup actions: https://github.com/zero-peak/ZeroOmega/blob/master/omega-web/src/popup/js/index.js
+- Project: https://github.com/zero-peak/ZeroOmega
+The screenshot establishes the global profile list, separators, selected row and Options action. Current source additionally exposes failed requests, add condition and temporary domain routing as separate paths. The screenshot is not asserted to show the newest release.
+
+Implemented UI — 16 November 2026
+The demo imports DerpBird's production ProxyManager and styles. There is no separate prototype UI. proxy-fixture.ts supplies deterministic proxy transport responses only.
+
+The original profile list remains contiguous. Its checkmark reflects the current domain's effective native route. One domain toggle changes exact-host routing while retaining the global default. Failed requests are grouped by destination host, with counts and an action to proxy that host. Counts remain until reload; adding a rule does not imply the request succeeded. Failed-host rules apply to that destination wherever requested.
+
+Native implementation includes persisted exact-host overrides and request failure telemetry without requiring DevTools. Unit, DOM, native routing and real network tests live in DerpBird. proxy-checks.json exercises the same production component in Ladybird through DerpDesign.
+
+Demo ID: derpbird-proxy-switcher
+Declaration: proxy-declaration.json

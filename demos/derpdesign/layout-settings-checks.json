@@ -1,0 +1,101 @@
+{
+  "steps": [
+    {
+      "action": "assert",
+      "selector": ".tab.active",
+      "contains": "Settings"
+    },
+    {
+      "action": "assert",
+      "framePath": [
+        "iframe[title=Settings]"
+      ],
+      "selector": ".layout-settings"
+    },
+    {
+      "action": "assert",
+      "selector": "[role=dialog]",
+      "exists": false
+    },
+    {
+      "action": "click",
+      "framePath": [
+        "iframe[title=Settings]"
+      ],
+      "selector": "input[name=browser-layout][value=compact]"
+    },
+    {
+      "action": "assert",
+      "selector": ".compact-chrome"
+    },
+    {
+      "action": "click",
+      "framePath": [
+        "iframe[title=Settings]"
+      ],
+      "selector": "input[name=tab-side][value=right] + span"
+    },
+    {
+      "action": "assert",
+      "selector": ".tabs-right.compact-chrome"
+    },
+    {
+      "action": "capture",
+      "label": "settings-compact-right"
+    },
+    {
+      "action": "click",
+      "selector": "[data-tab-id=research]"
+    },
+    {
+      "action": "assert",
+      "selector": ".layout-example-page",
+      "styles": {
+        "display": "block"
+      }
+    },
+    {
+      "action": "click",
+      "selector": "[data-tab-id^=settings-]"
+    },
+    {
+      "action": "assert",
+      "framePath": [
+        "iframe[title=Settings]"
+      ],
+      "selector": "input[name=browser-layout][value=compact]:checked"
+    },
+    {
+      "action": "capture",
+      "label": "settings-retained"
+    },
+    {
+      "action": "click",
+      "selector": "[data-tab-id=research]"
+    },
+    {
+      "action": "click",
+      "selector": "[aria-label=Menu]"
+    },
+    {
+      "action": "click",
+      "selector": "[aria-label=Settings]"
+    },
+    {
+      "action": "assert",
+      "selector": ".tab.active",
+      "contains": "Settings"
+    },
+    {
+      "action": "assert",
+      "framePath": [
+        "iframe[title=Settings]"
+      ],
+      "selector": "input[name=browser-layout][value=compact]:checked"
+    },
+    {
+      "action": "capture",
+      "label": "settings-menu-entry"
+    }
+  ]
+}

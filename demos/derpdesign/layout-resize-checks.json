@@ -1,0 +1,1 @@
+{"steps":[{"action":"drag","from":{"selector":"#sidebar-resize"},"to":{"selector":".layout-example-page","x":0.85,"y":0.5}},{"action":"capture","label":"right-sidebar-drag"}]}

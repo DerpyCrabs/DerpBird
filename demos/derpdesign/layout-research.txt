@@ -1,0 +1,34 @@
+DerpBird browser layout design — 2026-11-16
+
+Visual references inspected as downloaded images, not text-only documentation:
+- Chrome desktop: https://www.howtonote.jp/google-chrome/basic/img/p2-1.png
+  Familiar horizontal tab strip above navigation; back/forward/reload stay beside the address field. This screenshot is historical, used for the stable arrangement rather than current Chrome styling.
+- Vivaldi settings: https://i.computer-bild.de/imgs/1/4/6/7/6/5/5/7/Vertikale-Tabs-im-Browser-Firefox-Edge-und-Vivaldi-damit-ausruesten-2048x1152-9e8505dfc28f35d8.jpg?impolicy=full_content
+  Small browser diagrams communicate position faster than labels. The screenshot shows left-side tabs, full-width navigation and position choices in settings.
+- Zen single toolbar: https://dl.flathub.org/media/app/zen_browser/zen/d1073f0e9db7b06f2593b8cf60dc9950/screenshots/image-1_orig.png
+  Navigation and a compact domain field sit above vertical tabs, leaving the page full height.
+- Zen floating editor: https://docs.zen-browser.app/_next/static/media/bookmark-popup-single-toolbar.9f1dd38a.png
+  Large central field with title/domain result rows and explicit Switch to Tab actions.
+
+Behavior sources:
+https://help.vivaldi.com/desktop/appearance-customization/edit-toolbars/
+https://help.vivaldi.com/desktop/navigation/address-bar/
+https://docs.zen-browser.app/user-manual/urlbar
+
+Design decisions:
+Four recognizable presets: Classic, Side tabs, Bottom address, Compact sidebar.
+Side tabs exposes Left/Right and Top/Bottom; Compact exposes Left/Right. Keep side and address preferences when switching presets. Immediate changes, no Apply/restart step.
+Preserve DerpBird's existing 34px horizontal tab row, 40px navigation row, typography, colors, tab menus and active-state treatment. Use green-accent browser diagrams rather than copying another browser's theme.
+All full-width address layouts move the entire navigation row together. Suggestions open toward the page, upward for bottom placement.
+Compact keeps a visible domain with the full URL on hover. Click or Ctrl+L opens a centered, full-URL editor with suggestions and open-tab switching. Up/Down, Enter, Escape and outside-click are supported. The menu stays in the sidebar's top row.
+The settings dialog is scrollable at narrow sizes. Radio inputs retain keyboard semantics. Right-side resizing reverses the pointer delta.
+
+Scope:
+This is an interactive design prototype, opt-in through shellView's layoutDesign argument and external DerpDesign conditions. Existing native settings are not replaced. Position preferences are session-only; native persistence, native compositor placement and native keyboard routing still require product integration. The sample article and suggestion/history corpus are deterministic fixtures, not live browsing.
+
+Delivery:
+Demo id: derpbird-browser-layouts. Ten Ladybird panes: eight combinations, settings, palette.
+layout-declaration.ts is the portable demo definition.
+register-layout.ts configures and selects only an explicitly supplied owned headless session.
+publish-layout.ts registers the demo inactive in an already-running desktop service; it never launches or selects a demo.
+Verification: real Ladybird pane captures, settings switching, palette click/Ctrl+L/keyboard tab switching/Escape/outside click, bottom suggestions, tab context menu, right sidebar drag (240px to 356px). Settings also inspected at 480px. Source tests cover interrupted/replaced resize handles on both sides.
