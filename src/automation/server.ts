@@ -27,7 +27,7 @@ export function createAgentServer(sessions: AgentSessions) {
       catch (error) { return { ...text(error instanceof Error ? error.message : String(error)), isError: true }; }
     });
   }
-  tool('derpbird_session', 'Manage browser connections. Launch creates a separate agent browser with an isolated profile. Attach connects to an explicitly enabled user browser. Closing an attached session only disconnects.', {
+  tool('derpbird_session', 'Manage browser connections. Launch creates a separate background agent window sharing your normal profile, cookies and logins. Closing it closes only that window. Attach connects to a running browser owned by the same OS user. Closing an attached session only disconnects.', {
     action: z.enum(['list', 'discover', 'launch', 'attach', 'select', 'close']), socket: z.string().optional(), id: z.string().optional(),
   }, async args => {
     if (args.action === 'discover') return text(await sessions.discover());
@@ -53,6 +53,7 @@ export function createAgentServer(sessions: AgentSessions) {
   }, true);
   tool('browser_click', 'Click an element using native browser input.', { ...targeting, doubleClick: z.boolean().optional(), button: z.enum(['left', 'right', 'middle']).optional(), modifiers: z.array(z.enum(['Alt', 'Control', 'ControlOrMeta', 'Meta', 'Shift'])).optional() }, async args => text(await sessions.browser.click((await resolveTarget(args))!, args.button, args.doubleClick, args.modifiers)));
   tool('browser_hover', 'Hover over an element using native pointer input.', targeting, async args => text(await sessions.browser.hover((await resolveTarget(args))!)));
+  tool('browser_scroll', 'Scroll with native wheel input at a target element or the viewport center. Deltas are CSS pixels.', { ...targeting, deltaY:z.number().int().min(-100000).max(100000), deltaX:z.number().int().min(-100000).max(100000).optional() }, async args => text(await sessions.browser.scroll(args.deltaY,args.deltaX,await resolveTarget(args,false))));
   tool('browser_drag', 'Drag an element to another element using native pointer input.', { startElement: element, startTarget: target, startRef: ref.optional(), endElement: element, endTarget: target, endRef: ref.optional() }, async args => text(await sessions.browser.drag((await resolveTarget({ target: args.startTarget, ref: args.startRef }))!, (await resolveTarget({ target: args.endTarget, ref: args.endRef }))!)));
   tool('browser_select_option', 'Select options by value in a native select element.', { ...targeting, values: z.array(z.string()).min(1) }, async args => text(await sessions.browser.selectOption((await resolveTarget(args))!, args.values)));
   tool('browser_type', 'Type text into an editable element. By default replaces the existing text; slowly preserves it.', { ...targeting, text: z.string().max(100000), submit: z.boolean().optional(), slowly: z.boolean().optional() }, async args => text(await sessions.browser.type((await resolveTarget(args))!, args.text, args.submit, args.slowly)));
@@ -71,7 +72,7 @@ export function createAgentServer(sessions: AgentSessions) {
     return { content: [{ type: 'image', mimeType: 'image/png', data: result.data }, ...(args.filename ? text(`Saved ${args.filename}`).content : [])] };
   }, true);
   tool('browser_console_messages', 'Return captured console messages for the selected tab.', { level: z.enum(['error', 'warning', 'info', 'debug']).default('info') }, async args => { await sessions.browser.target(); return text(sessions.browser.consoleMessages(args.level)); }, true);
-  tool('browser_network_requests', 'Return captured network events for the selected tab.', {}, async () => { await sessions.browser.target(); return text(sessions.browser.networkRequests()); }, true);
+  tool('browser_network_requests', 'Return compact, paginated network events for the selected tab. Filter by URL substring, HTTP method or status. Use details for headers and complete event data.', { url:z.string().optional(), method:z.string().optional(), status:z.number().int().optional(), offset:z.number().int().nonnegative().optional(), limit:z.number().int().min(1).max(200).optional(), details:z.boolean().optional() }, async args => { await sessions.browser.target(); return text(sessions.browser.networkRequests(args)); }, true);
   tool('derpbird_inspect', 'Inspect an element DOM, computed styles and layout, or open the browser’s native DevTools for the selected tab.', { ref: ref.optional(), properties: z.array(z.string()).optional(), openDevTools: z.boolean().optional() }, async args => {
     if (args.openDevTools) await sessions.browser.openDevTools();
     if (args.ref) return text(await sessions.browser.inspect(args.ref, args.properties));
@@ -118,8 +119,8 @@ export function createAgentServer(sessions: AgentSessions) {
     source: z.string().max(2 * 1024 * 1024).optional(), name: z.string().optional(),
     revision: z.number().int().nonnegative().optional().describe('Expected registry revision, returned by list/get'),
   };
-  tool('derpbird_userscript', 'Manage persistent userscripts in the selected browser profile through the real GM runtime. Metadata, grants, dependencies and run-at are enforced by DerpBird. Reload the page to test loading phases. Use an isolated session for disposable tests.', sourceFields, async args => text(await manageSource(sessions.browser, 'scripts', args)));
-  tool('derpbird_userstyle', 'Manage persistent UserCSS/styles in the selected browser profile using the normal compiler and matching rules. Changes apply through the native style manager. Use an isolated session for disposable tests.', { ...sourceFields, values: z.record(z.string(), z.union([z.string(), z.number()])).optional() }, async args => text(await manageSource(sessions.browser, 'styles', args)));
+  tool('derpbird_userscript', 'Manage persistent userscripts in the selected browser profile through the real GM runtime. Metadata, grants, dependencies and run-at are enforced by DerpBird. Reload the page to test loading phases. Changes affect the shared user profile; disposable automated tests can explicitly configure a test-owned DERPBIRD_PROFILE.', sourceFields, async args => text(await manageSource(sessions.browser, 'scripts', args)));
+  tool('derpbird_userstyle', 'Manage persistent UserCSS/styles in the selected browser profile using the normal compiler and matching rules. Changes apply through the native style manager. Changes affect the shared user profile; disposable automated tests can explicitly configure a test-owned DERPBIRD_PROFILE.', { ...sourceFields, values: z.record(z.string(), z.union([z.string(), z.number()])).optional() }, async args => text(await manageSource(sessions.browser, 'styles', args)));
   return server;
 }
 
@@ -129,20 +130,19 @@ if (import.meta.main) {
   if (args.includes('--help')) {
     console.log(`DerpBird MCP browser adapter
 
-Usage: bun src/automation/server.ts [--isolated | --socket PATH]
+Usage: derpbird-mcp [--launch | --socket PATH]
 
---isolated      Open a separate agent window with a disposable profile.
---socket PATH   Attach to an enabled browser. Disconnect never closes it.
+--launch      Open a background agent window on your normal profile.
+--socket PATH   Attach to a running browser. Disconnect never closes it.
 No arguments   Let the agent use derpbird_session to launch or attach.
 
-In your browser: Menu > Allow AI access to all windows, or Ctrl+Alt+A.
-The agent can discover enabled browsers with derpbird_session(discover).
-AI · Stop revokes all connections. The socket path is in its tooltip.
+Local AI access starts automatically. Discover running browsers with
+derpbird_session(discover). The socket is accessible only to the same OS user.
 
-MCP client config (replace the path with your checkout):
-{"mcpServers":{"derpbird":{"command":"bun","args":["/absolute/path/DerpBird/src/automation/server.ts"]}}}
+MCP client config for the installed package:
+{"mcpServers":{"derpbird":{"command":"/usr/bin/derpbird-mcp"}}}
 
-Build first with: python3 scripts/workflow.py build
+Install the Arch package first. For checkout development: bun src/automation/server.ts
 The server inherits your desktop display environment.
 For Codex, forward it explicitly in ~/.codex/config.toml:
 [mcp_servers.derpbird]
@@ -153,8 +153,8 @@ Supports target CSS selectors and snapshot refs (legacy ref also accepted).
 This is not a Playwright runtime or a CDP endpoint. browser_evaluate runs page
 JavaScript, not arbitrary Playwright code. Snapshots include up to 32 frames;
 CSS selectors address the top document, while snapshot refs also address frames.
-Screenshots are PNG. Source tools install persistent profile entries; use an
-isolated session for disposable GM/UserCSS tests. Reload tests loading phases.
+Screenshots are PNG. Source tools install persistent profile entries; use a
+test-owned profile for disposable GM/UserCSS tests. Reload tests loading phases.
 derpbird_devtools shares the native inspector, including its capture limits.
 Access covers the selected browser process, including all its windows.
 `);
@@ -164,7 +164,7 @@ Access covers the selected browser process, including all its windows.
   if (socketIndex >= 0) {
     const socket = args[socketIndex + 1]; if (!socket) throw new Error('--socket requires a path');
     await sessions.attach(socket);
-  } else if (args.includes('--isolated')) await sessions.launch();
+  } else if (args.includes('--launch')) await sessions.launch();
   const server = createAgentServer(sessions);
   server.server.onclose = () => { void sessions.closeAll(); };
   for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { void sessions.closeAll().finally(() => process.exit(0)); });

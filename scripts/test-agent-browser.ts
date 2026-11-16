@@ -1,3 +1,5 @@
+import { useTestProfile } from './agent-test-profile';
+await useTestProfile();
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { symlink, unlink } from 'node:fs/promises';
@@ -24,7 +26,7 @@ try {
   await symlink(first.socket, advertisedSocket);
   try { assert((await sessions.discover()).some(browser => browser.socket === advertisedSocket && browser.windows.length === 1)); }
   finally { await unlink(advertisedSocket); }
-  console.log('Launched isolated browser', first.id);
+  console.log('Launched agent window', first.id);
   console.log('Windows', JSON.stringify(await sessions.browser.windows()));
   console.log('Contexts', JSON.stringify(await sessions.browser.connection.request('browsingContext.getTree')));
   let snapshot = await sessions.browser.navigate(fixture);
@@ -47,7 +49,7 @@ try {
   console.log('Native input and screenshot passed');
   assert(sessions.browser.consoleMessages().some(message => message.text?.includes('applied')));
   await sessions.browser.evaluate('() => new Promise(resolve => setTimeout(resolve, 100))');
-  assert(sessions.browser.networkRequests().some(event => event.request?.url?.endsWith('/data')));
+  assert(sessions.browser.networkRequests({url:'/data'}).events.some(event => event.url?.endsWith('/data')));
   await sessions.browser.evaluate(`() => { document.querySelector('#probe').onpointerover = e => window.hoverTrusted = e.isTrusted; document.querySelector('#drop').onpointerup = e => window.dropTrusted = e.isTrusted; }`);
   await sessions.browser.pressKey('Tab');
   // Move away first: the previous click already left the pointer over Apply.
@@ -219,11 +221,11 @@ try {
   await sessions.browser.evaluate('() => { localStorage.agent="first"; }');
   await sessions.launch();
   await sessions.browser.navigate(fixture);
-  assert.equal(await sessions.browser.evaluate('() => localStorage.agent'), undefined);
+  assert.equal(await sessions.browser.evaluate('() => localStorage.agent'), 'first');
   await sessions.close();
   sessions.select(first.id);
   assert.equal(await sessions.browser.evaluate('() => localStorage.agent'), 'first');
-  console.log('Two independent agent profiles passed');
+  console.log('Two agent windows share the same profile');
 
   const originalContext = await sessions.browser.target();
   const originalTabCount = (await sessions.browser.tabs()).length;
@@ -263,29 +265,12 @@ try {
   const contexts = await sessions.browser.connection.request('browsingContext.getTree');
   const chrome = contexts.contexts.find((item: any) => item.url.startsWith('about:derpbird'));
   assert(chrome, 'Shell must be present for native UI verification');
-  const shellResult = await sessions.browser.connection.request('script.evaluate', { target: { context: chrome.context }, expression: `Array.from(document.querySelectorAll('button')).find(el => el.getAttribute('aria-label')==='Disable AI browser access')`, awaitPromise: false });
-  assert.equal(shellResult.type, 'success');
-  assert(shellResult.result.sharedId, 'Visible stop control must be rendered');
-  const chromeScreenshot = await sessions.browser.connection.request('browsingContext.captureScreenshot', { context: chrome.context, origin: 'viewport', format: { type: 'image/png' } });
-  await Bun.write(join(out, 'shell.png'), Buffer.from(chromeScreenshot.data, 'base64'));
-  // Real pointer input into the rendered shell must revoke existing and future connections.
-  const stopped = sessions.browser.connection.request('input.performActions', { context: chrome.context, actions: [{ type: 'pointer', id: 'stop-test', parameters: { pointerType: 'mouse' }, actions: [
-    { type: 'pointerMove', x: 0, y: 0, origin: { type: 'element', element: { sharedId: shellResult.result.sharedId } } },
-    { type: 'pointerDown', button: 0 }, { type: 'pointerUp', button: 0 },
-  ] }] });
-  await stopped.catch(error => assert.match(error.message, /disconnect|closed/i));
-  await new Promise(resolve => setTimeout(resolve, 100));
-  await assert.rejects(NativeConnection.connect(first.socket));
-  console.log('Rendered AI stop control revoked browser access');
-  assert.equal(await Bun.spawn(['wtype', '-M', 'ctrl', '-M', 'alt', '-k', 'a', '-m', 'alt', '-m', 'ctrl']).exited, 0);
-  const reconnectDeadline = Date.now() + 5000;
-  for (;;) {
-    try { await attached.attach(first.socket); break; }
-    catch (error) { if (Date.now() >= reconnectDeadline) throw error; await new Promise(resolve => setTimeout(resolve, 100)); }
-  }
-  assert.equal(await attached.browser.evaluate('() => document.title'), 'Agent browser fixture');
+  const shellResult = await sessions.browser.connection.request('script.evaluate', { target: { context: chrome.context }, expression: `document.querySelector('[aria-label="Disable AI browser access"]') === null && document.querySelector('[aria-label="Enable AI browser access"]') === null`, awaitPromise: false });
+  assert.equal(shellResult.result.value, true, 'Local automation needs no opt-in controls');
+  await attached.attach(first.socket);
   await attached.close();
-  console.log('Human keyboard grant re-enabled access to the surviving browser');
+  assert.equal((await sessions.browser.currentShell({ type: 'snapshot' })).automation.enabled, true);
+  console.log('Local automation remains available after attached client disconnect');
 } catch (error) {
   console.error(JSON.stringify(sessions.diagnostics(), null, 2));
   throw error;

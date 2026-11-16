@@ -1,7 +1,7 @@
 import { scriptResult, type BrowserConnection, type BrowserEvent } from './connection';
 
 export interface AgentTab { id: string; context?: string; url: string; title: string; active: boolean; workspace: string; windowId: string; fileChooser?: boolean }
-export interface AgentWindow { windowId: string; profile: string; private: boolean; tabs: Omit<AgentTab, 'windowId'>[] }
+export interface AgentWindow { windowId: string; agentId?: string; activityFeedback?: boolean; profile: string; private: boolean; tabs: Omit<AgentTab, 'windowId'>[] }
 interface ElementReference { sharedId: string; context: string; tabContext: string }
 
 /** Familiar browser tool operations, with native BiDi input and document-scoped refs. */
@@ -10,6 +10,7 @@ export class AgentBrowser {
   windowId: string | undefined;
   private references = new Map<string, ElementReference>();
   private nextRef = 0;
+  private needsSettle = new Set<string>();
   private events: BrowserEvent[] = [];
   private pendingOperation: { completion: Promise<unknown>; context: string } | undefined;
   private unsubscribe: () => void;
@@ -26,7 +27,63 @@ export class AgentBrowser {
   /** A page prompt suspends the original script/input. Return control so the next tool can answer it. */
   private async run<T = any>(method: string, params: Record<string, unknown>, context: string): Promise<T> {
     if (this.pendingOperation) throw new Error('A browser dialog is awaiting browser_handle_dialog; the previous operation is still suspended');
-    return this.observe(this.connection.request<T>(method, params), context);
+    const input = method === 'input.performActions';
+    if (input) this.needsSettle.add(context);
+    const feedback = input || method === 'script.callFunction';
+    if (feedback) await this.activity(context, input ? 'input' : 'evaluate', params);
+    const heartbeat = feedback ? setInterval(() => { void this.activity(context, 'keepalive').catch(() => {}); }, 700) : undefined;
+    try { return await this.observe(this.connection.request<T>(method, params), context); }
+    finally { clearInterval(heartbeat); if (feedback) await this.activity(context, 'end').catch(() => {}); }
+  }
+  private async activity(context: string, phase: string, params: Record<string, any> = {}) {
+    const windows = await this.windows();
+    const window = windows.find(w => w.tabs.some(t => t.context === this.context));
+    if (!window?.activityFeedback) return;
+    const tab = window.tabs.find(t => t.context === this.context)!;
+    let kind = phase;
+    let point: any, from: any, field: any;
+    if (phase === 'input') {
+      const sources = params.actions ?? [];
+      const pointer = sources.find((s: any) => s.type === 'pointer');
+      kind = pointer ? (pointer.actions.filter((a: any) => a.type === 'pointerMove').length > 1 ? 'drag' : pointer.actions.some((a: any) => a.type === 'pointerDown') ? 'click' : 'move') : sources.some((s: any) => s.type === 'wheel') ? 'scroll' : 'type';
+      // Frame-local coordinates cannot be drawn in the top viewport without a transform.
+      // Keep a truthful activity status for those operations instead of a misplaced pointer.
+      if (context === this.context) {
+        const moves = (pointer?.actions ?? []).filter((a: any) => a.type === 'pointerMove');
+        const locate = async (move: any) => {
+          if (move.origin?.type === 'element') return scriptResult(await this.connection.request('script.callFunction', {
+            target: { context }, functionDeclaration: `el => { const r=el.getClientRects()[0]; if(!r)return null; return {x:(Math.max(0,r.left)+Math.min(innerWidth,r.right))/2,y:(Math.max(0,r.top)+Math.min(innerHeight,r.bottom))/2}; }`,
+            arguments: [{sharedId:move.origin.element.sharedId}], awaitPromise:false,
+          }));
+          return (!move.origin || move.origin === 'viewport') ? {x:move.x,y:move.y} : undefined;
+        };
+        if (moves.length) { from = await locate(moves[0]); point = await locate(moves[moves.length-1]); }
+        const wheel=sources.find((s:any)=>s.type==='wheel')?.actions.find((a:any)=>a.type==='scroll');
+        if(wheel) point={x:wheel.x,y:wheel.y};
+      }
+    }
+    if (kind === 'type' && context === this.context) field = scriptResult(await this.connection.request('script.callFunction', {
+      target:{context}, functionDeclaration:`() => {const e=document.activeElement;if(!e||e===document.body)return null;const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}}`,awaitPromise:false,
+    }));
+    await this.shell(window.windowId, {type:'automation.activity',tabId:tab.id,kind,point,from,field});
+  }
+  private async settle() {
+    const contexts = [...this.needsSettle]; this.needsSettle.clear();
+    for (const context of contexts) {
+      if (this.pendingOperation) return;
+      try { await this.connection.request('script.callFunction', {
+        target:{context}, awaitPromise:true,
+        functionDeclaration:`() => new Promise(resolve => {
+          let quiet; const done=()=>{clearTimeout(quiet);clearTimeout(cap);observer.disconnect();resolve();};
+          const observer=new MutationObserver(()=>{clearTimeout(quiet);quiet=setTimeout(done,80);});
+          observer.observe(document,{subtree:true,childList:true,attributes:true,characterData:true});
+          const cap=setTimeout(done,600);quiet=setTimeout(done,80);
+        })`,
+      }); } catch (error) {
+        // Navigation can replace the input document. Snapshot targets the new document.
+        if (!/no such|discarded|destroyed|navigation|realm/i.test(String(error))) throw error;
+      }
+    }
   }
   private async observe<T>(request: Promise<T>, context: string): Promise<T> {
     let settled = false, monitoring = true;
@@ -149,7 +206,7 @@ export class AgentBrowser {
   }
   private reference(ref: string): ElementReference {
     const element = this.references.get(ref);
-    if (!element || element.tabContext !== this.context) throw new Error('Stale or unknown element reference. Take a fresh browser_snapshot.');
+    if (!element || element.tabContext !== this.context) throw new Error('Stale or unknown element reference: the document or element changed. Take browser_snapshot again, or use a unique CSS target. The action was not retried.');
     return element;
   }
   async resolveTarget(target: string): Promise<string> {
@@ -161,6 +218,8 @@ export class AgentBrowser {
       return nodes[0];
     }`);
     if (!node?.sharedId) throw new Error('Selector did not resolve to an element');
+    const existing = [...this.references].find(([, value]) => value.context === this.context && value.sharedId === node.sharedId);
+    if (existing) return existing[0];
     const ref = `e${++this.nextRef}`;
     this.references.set(ref, { context: this.context!, tabContext: this.context!, sharedId: node.sharedId });
     return ref;
@@ -170,6 +229,7 @@ export class AgentBrowser {
     const dialog = await this.connection.request('derpbird.dialog', { context });
     if (dialog) return `Open ${dialog.type} dialog: ${dialog.message ?? ''}\nUse browser_handle_dialog to continue.`;
     if ((await this.tabs()).find(tab => tab.context === context)?.fileChooser) return 'File chooser open. Use browser_file_upload with absolute paths, or omit paths to cancel.';
+    await this.settle();
     const reference = ref ? this.reference(ref) : undefined;
     let tree = await this.connection.request('derpbird.snapshot', { context: reference?.context ?? context });
     const frameTrees: { context: string; url: string; tree: any }[] = [];
@@ -191,13 +251,16 @@ export class AgentBrowser {
       tree = find(tree);
       if (!tree) throw new Error('Element is not present in the accessibility tree');
     }
-    this.references.clear();
+    const previous = new Map([...this.references].map(([id, value]) => [`${value.context}:${value.sharedId}`, id]));
+    // A new snapshot must not invalidate handles to unchanged DOM nodes.
+    // Scoped/depth-limited snapshots also leave other handles intact until navigation.
+    while (this.references.size > 10000) this.references.delete(this.references.keys().next().value!);
     const lines: string[] = [];
     const walk = (node: any, depth: number, frameContext: string) => {
       if (lines.length >= 3000 || depth > maxDepth) return;
       let ref = '';
       if (node.sharedId && node.type === 'element') {
-        ref = `e${++this.nextRef}`;
+        ref = previous.get(`${frameContext}:${node.sharedId}`) ?? `e${++this.nextRef}`;
         this.references.set(ref, { sharedId: node.sharedId, context: frameContext, tabContext: context });
       }
       const role = node.role || (node.type === 'text' ? 'text' : 'generic');
@@ -289,6 +352,14 @@ export class AgentBrowser {
     ] }], this.reference(ref).context);
     return this.snapshot();
   }
+  async scroll(deltaY: number, deltaX = 0, ref?: string) {
+    const context = ref ? this.reference(ref).context : await this.target();
+    if (ref) await this.actionable(ref);
+    const position = ref ? await this.evaluate(`el => {const r=el.getBoundingClientRect();return {x:Math.floor((Math.max(0,r.left)+Math.min(innerWidth,r.right))/2),y:Math.floor((Math.max(0,r.top)+Math.min(innerHeight,r.bottom))/2)}}`,ref)
+      : await this.evaluate('()=>({x:Math.floor(innerWidth/2),y:Math.floor(innerHeight/2)})');
+    await this.actions([{type:'wheel',id:'wheel',actions:[{type:'scroll',...position,deltaX,deltaY,duration:250,origin:'viewport'}]}],context);
+    return this.snapshot();
+  }
   async drag(startRef: string, endRef: string) {
     await this.target();
     await this.actionable(startRef);
@@ -338,7 +409,18 @@ export class AgentBrowser {
     const levels = ['debug', 'info', 'warn', 'error'];
     return this.events.filter(event => event.method === 'log.entryAdded' && (!this.context || event.params.source?.context === this.context) && levels.indexOf(event.params.level) >= levels.indexOf(level === 'warning' ? 'warn' : level)).map(event => event.params);
   }
-  networkRequests() { return this.events.filter(event => event.method.startsWith('network.') && (!this.context || event.params.context === this.context)).map(event => ({ event: event.method, ...event.params })); }
+  networkRequests(options: {url?:string;method?:string;status?:number;offset?:number;limit?:number;details?:boolean} = {}) {
+    const events = this.events.filter(event => event.method.startsWith('network.') && (!this.context || event.params.context === this.context))
+      .filter(event => (!options.url || String(event.params.request?.url ?? event.params.response?.url ?? '').includes(options.url))
+        && (!options.method || event.params.request?.method?.toUpperCase() === options.method.toUpperCase())
+        && (options.status === undefined || event.params.response?.status === options.status));
+    const offset=options.offset??0,limit=Math.min(200,Math.max(1,options.limit??50));
+    const page=events.slice(offset,offset+limit);
+    return {total:events.length,offset,nextOffset:offset+page.length<events.length?offset+page.length:null,events:page.map(event => options.details ? {event:event.method,...event.params} : {
+      event:event.method,id:event.params.request?.request,url:event.params.request?.url ?? event.params.response?.url,
+      method:event.params.request?.method,status:event.params.response?.status,mimeType:event.params.response?.mimeType,
+    })};
+  }
 }
 
 function keyCode(key: string): string {

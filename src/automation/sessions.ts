@@ -1,11 +1,11 @@
-import { mkdtemp, mkdir, rm, stat, readdir } from 'node:fs/promises';
-import { tmpdir, userInfo } from 'node:os';
+import { stat, readdir, realpath, readFile } from 'node:fs/promises';
+import { tmpdir, userInfo, homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { NativeConnection } from './connection';
 import { AgentBrowser } from './browser';
 
-interface Session { id: string; mode: 'attached' | 'isolated'; socket: string; browser: AgentBrowser; process?: ChildProcess; directory?: string; log?: () => string }
+interface Session { id: string; mode: 'attached' | 'agent-window'; socket: string; browser: AgentBrowser; ownedWindow?: string; log?: () => string }
 export class AgentSessions {
   private sessions = new Map<string, Session>();
   private selected: string | undefined;
@@ -15,7 +15,7 @@ export class AgentSessions {
   diagnostics() { return [...this.sessions.values()].map(session => ({ id: session.id, stderr: session.log?.() })); }
   get browser() {
     const session = this.selected ? this.sessions.get(this.selected) : undefined;
-    if (!session) throw new Error('No browser session. Use derpbird_session to launch an isolated browser or attach to your browser.');
+    if (!session) throw new Error('No browser session. Use derpbird_session to open an agent window on your profile or attach to your browser.');
     return session.browser;
   }
   select(id: string) { if (!this.sessions.has(id)) throw new Error('Unknown session'); this.selected = id; return this.list(); }
@@ -46,37 +46,65 @@ export class AgentSessions {
     return this.list();
   }
   async launch() {
-    if (this.sessions.size >= 8) throw new Error('Close an unused session before opening another browser');
-    if (process.platform === 'linux' && !process.env.WAYLAND_DISPLAY && !process.env.DISPLAY && !['offscreen', 'minimal'].includes(process.env.QT_QPA_PLATFORM ?? '')) {
-      throw new Error('No desktop display was forwarded to the MCP server. In Codex, add DISPLAY, WAYLAND_DISPLAY and XDG_RUNTIME_DIR to mcp_servers.derpbird.env_vars, then start a new session.');
-    }
-    const directory = await mkdtemp(join(tmpdir(), 'derpbird-agent-'));
-    const profile = join(directory, 'profile'), socket = join(directory, 'browser.sock');
-    await mkdir(join(profile, 'data'), { recursive: true, mode: 0o700 });
-    await mkdir(join(profile, 'config'), { recursive: true, mode: 0o700 });
-    await Bun.write(join(profile, 'data/ImportWelcomeSeen'), '1');
-    await Bun.write(join(profile, 'config/Settings.json'), JSON.stringify({ firstRunComplete: true, restorePreviousSession: false, backgroundNetworking: { enabled: false } }));
-    const child = spawn('python3', [join(this.root, 'scripts/run.py'), 'about:blank'], {
-      cwd: this.root, env: { ...process.env, DERPBIRD_PROFILE: profile, DERPBIRD_AUTOMATION_SOCKET: socket, DERPBIRD_AGENT: '1' }, stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    let stderr = '', spawnError: Error | undefined;
-    child.stderr?.on('data', bytes => { stderr = (stderr + bytes.toString()).slice(-8192); });
-    child.stdout?.on('data', bytes => { stderr = (stderr + bytes.toString()).slice(-8192); });
-    child.on('error', error => { spawnError = error; });
-    try {
+    const profile = resolve(process.env.DERPBIRD_PROFILE || join(process.env.XDG_DATA_HOME || join(homedir(), '.local/share'), 'derpbird/profile'));
+    const profileData = await realpath(join(profile, 'data')).catch(() => join(profile, 'data'));
+    const agentId = crypto.randomUUID();
+    const findBrowser = async () => (await this.discover()).find((entry: any) => entry.windows?.some((window: any) => window.profile === profileData && !window.private));
+    let available = await findBrowser();
+    let stderr = '';
+    if (!available) {
+      const pid = Number(await readFile(join(profile, 'runtime/Ladybird.pid'), 'utf8').catch(() => ''));
+      let running = false;
+      if (Number.isInteger(pid) && pid > 0) {
+        try { process.kill(pid, 0); running = true; } catch (error: any) { running = error.code === 'EPERM'; }
+      }
+      if (running) throw new Error('This profile is open in an older browser without automatic AI access. Reopen DerpBird to load the installed update; existing tabs and profile have not been touched.');
+      const launcher = process.env.DERPBIRD_EXECUTABLE;
+      // Use the real profile. The browser's normal single-instance coordination remains authoritative.
+      const env = { ...process.env, DERPBIRD_PROFILE: profile, DERPBIRD_AGENT_WINDOW: agentId };
+      delete (env as NodeJS.ProcessEnv).DERPBIRD_AUTOMATION_SOCKET;
+      delete (env as NodeJS.ProcessEnv).DERPBIRD_AGENT;
+      const child = spawn(launcher || 'python3', launcher ? ['about:blank'] : [join(this.root, 'scripts/run.py'), 'about:blank'], {
+        cwd: launcher ? tmpdir() : this.root, env, stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let spawnError: Error | undefined;
+      child.on('error', error => { spawnError = error; });
+      child.stderr?.on('data', bytes => { stderr = (stderr + bytes.toString()).slice(-8192); });
+      child.stdout?.on('data', bytes => { stderr = (stderr + bytes.toString()).slice(-8192); });
       const deadline = Date.now() + 30000;
-      for (;;) {
+      while (!(available = await findBrowser())) {
         if (spawnError) throw spawnError;
-        if (child.exitCode !== null || child.signalCode) throw new Error(`Agent browser exited (${child.signalCode ?? child.exitCode}): ${stderr}`);
-        try { await stat(socket); break; } catch (error: any) { if (error.code !== 'ENOENT') throw error; }
-        if (Date.now() >= deadline) throw new Error(`Agent browser startup timed out: ${stderr}`);
+        if (child.exitCode !== null || child.signalCode) throw new Error(`The running browser must load the installed update before it can open agent windows on this profile. Your profile was not replaced. Browser output: ${stderr}`);
+        if (Date.now() >= deadline) throw new Error(`Browser startup timed out: ${stderr}`);
         await new Promise(resolve => setTimeout(resolve, 100));
       }
-      await this.attach(socket);
-      const session = this.sessions.get(this.selected!)!;
-      Object.assign(session, { mode: 'isolated', process: child, directory, log: () => stderr });
+      child.unref();
+    }
+    await this.attach(available.socket);
+    const session = this.sessions.get(this.selected!)!;
+    try {
+      let windows = await session.browser.windows();
+      let owned = windows.find(window => window.agentId === agentId);
+      if (!owned) {
+        const host = windows.find(window => window.profile === profileData && !window.private)!;
+        if (host.agentId === undefined) throw new Error('Reopen DerpBird to load the installed agent-window update. Your existing windows have not been changed.');
+        await session.browser.shell(host.windowId, { type: 'command', command: { type: 'window.new', private: false, url: 'about:blank', agentId } });
+      }
+      const deadline = Date.now() + 15000;
+      for (;;) {
+        windows = await session.browser.windows();
+        owned = windows.find(window => window.agentId === agentId);
+        if (owned) session.ownedWindow = owned.windowId;
+        if (owned?.tabs.some(tab => tab.context)) break;
+        if (Date.now() >= deadline) throw new Error('Agent window did not become ready. The running browser may need the installed update.');
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      session.mode = 'agent-window';
+      session.log = () => stderr;
+      const tabs = await session.browser.tabs();
+      await session.browser.select(tabs.findIndex(tab => tab.windowId === owned!.windowId && !!tab.context));
       return this.list();
-    } catch (error) { await stop(child); await rm(directory, { recursive: true, force: true }); throw error; }
+    } catch (error) { await this.close(session.id); throw error; }
   }
   async close(id = this.selected) {
     if (!id) return;
@@ -84,19 +112,10 @@ export class AgentSessions {
     if (!session) throw new Error('Unknown session');
     this.sessions.delete(id);
     if (this.selected === id) this.selected = undefined;
-    session.browser.close();
-    // Attaching never transfers ownership of the user's process or profile.
-    if (session.process) await stop(session.process);
-    if (session.directory) await rm(session.directory, { recursive: true, force: true });
+    try {
+      if (session.ownedWindow && (await session.browser.windows()).some(window => window.windowId === session.ownedWindow))
+        await session.browser.shell(session.ownedWindow, { type: 'command', command: { type: 'window.close' } });
+    } finally { session.browser.close(); }
   }
   async closeAll() { for (const id of this.sessions.keys()) await this.close(id); }
-}
-
-async function stop(child: ChildProcess) {
-  if (child.exitCode !== null || child.signalCode || !child.pid) return;
-  await new Promise<void>(resolve => {
-    const timer = setTimeout(() => child.kill('SIGKILL'), 5000);
-    child.once('exit', () => { clearTimeout(timer); resolve(); });
-    child.kill('SIGTERM');
-  });
 }

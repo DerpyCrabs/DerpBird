@@ -1,3 +1,5 @@
+import { useTestProfile } from './agent-test-profile';
+await useTestProfile();
 /** Native capture regression: run on the configured desktop in a disposable agent profile. */
 import assert from 'node:assert/strict';
 import { mkdtemp } from 'node:fs/promises';
