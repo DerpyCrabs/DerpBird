@@ -51,8 +51,9 @@ runScenario(async ({conditions})=>{
  const layoutDemo = conditions.layoutDemo ? await (await import('./layout-demo')).mountLayoutDemo(controller, conditions, fixture) : undefined;
  if(conditions.workspaceEdit)controller.openWorkspaceEditor(controller.state().browser.workspaces?.active);
  if(conditions.workspaceCreate)controller.openWorkspaceEditor();
+ const activityDemo = conditions.aiActivity ? await (async()=>{await import('./ai-activity/demo.css');const {mountActivityDemo}=await import('./ai-activity/demo');return mountActivityDemo(document.querySelector<HTMLElement>('#content-surface')!,{time:typeof conditions.aiTime==='number'?conditions.aiTime:undefined});})() : undefined;
  const splitDemo = conditions.splitDemo ? (await import('./split-demo')).mountSplitDemo(controller,conditions,fixture) : undefined;
  if(conditions.proxyDemo)show();
  if(conditions.manager)show();
- return()=>{stopInteractions();stopResize();stopDismissal();document.removeEventListener('keydown',focusKey);layoutDemo?.();tools?.dispose();splitDemo?.();manager?.dispose();mounted.dispose();void controller.close();fixture.dispose()};
+ return()=>{stopInteractions();stopResize();stopDismissal();document.removeEventListener('keydown',focusKey);layoutDemo?.();activityDemo?.();tools?.dispose();splitDemo?.();manager?.dispose();mounted.dispose();void controller.close();fixture.dispose()};
 });
