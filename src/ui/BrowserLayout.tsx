@@ -18,13 +18,13 @@ const presets = [
 export function LayoutSettings({ value, onChange }: {value: ChromeLayout; onChange: (value: ChromeLayout) => void}) {
   const vertical = value.preset === 'sidebar' || value.preset === 'compact';
   return <section class="layout-settings" aria-label="Browser layout">
-    <fieldset class="layout-presets"><legend>Layout</legend><div class="layout-card-grid">{presets.map(preset => <label class={`layout-choice ${value.preset === preset.id ? 'selected' : ''}`}>
+    <fieldset class="layout-presets"><legend>Layout</legend><div class="layout-card-grid">{list(presets, preset => preset.id, preset => <label class={`layout-choice ${value.preset === preset.id ? 'selected' : ''}`}>
       <input type="radio" name="browser-layout" value={preset.id} checked={value.preset === preset.id} onChange={() => onChange({ ...value, preset: preset.id })}/>
       <span class={`layout-mini mini-${preset.id}`} aria-hidden="true"><i class="mini-tabs"/><i class="mini-address"/><i class="mini-page"/></span>
       <strong>{preset.title}</strong><span>{preset.description}</span>
     </label>)}</div></fieldset>
-    {vertical ? <fieldset class="layout-position"><legend>Tab sidebar</legend><div>{(['left', 'right'] as const).map(side => <label><input type="radio" name="tab-side" value={side} checked={value.side === side} onChange={() => onChange({ ...value, side })}/><span>{side === 'left' ? 'Left' : 'Right'}</span></label>)}</div></fieldset> : null}
-    {value.preset === 'sidebar' ? <fieldset class="layout-position"><legend>Address bar</legend><div>{(['top', 'bottom'] as const).map(address => <label><input type="radio" name="address-position" value={address} checked={value.address === address} onChange={() => onChange({ ...value, address })}/><span>{address === 'top' ? 'Top' : 'Bottom'}</span></label>)}</div></fieldset> : null}
+    {vertical ? <fieldset class="layout-position"><legend>Tab sidebar</legend><div>{list(['left', 'right'] as const, side => <label><input type="radio" name="tab-side" value={side} checked={value.side === side} onChange={() => onChange({ ...value, side })}/><span>{side === 'left' ? 'Left' : 'Right'}</span></label>)}</div></fieldset> : null}
+    {value.preset === 'sidebar' ? <fieldset class="layout-position"><legend>Address bar</legend><div>{list(['top', 'bottom'] as const, address => <label><input type="radio" name="address-position" value={address} checked={value.address === address} onChange={() => onChange({ ...value, address })}/><span>{address === 'top' ? 'Top' : 'Bottom'}</span></label>)}</div></fieldset> : null}
   </section>;
 }
 export function AddressPalette({ model, controller }: Props) {

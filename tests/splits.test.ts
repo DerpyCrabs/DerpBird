@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { decodeSnapshot } from '../src/browser/protocol';
-import { tabUnits, splitEdge, splitRatio } from '../src/browser/splits';
+import { shellTabLayout, tabUnits, splitEdge, splitRatio } from '../src/browser/splits';
 const tab = (id: string) => ({ id, url: 'about:blank', title: id, loading: false, canGoBack: false, canGoForward: false, pinned: false, audible: false, muted: false, private: false });
 const pair = { id: 'pair', firstTabId: 'c', secondTabId: 'a', axis: 'horizontal', ratio: .5 };
 const fixture = { version: 1, revision: 1, preferences: { layout: 'vertical' }, activeTabId: 'a', tabs: ['a', 'b', 'c'].map(tab), splits: [pair] };
@@ -9,6 +9,15 @@ test('a pair occupies one tab position with page order independent of tab creati
   expect(tabUnits(snapshot).map(unit => unit.tabs.map(tab => tab.id))).toEqual([['c', 'a'], ['b']]);
   expect(Object.isFrozen(snapshot.splits![0])).toBe(true);
   expect(tabUnits(decodeSnapshot({ ...fixture, tabs: fixture.tabs.slice(0, 2), splits: [] })).map(unit => unit.tabs.map(tab => tab.id))).toEqual([['a'], ['b']]);
+});
+test('shell layout reuses an immutable snapshot and recomputes groups for its successor', () => {
+  const first = decodeSnapshot({ ...fixture, splits: [], tabs: [tab('a'), { ...tab('b'), parentId: 'a' }] });
+  const layout = shellTabLayout(first);
+  expect(shellTabLayout(first)).toBe(layout);
+  expect([...layout.parents]).toEqual(['a']);
+  const next = decodeSnapshot({ ...fixture, activeTabId: 'b', splits: [], tabs: [{ ...tab('b'), pinned: true }] });
+  expect(shellTabLayout(next).pinned.map(unit => unit.id)).toEqual(['b']);
+  expect(shellTabLayout(next).parents.size).toBe(0);
 });
 test('native split snapshots reject dangling, repeated, pinned, private-mixed and malformed members', () => {
   for (const change of [{ firstTabId: 'missing' }, { secondTabId: 'c' }, { ratio: NaN }, { ratio: .1 }, { ratio: .81 }, { axis: 'diagonal' }])

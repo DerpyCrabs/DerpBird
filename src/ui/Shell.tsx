@@ -4,9 +4,9 @@ import { ShellMenu, ShellPopover, ShellDialog } from './Overlay';
 import Palette from '@effectweb/lucide/icons/palette';
 import CodeXml from '@effectweb/lucide/icons/code-xml';
 import type { SourceKind } from '../browser/page-sources';
-import { tabUnits, splitFor } from '../browser/splits';
+import { type tabUnits, shellTabLayout, splitFor } from '../browser/splits';
 import type { CapturedCredential } from '../browser/credential-protocol';
-import { list, view } from 'effectweb';
+import { domBinding, list, view } from 'effectweb';
 import { Button } from './button';
 import ArrowLeft from '@effectweb/lucide/icons/arrow-left';
 import ArrowRight from '@effectweb/lucide/icons/arrow-right';
@@ -26,8 +26,17 @@ import File from '@effectweb/lucide/icons/file';
 import LoaderCircle from '@effectweb/lucide/icons/loader-circle';
 import type { ShellController, ShellModel } from '../browser/controller';
 
+// Keep the last visible count while the badge fades out.
+function sourceBadge(element: HTMLSpanElement, read: () => number) {
+  const update = () => {
+    const count = read();
+    if (count > 0 && element.textContent !== String(count)) element.textContent = String(count);
+  };
+  update();
+  return { update, dispose: () => { element.textContent = ''; } };
+}
+
 export function shellView(controller: ShellController, openStyles?: () => void, openScripts?: () => void, openCredentials?: (proposal?: CapturedCredential) => void, openImport?: () => void, autofill?: (token: string, id?: string) => void, openProxy?: () => void, openPageSources?: (kind: SourceKind) => void) {
-  const lastSourceCounts: Record<SourceKind, number> = { styles: 0, scripts: 0 };
   return view<ShellModel>(model => {
     const arrangement = model.chromeLayout;
     const compact = arrangement?.preset === 'compact';
@@ -37,13 +46,12 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
     const addressSuggestions = model.addressSuggestionsOpen && model.browser.addressSuggestions ? model.browser.addressSuggestions.items : [];
     const log = model.browser.blockingLog;
     const query = model.blockingSearch.toLocaleLowerCase();
-    const blocked = log?.tabId === active?.id ? log?.entries.filter(row => `${row.url} ${row.kind} ${row.rule ?? ''}`.toLocaleLowerCase().includes(query)).toReversed() ?? [] : [];
-    const contextIndex = model.browser.tabs.findIndex(tab => tab.id === model.tabMenu?.tabId);
+    const blocked = model.panel === 'blocking' && log?.tabId === active?.id ? log?.entries.filter(row => `${row.url} ${row.kind} ${row.rule ?? ''}`.toLocaleLowerCase().includes(query)).toReversed() ?? [] : [];
+    const contextIndex = model.tabMenu ? model.browser.tabs.findIndex(tab => tab.id === model.tabMenu?.tabId) : -1;
     const contextTab = model.browser.tabs[contextIndex];
-    const contextSiblings = model.browser.tabs.filter(tab => tab.parentId === contextTab?.parentId && tab.pinned === contextTab?.pinned);
+    const contextSiblings = contextTab ? model.browser.tabs.filter(tab => tab.parentId === contextTab.parentId && tab.pinned === contextTab.pinned) : [];
     const contextSiblingIndex = contextSiblings.findIndex(tab => tab.id === contextTab?.id);
-    const parents = new Set(model.browser.tabs.flatMap(tab => tab.parentId ? [tab.parentId] : []));
-    const units = tabUnits(model.browser);
+    const { pinned, regular, parents } = shellTabLayout(model.browser);
     const activeSplit = splitFor(model.browser, active?.id);
     const contextSplit = splitFor(model.browser, contextTab?.id);
     const openTabMenu = (tabId: string, x: number, y: number) => {
@@ -81,7 +89,7 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
             </button>
             {!tab.pinned ? <button class="close-tab" aria-label={`Close ${tab.title || 'tab'}`} onClick={() => controller.send({ type: 'tab.close', tabId: tab.id })}><X size={13}/></button> : null}
           </div>)}</div>;
-    const pins = model.browser.tabs.filter(tab => tab.pinned).length;
+    const pins = pinned.length;
     const columns = Math.max(1, Math.min(6, pins, model.layout === 'horizontal' ? 6 : Math.floor(((model.sidebarResizeWidth ?? model.sidebarWidth) - 8) / 36)));
     return <main class={`shell ${pins > columns ? 'has-pin-rows' : ''} ${model.layout} ${model.wrapTabs ? 'wrap-tabs' : ''} ${arrangement ? `chrome-layout tabs-${arrangement.side} ${bottomAddress ? 'address-bottom' : ''} ${compact ? 'compact-chrome' : ''}` : ''}`} style={{ '--pin-columns': columns, '--sidebar-width': `${model.sidebarResizeWidth ?? model.sidebarWidth}px` }}>
       <div id="style-manager-host"/>
@@ -99,11 +107,10 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
           {!compact && addressSuggestions.length ? <ShellPopover side={bottomAddress ? 'top' : 'bottom'} class="address-suggestions" aria-label="Address suggestions" initialFocus={false} trigger={() => document.getElementById('location')} onDismiss={reason => reason === 'escape-key' ? controller.dismissAddress() : controller.blurAddress()}><div id="address-suggestions" role="listbox">{list(addressSuggestions, item => item.text, (item, index) => <button type="button" role="option" id={`address-option-${index}`} aria-selected={model.addressSelection === index} onPointerDown={event => event.preventDefault()} onClick={() => controller.navigate(item.text)}><span class="suggestion-icon" aria-hidden="true">{item.favicon ? <img class="suggestion-favicon" src={item.favicon} alt=""/> : item.source === 'history' ? <History size={16}/> : item.source === 'bookmark' ? <Bookmark size={16}/> : item.source === 'settings' ? <SlidersHorizontal size={16}/> : item.source === 'search' ? <Search size={16}/> : <Globe size={16}/>}</span><span class="suggestion-copy"><strong>{item.title}</strong><small>{suggestionDetails(item)}</small></span><span class="suggestion-enter" aria-hidden="true">↵</span></button>)}</div></ShellPopover> : null}
         </form>
         {model.browser.credentialProposal && openCredentials ? <Button variant="ghost" class="credential-suggestion" title={`Password for ${model.browser.credentialProposal.origin}`} onClick={() => openCredentials(model.browser.credentialProposal!)}>Save password?</Button> : null}
-        {(['styles', 'scripts'] as const).map(kind => {
+        {list(['styles', 'scripts'] as const, kind => {
           const matches = model.pageSources && model.pageSources.tabId === active?.id && model.pageSources.url === active?.url ? model.pageSources[kind] : [];
           const count = matches.filter(item => item.enabled).length;
-          if (count) lastSourceCounts[kind] = count;
-          return <Button variant="ghost" size="icon" class="page-sources-button" aria-label={kind === 'styles' ? 'Styles on this page' : 'Scripts on this page'} aria-haspopup="dialog" title={`${kind === 'styles' ? 'Styles' : 'Scripts'} · ${count} enabled on this page`} disabled={!model.connected || !openPageSources || !active || !!active.private} onClick={() => { controller.setPanel(null); openPageSources?.(kind); }}>{kind === 'styles' ? <Palette size={17}/> : <CodeXml size={17}/>}<span class="source-count" data-visible={count > 0} aria-hidden="true">{lastSourceCounts[kind]}</span></Button>;
+          return <Button variant="ghost" size="icon" class="page-sources-button" aria-label={kind === 'styles' ? 'Styles on this page' : 'Scripts on this page'} aria-haspopup="dialog" title={`${kind === 'styles' ? 'Styles' : 'Scripts'} · ${count} enabled on this page`} disabled={!model.connected || !openPageSources || !active || !!active.private} onClick={() => { controller.setPanel(null); openPageSources?.(kind); }}>{kind === 'styles' ? <Palette size={17}/> : <CodeXml size={17}/>}<span class="source-count" data-visible={count > 0} aria-hidden="true" use={domBinding(count, sourceBadge)} /></Button>;
         })}
         <Button variant="ghost" size="icon" class="proxy-switcher-button" aria-label="Proxy switcher" aria-haspopup="dialog" title={`Proxy · ${model.browser.proxyProfile === 'direct' ? 'Direct connection' : model.browser.proxyProfile === 'system' || !model.browser.proxyProfile ? 'System proxy' : model.browser.proxyProfile}`} disabled={!model.connected || !openProxy || !!active?.private} onClick={() => { controller.setPanel(null); openProxy?.(); }}><Globe size={17}/>{model.browser.proxyProfile && !['direct', 'system'].includes(model.browser.proxyProfile) ? <span class="proxy-active-dot"/> : null}</Button>
         <Button variant="ghost" size="icon" aria-label="Menu" aria-controls="browser-menu-popup" aria-expanded={model.panel === 'menu'} onClick={() => controller.setPanel(model.panel ? null : 'menu')}><Menu size={17}/></Button>
@@ -111,8 +118,8 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
       </header>
       <aside class="tabs" aria-label="Tabs">
         <div class="tab-list" role="tablist" aria-orientation={model.layout}>
-          {units.some(unit => unit.tabs.every(tab => tab.pinned)) ? <div class="pinned-tabs">{list(units.filter(unit => unit.tabs.every(tab => tab.pinned)), unit => unit.id, renderTabUnit)}</div> : null}
-          {list(units.filter(unit => !unit.tabs.every(tab => tab.pinned)), unit => unit.id, renderTabUnit)}
+          {pinned.length > 0 ? <div class="pinned-tabs">{list(pinned, unit => unit.id, renderTabUnit)}</div> : null}
+          {list(regular, unit => unit.id, renderTabUnit)}
         </div>
         <Button variant="ghost" class="new-tab" title="New tab (Ctrl+T)" aria-label="New tab" disabled={!model.connected} onClick={() => controller.send({ type: 'tab.create', private: active?.private ?? false })}><Plus size={16}/><span class="new-tab-label">New tab</span></Button>
         {workspaceControls(model,controller)}

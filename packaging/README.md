@@ -2,14 +2,13 @@
 
 Run `makepkg -si` from this checkout with its initialized Ladybird submodule,
 Bun, and the engine build prerequisites installed (see the project build docs).
-The UI currently also uses the adjacent EffectWeb and DerpDesign workspaces
-listed in package.json. This is a local workspace PKGBUILD, not an AUR source release.
+The UI currently also uses EffectWeb 0.16.0 from npm and the adjacent DerpDesign workspace. This is a local workspace PKGBUILD, not an AUR source release.
 
 To package an already built and verified engine without rebuilding it:
 
 ```sh
 DERPBIRD_PACKAGE_REUSE_BUILD=1 makepkg -f
-sudo pacman -U ./derpbird-0.1.0-8-x86_64.pkg.tar.zst
+sudo pacman -U ./derpbird-0.1.0-9-x86_64.pkg.tar.zst
 ```
 
 `DERPBIRD_ENGINE_BUILD` selects an alternative engine build directory.

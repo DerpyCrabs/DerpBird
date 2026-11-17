@@ -1,5 +1,5 @@
 import { Effect } from 'effect';
-import { mount, modelOwner, view } from 'effectweb';
+import { list, mount, modelOwner, view } from 'effectweb';
 import Search from '@effectweb/lucide/icons/search';
 import ChevronRight from '@effectweb/lucide/icons/chevron-right';
 import Settings from '@effectweb/lucide/icons/settings';
@@ -45,6 +45,8 @@ function pagePreferences(controller: ShellController) {
   const state = controller.state();
   return {
     name: activeWorkspace(controller)?.name ?? 'Default',
+    tabs: state.browser.tabs,
+    workspaces: state.browser.workspaces,
     layout: state.chromeLayout!,
     theme: state.browser.preferences.theme ?? 'dark',
     alwaysClose: state.browser.preferences.alwaysClose !== false,
@@ -152,10 +154,7 @@ export function mountBrowserPages(
                 <kbd>Ctrl L</kbd>
               </button>
               <nav class="haz-favorites" aria-label="Pinned sites">
-                {controller
-                  .state()
-                  .browser.tabs.filter((t) => t.pinned)
-                  .map((t) => (
+                {list(m.tabs.filter((t) => t.pinned), t => t.id, (t) => (
                     <button
                       onClick={() =>
                         controller.send({ type: 'tab.activate', tabId: t.id })
@@ -168,11 +167,7 @@ export function mountBrowserPages(
               </nav>
               <h2>Open in this workspace</h2>
               <div class="haz-reading-list">
-                {controller
-                  .state()
-                  .browser.tabs.filter((t) => !t.pinned)
-                  .slice(0, 5)
-                  .map((t) => (
+                {list(m.tabs.filter((t) => !t.pinned).slice(0, 5), t => t.id, (t) => (
                     <button
                       onClick={() =>
                         controller.send({ type: 'tab.activate', tabId: t.id })
@@ -209,7 +204,7 @@ export function mountBrowserPages(
             </header>
             <div class="haz-settings-layout">
               <nav class="haz-settings-nav" aria-label="Settings categories">
-                {categories.map(([id, label]) => (
+                {list(categories, ([id]) => id, ([id, label]) => (
                   <button
                     aria-current={m.page === id ? 'page' : undefined}
                     onClick={() => owner.patch({ page: id })}
@@ -251,7 +246,7 @@ export function mountBrowserPages(
                         role="group"
                         aria-label="Color theme"
                       >
-                        {(['dark', 'light'] as const).map((t) => (
+                        {list(['dark', 'light'] as const, (t) => (
                           <button
                             aria-pressed={m.theme === t}
                             onClick={() => setTheme(t)}
@@ -338,7 +333,7 @@ export function mountBrowserPages(
                       <div class="haz-workspace-row">
                         <div>
                           <strong>{m.name}</strong>
-                          <p>{controller.state().browser.tabs.length} tabs</p>
+                          <p>{m.tabs.length} tabs</p>
                         </div>
                         <button
                           id="rename-workspace"
@@ -351,21 +346,19 @@ export function mountBrowserPages(
                     </PreferenceSection>
                     <PreferenceSection title="Switch workspace">
                       <div class="haz-workspace-list">
-                        {controller
-                          .state()
-                          .browser.workspaces?.items.map((w) => (
+                        {list(m.workspaces?.items ?? [], w => w.id, (w) => (
                             <button
                               class="pref-button"
                               onClick={() => controller.switchWorkspace(w.id)}
                               aria-pressed={
                                 w.id ===
-                                controller.state().browser.workspaces?.active
+                                m.workspaces?.active
                               }
                             >
                               {w.name}
                               <span>
                                 {w.id ===
-                                controller.state().browser.workspaces?.active
+                                m.workspaces?.active
                                   ? 'Current'
                                   : 'Switch'}
                               </span>

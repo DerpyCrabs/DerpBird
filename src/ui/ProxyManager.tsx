@@ -1,7 +1,7 @@
 import { focusShellElement } from '../browser/shell-interaction';
 import { ShellMenu, ShellDialog } from './Overlay';
 import { Effect } from 'effect';
-import { mount, modelOwner, view } from 'effectweb';
+import { list, mount, modelOwner, view } from 'effectweb';
 import Network from '@effectweb/lucide/icons/network';
 import Globe from '@effectweb/lucide/icons/globe';
 import Monitor from '@effectweb/lucide/icons/monitor';
@@ -18,13 +18,30 @@ import AlertTriangle from '@effectweb/lucide/icons/triangle-alert';
 import Trash from '@effectweb/lucide/icons/trash-2';
 import { exportSource } from '../browser/source-files';
 import { conditionTypes, decodeProxySnapshot, setDomainProxy, domainRulesKey, type ProxySite, exportProxyBackup, importProxyBackup, proxyProfiles, type ProxyEndpoint, type ProxyOptions, type ProxyPort, type ProxyProfile, type ProxyRule, type ProxySnapshot } from '../browser/proxy-protocol';
-interface Model { site: ProxySite | null; failuresOpen: boolean; undo: ProxySnapshot | null; lastProxy: string; settings: boolean; creating: boolean; snapshot: ProxySnapshot | null; options: ProxyOptions; active: string; selected: string; busy: boolean; dirty: boolean; error: string; message: string; search: string; page: number; newName: string; newType: string; discard: boolean }
+interface Model { ruleIds: number[]; site: ProxySite | null; failuresOpen: boolean; undo: ProxySnapshot | null; lastProxy: string; settings: boolean; creating: boolean; snapshot: ProxySnapshot | null; options: ProxyOptions; active: string; selected: string; busy: boolean; dirty: boolean; error: string; message: string; search: string; page: number; newName: string; newType: string; discard: boolean }
 export function openProxyManager(host: HTMLElement, port: ProxyPort, onClosed: () => void, currentURL = '') {
-  let state: Model = { site: null, failuresOpen: false, undo: null, lastProxy: '', settings: false, creating: false, snapshot: null, options: { schemaVersion: 2 }, active: 'system', selected: '', busy: false, dirty: false, error: '', message: '', search: '', page: 0, newName: '', newType: 'FixedProfile', discard: false };
+  let state: Model = { ruleIds: [], site: null, failuresOpen: false, undo: null, lastProxy: '', settings: false, creating: false, snapshot: null, options: { schemaVersion: 2 }, active: 'system', selected: '', busy: false, dirty: false, error: '', message: '', search: '', page: 0, newName: '', newType: 'FixedProfile', discard: false };
   const owner = modelOwner(state);
   const siteScoped = !!port.site && /^https?:/.test(currentURL);
   let disposed = false;
-  const patch = (change: Partial<Model>) => { if (!disposed) { state = { ...state, ...change }; owner.patch(change); } };
+  const ids = new WeakMap<ProxyRule, number>();
+  let nextRuleId = 0;
+  const ruleId = (rule: ProxyRule) => {
+    const existing = ids.get(rule);
+    if (existing !== undefined) return existing;
+    const id = ++nextRuleId;
+    ids.set(rule, id);
+    return id;
+  };
+  const patch = (change: Partial<Model>) => {
+    if (disposed) return;
+    if (change.options || change.selected !== undefined) {
+      const profile = (change.options ?? state.options)[`+${change.selected ?? state.selected}`] as ProxyProfile | undefined;
+      change = {...change, ruleIds: profile?.rules?.map(ruleId) ?? []};
+    }
+    state = {...state, ...change};
+    owner.patch(change);
+  };
   const run = (work: () => Promise<void>) => {
     if (state.busy || disposed) return;
     patch({ busy: true, error: '', message: '' });
@@ -38,7 +55,7 @@ export function openProxyManager(host: HTMLElement, port: ProxyPort, onClosed: (
   const editRule = (index: number, rule: ProxyRule | null, offset = 0) => {
     const profile = selected(), rules = [...(profile.rules ?? [])];
     if (offset) { const other = index + offset; [rules[index], rules[other]] = [rules[other], rules[index]]; }
-    else if (rule) rules[index] = rule;
+    else if (rule) { ids.set(rule, ruleId(rules[index]!)); rules[index] = rule; }
     else rules.splice(index, 1);
     change({ ...profile, rules });
   };
@@ -65,7 +82,7 @@ export function openProxyManager(host: HTMLElement, port: ProxyPort, onClosed: (
     patch({ creating: false, options, active, selected: profiles[0]?.name ?? '', dirty: true, search: '', page: 0, message: `Imported ${profiles.length} profiles and ${profiles.reduce((sum, p) => sum + (p.rules?.length ?? 0), 0)} rules. Review and apply to replace your settings.` });
   });
   const close = () => { if (state.busy) return; if (state.dirty) { patch({ discard: true }); return; } dispose(); onClosed(); };
-  const choices = (options: ProxyOptions) => [<option value="direct">Direct connection</option>, <option value="system">System proxy</option>, ...proxyProfiles(options).map(p => <option value={p.name}>{p.name}</option>)];
+  const choices = (options: ProxyOptions) => [<option value="direct">Direct connection</option>, <option value="system">System proxy</option>, list(proxyProfiles(options), p => p.name, p => <option value={p.name}>{p.name}</option>)];
   const displayName = (name: string) => name === 'direct' ? 'Direct connection' : name === 'system' ? 'System proxy' : name;
   const profileDetail = (profile: ProxyProfile) => profile.profileType === 'SwitchProfile' || profile.profileType === 'VirtualProfile' ? `${profile.rules?.length ?? 0} rules` : profile.fallbackProxy?.host ? `${profile.fallbackProxy.host}:${profile.fallbackProxy.port}` : profile.profileType === 'DirectProfile' ? 'Direct connection' : 'Proxy server';
   const color = (profile?: ProxyProfile) => profile?.color && /^#[0-9a-f]{3,8}$/i.test(profile.color) ? profile.color : '#9cbaad';
@@ -80,7 +97,6 @@ export function openProxyManager(host: HTMLElement, port: ProxyPort, onClosed: (
       patch({ site, ...(site.proxied && site.profile !== 'system' ? { lastProxy: site.profile } : {}) });
     }
   };
-  const siteTarget = () => state.lastProxy || proxyProfiles(state.options).find(p => p.profileType === 'FixedProfile')?.name;
   const routeHost = (host: string, target: string) => run(async () => {
     const previous = state.snapshot!;
     accept(await port.replace(setDomainProxy(previous, host, target), currentURL));
@@ -99,7 +115,7 @@ export function openProxyManager(host: HTMLElement, port: ProxyPort, onClosed: (
     dispose(); onClosed();
   });
   const pickFile = () => host.querySelector<HTMLInputElement>('[type=file]')?.click();
-  const importButton = (primary = false) => <button class={primary ? 'proxy-button primary' : 'proxy-button'} disabled={state.busy || !state.snapshot || state.dirty} onClick={pickFile}><Upload size={15}/>Import backup</button>;
+  const importButton = (model: Model, primary = false) => <button class={primary ? 'proxy-button primary' : 'proxy-button'} disabled={model.busy || !model.snapshot || model.dirty} onClick={pickFile}><Upload size={15}/>Import backup</button>;
   const endpoint = (profile: ProxyProfile, field: 'fallbackProxy' | 'proxyForHttp' | 'proxyForHttps', label: string) => {
     const server = profile[field];
     const update = (value: ProxyEndpoint | undefined) => { const next = { ...profile }; if (value) next[field] = value; else delete next[field]; change(next); };
@@ -117,40 +133,40 @@ export function openProxyManager(host: HTMLElement, port: ProxyPort, onClosed: (
     };
     return <div class="proxy-auth-row"><span>{label}</span><label>Username<input aria-label={`${label} username`} value={value.username ?? ''} autocomplete="off" onInput={e => update('username', e.currentTarget.value)}/></label><label>Password<input type="password" aria-label={`${label} password`} value={value.password ?? ''} autocomplete="off" onInput={e => update('password', e.currentTarget.value)}/></label></div>;
   };
+  const anchor = host.ownerDocument.querySelector('[aria-label="Proxy switcher"]')?.getBoundingClientRect();
+  const popupTop = (anchor?.bottom ?? 36) + 6;
   const render = view<Model>(m => {
-    const profiles = proxyProfiles(m.options), active = m.site?.profile ?? m.active, target = siteTarget(), profile = profiles.find(p => p.name === m.selected);
+    const profiles = proxyProfiles(m.options), active = m.site?.profile ?? m.active, target = m.lastProxy || profiles.find(p => p.profileType === 'FixedProfile')?.name, profile = profiles.find(p => p.name === m.selected);
     if (!m.settings) {
-      const anchor = document.querySelector('[aria-label="Proxy switcher"]')?.getBoundingClientRect();
-      const top = (anchor?.bottom ?? 36) + 6;
-      return <ShellMenu onDismiss={close} trigger={() => document.querySelector('button[aria-label="Proxy switcher"]')} class="style-manager proxy-popup" style={{ maxHeight: `calc(100vh - ${top + 8}px)` }} aria-label="Proxy profiles">
+      return <ShellMenu onDismiss={close} trigger={() => document.querySelector('button[aria-label="Proxy switcher"]')} class="style-manager proxy-popup" style={{ maxHeight: `calc(100vh - ${popupTop + 8}px)` }} aria-label="Proxy profiles">
         <div class="proxy-popup-heading"><strong>Proxy</strong>{m.busy ? <span>{m.snapshot ? 'Switching…' : 'Loading…'}</span> : null}</div>
         <div class="proxy-profile-list">
           <button role="menuitemradio" class="proxy-profile-option" aria-pressed={active === 'direct'} disabled={m.busy || !m.snapshot || (siteScoped && !m.site)} onClick={() => choose('direct')}><Globe size={17}/><span><strong>Direct connection</strong></span>{active === 'direct' ? <Check size={16}/> : null}</button>
           <button role="menuitemradio" class="proxy-profile-option" aria-pressed={active === 'system'} disabled={m.busy || !m.snapshot || (siteScoped && !m.site)} onClick={() => choose('system')}><Monitor size={17}/><span><strong>System proxy</strong></span>{active === 'system' ? <Check size={16}/> : null}</button>
-          {profiles.map(p => <button role="menuitemradio" class="proxy-profile-option" title={p.name} aria-pressed={active === p.name} disabled={m.busy || (siteScoped && !m.site)} onClick={() => choose(p.name)}><span class="proxy-color" style={{ backgroundColor: color(p) }}/><span><strong>{p.name}</strong></span>{active === p.name ? <Check size={16}/> : null}</button>)}
+          {list(profiles, p => p.name, p => <button role="menuitemradio" class="proxy-profile-option" title={p.name} aria-pressed={active === p.name} disabled={m.busy || (siteScoped && !m.site)} onClick={() => choose(p.name)}><span class="proxy-color" style={{ backgroundColor: color(p) }}/><span><strong>{p.name}</strong></span>{active === p.name ? <Check size={16}/> : null}</button>)}
         </div>
 
         {m.site ? <div class="proxy-site-actions">
           <div class="proxy-popup-divider"/>
           <button id="site-proxy-toggle" role="menuitemcheckbox" aria-checked={m.site.proxied} class="proxy-profile-option" disabled={m.busy || (!m.site.proxied && !target)} title={target ? 'Change proxy routing only for this domain' : 'Add a proxy profile in Proxy settings'} onClick={() => routeHost(m.site!.host, m.site!.proxied ? 'direct' : target!)}><Network size={17}/><span><strong>Proxy this domain</strong></span><i class="site-proxy-switch"><i/></i></button>
           <button id="site-proxy-failures" role="menuitem" aria-expanded={m.failuresOpen} class="proxy-profile-option" onClick={() => patch({ failuresOpen: !m.failuresOpen })}><AlertTriangle size={17}/><span><strong>Failed requests</strong></span><span class="site-proxy-count">{m.site.failures.reduce((n, f) => n + f.count, 0)}</span><ChevronRight size={13}/></button>
-          {m.failuresOpen ? <div class="site-proxy-requests">{m.site.failures.length ? m.site.failures.map(f => <div class="site-proxy-request"><span title={f.error}>{f.host}</span><small>{f.count}</small><button data-host={f.host} disabled={m.busy || (!f.proxied && !target)} aria-label={`${f.proxied ? 'Remove proxy rule for' : 'Proxy'} ${f.host}`} title={`${f.error}. ${f.proxied ? 'Using proxy. Disable for this host' : 'Use proxy on next reload'}`} onClick={() => routeHost(f.host, f.proxied ? 'direct' : target!)}>{f.proxied ? <Check size={15}/> : <Plus size={15}/>}</button></div>) : <div class="site-proxy-empty">No failed requests</div>}</div> : null}
+          {m.failuresOpen ? <div class="site-proxy-requests">{m.site.failures.length ? list(m.site.failures, f => f.host, f => <div class="site-proxy-request"><span title={f.error}>{f.host}</span><small>{f.count}</small><button data-host={f.host} disabled={m.busy || (!f.proxied && !target)} aria-label={`${f.proxied ? 'Remove proxy rule for' : 'Proxy'} ${f.host}`} title={`${f.error}. ${f.proxied ? 'Using proxy. Disable for this host' : 'Use proxy on next reload'}`} onClick={() => routeHost(f.host, f.proxied ? 'direct' : target!)}>{f.proxied ? <Check size={15}/> : <Plus size={15}/>}</button></div>) : <div class="site-proxy-empty">No failed requests</div>}</div> : null}
           {m.undo ? <div class="site-proxy-notice" role="status"><span>{m.message}</span><button id="site-proxy-undo" disabled={m.busy} onClick={undoSite}>Undo</button></div> : null}
         </div> : null}
         {m.error ? <p role="alert">{m.error}</p> : null}
         <button role="menuitem" class="proxy-popup-settings" disabled={m.busy} onClick={openSettings}><Settings size={16}/><span>Proxy settings</span></button>
       </ShellMenu>;
     }
-    const rules = (profile?.rules ?? []).map((rule, index) => ({ rule, index })).filter(({ rule }) => `${rule.condition.pattern ?? rule.condition.ip ?? ''} ${rule.profileName}`.toLowerCase().includes(m.search.toLowerCase()));
+    const rules = (profile?.rules ?? []).map((rule, index) => ({ id: m.ruleIds[index]!, rule, index })).filter(({ rule }) => `${rule.condition.pattern ?? rule.condition.ip ?? ''} ${rule.profileName}`.toLowerCase().includes(m.search.toLowerCase()));
     const page = Math.min(m.page, Math.max(0, Math.ceil(rules.length / 40) - 1));
     const hasEditor = profiles.length > 0 || m.creating;
     return <ShellDialog onDismiss={close} trigger={() => document.querySelector('button[aria-label="Proxy switcher"]')} class={`style-manager proxy-manager ${hasEditor ? 'has-profiles' : 'is-empty'}`} aria-label="Proxy settings" tabindex={-1}>
       <header class="proxy-settings-header"><div><h2>Proxy settings</h2></div><button class="proxy-icon-button" aria-label="Close proxy settings" disabled={m.busy} onClick={close}><X size={18}/></button></header>
       <input hidden type="file" aria-label="Import ZeroOmega backup" accept=".bak,.json" disabled={m.busy || !m.snapshot || m.dirty} onChange={e => { const file = e.currentTarget.files?.[0]; if (file) importFile(file); e.currentTarget.value = ''; }}/>
-      {hasEditor ? <div class="proxy-settings-toolbar"><label>Active profile<select aria-label="Active proxy profile" disabled={m.busy || !m.snapshot} value={m.active} onChange={e => { const active = e.currentTarget.value; if (m.dirty) patch({ active }); else save(active); }}>{choices(m.options)}</select></label><div class="proxy-backup-actions">{importButton()}<button class="proxy-button" disabled={m.busy || !m.snapshot} onClick={() => { try { exportSource('ZeroOmegaOptions', exportProxyBackup(m.options), '.bak'); } catch (error) { patch({ error: String(error) }); } }}><Download size={15}/>Export backup</button></div></div> : null}
+      {hasEditor ? <div class="proxy-settings-toolbar"><label>Active profile<select aria-label="Active proxy profile" disabled={m.busy || !m.snapshot} value={m.active} onChange={e => { const active = e.currentTarget.value; if (m.dirty) patch({ active }); else save(active); }}>{choices(m.options)}</select></label><div class="proxy-backup-actions">{importButton(m)}<button class="proxy-button" disabled={m.busy || !m.snapshot} onClick={() => { try { exportSource('ZeroOmegaOptions', exportProxyBackup(m.options), '.bak'); } catch (error) { patch({ error: String(error) }); } }}><Download size={15}/>Export backup</button></div></div> : null}
       {m.error ? <p class="proxy-notice error-notice" role="alert">{m.error}</p> : null}{m.message ? <p class="proxy-notice" role="status">{m.message}</p> : null}
-      {!hasEditor ? <div class="proxy-empty"><div class="proxy-empty-icon"><Network size={28}/></div><h3>No proxy profiles</h3><div class="proxy-actions">{importButton(true)}<button class="proxy-button" disabled={m.busy || !m.snapshot} onClick={() => patch({ creating: true })}><Plus size={15}/>New profile</button></div><small>ZeroOmega and SwitchyOmega backups (.bak, .json)</small></div> : <div class="proxy-settings-body">
-        <aside aria-label="Proxy profiles"><div class="proxy-sidebar-heading">Profiles <span>{profiles.length}</span></div><div class="proxy-sidebar-list">{profiles.map(p => <button class="proxy-sidebar-profile" title={p.name} aria-pressed={!m.creating && p.name === m.selected} disabled={m.busy} onClick={() => patch({ creating: false, selected: p.name, search: '', page: 0 })}><span class="proxy-color" style={{ backgroundColor: color(p) }}/><span><strong>{p.name}</strong><small>{profileDetail(p)}</small></span></button>)}</div><button class="proxy-new-profile" disabled={m.busy || !m.snapshot} onClick={() => patch({ creating: true, newName: '', error: '' })}><Plus size={15}/>New profile</button></aside>
+      {!hasEditor ? <div class="proxy-empty"><div class="proxy-empty-icon"><Network size={28}/></div><h3>No proxy profiles</h3><div class="proxy-actions">{importButton(m, true)}<button class="proxy-button" disabled={m.busy || !m.snapshot} onClick={() => patch({ creating: true })}><Plus size={15}/>New profile</button></div><small>ZeroOmega and SwitchyOmega backups (.bak, .json)</small></div> : <div class="proxy-settings-body">
+        <aside aria-label="Proxy profiles"><div class="proxy-sidebar-heading">Profiles <span>{profiles.length}</span></div><div class="proxy-sidebar-list">{list(profiles, p => p.name, p => <button class="proxy-sidebar-profile" title={p.name} aria-pressed={!m.creating && p.name === m.selected} disabled={m.busy} onClick={() => patch({ creating: false, selected: p.name, search: '', page: 0 })}><span class="proxy-color" style={{ backgroundColor: color(p) }}/><span><strong>{p.name}</strong><small>{profileDetail(p)}</small></span></button>)}</div><button class="proxy-new-profile" disabled={m.busy || !m.snapshot} onClick={() => patch({ creating: true, newName: '', error: '' })}><Plus size={15}/>New profile</button></aside>
         <main class={`proxy-editor ${!m.creating && ['SwitchProfile', 'VirtualProfile'].includes(profile?.profileType ?? '') ? 'is-rules' : ''}`}><fieldset disabled={m.busy || !m.snapshot}>
           {m.creating ? <div class="proxy-create"><h3>New profile</h3><label>Profile name<input aria-label="New proxy profile name" placeholder="e.g. Work proxy" value={m.newName} onInput={e => patch({ newName: e.currentTarget.value })} onKeyDown={e => { if (e.key === 'Enter' && m.newName.trim()) { e.preventDefault(); addProfile(); } }}/></label><label>Profile type<select aria-label="New proxy profile type" value={m.newType} onChange={e => patch({ newType: e.currentTarget.value })}><option value="FixedProfile">Proxy server</option><option value="SwitchProfile">Automatic rules</option></select></label><div class="proxy-actions"><button class="proxy-button primary" disabled={!m.newName.trim()} onClick={addProfile}>Create profile</button><button class="proxy-button" onClick={() => patch({ creating: false })}>Cancel</button></div></div> : profile ? <>
             <div class="proxy-editor-heading"><div><h3>{profile.name}</h3><p>{profile.profileType === 'FixedProfile' ? 'Proxy server' : 'Automatic rules'}</p></div><button class="proxy-icon-button" aria-label="Delete profile" title="Delete profile" onClick={removeProfile}><Trash size={16}/></button></div>
@@ -162,8 +178,8 @@ export function openProxyManager(host: HTMLElement, port: ProxyPort, onClosed: (
               <div class="proxy-rules-tools"><input type="search" aria-label="Search proxy rules" placeholder="Search domains or profiles…" value={m.search} onInput={e => patch({ search: e.currentTarget.value, page: 0 })}/><button class="proxy-button" onClick={() => { let pattern = ''; try { pattern = new URL(currentURL).hostname; } catch {} change({ ...profile, rules: [{ condition: { conditionType: 'HostWildcardCondition', pattern }, profileName: profiles.find(p => p.profileType === 'FixedProfile')?.name ?? 'direct' }, ...(profile.rules ?? [])] }); patch({ search: '', page: 0 }); }}><Plus size={15}/>Add rule</button></div>
               <p class="proxy-rules-help">First matching rule wins. *.example.com includes the domain itself.</p>
               <div class="proxy-rule-head"><span>#</span><span>Match</span><span>Pattern</span><span>Use profile</span><span/></div>
-              <div class="proxy-rules">{rules.slice(page * 40, (page + 1) * 40).map(({ rule, index }) => <div class="proxy-rule" data-rule-index={index}>
-                <span class="proxy-rule-number">{index + 1}</span><select aria-label={`Rule ${index + 1} condition`} value={rule.condition.conditionType} onChange={e => editRule(index, { ...rule, condition: { conditionType: e.currentTarget.value, pattern: rule.condition.pattern ?? '', ...(e.currentTarget.value === 'IpCondition' ? { ip: '127.0.0.1', prefixLength: 32 } : {}) } })}>{conditionTypes.map(type => <option value={type}>{labels[type]}</option>)}</select>
+              <div class="proxy-rules">{list(rules.slice(page * 40, (page + 1) * 40), row => row.id, ({ rule, index }) => <div class="proxy-rule" data-rule-index={index}>
+                <span class="proxy-rule-number">{index + 1}</span><select aria-label={`Rule ${index + 1} condition`} value={rule.condition.conditionType} onChange={e => editRule(index, { ...rule, condition: { conditionType: e.currentTarget.value, pattern: rule.condition.pattern ?? '', ...(e.currentTarget.value === 'IpCondition' ? { ip: '127.0.0.1', prefixLength: 32 } : {}) } })}>{list(conditionTypes, type => <option value={type}>{labels[type]}</option>)}</select>
                 {rule.condition.conditionType === 'IpCondition' ? <input aria-label={`Rule ${index + 1} pattern`} value={`${rule.condition.ip}/${rule.condition.prefixLength}`} onChange={e => { const [ip, prefix] = e.currentTarget.value.split('/'); editRule(index, { ...rule, condition: { ...rule.condition, ip, prefixLength: Number(prefix) } }); }}/> : <input aria-label={`Rule ${index + 1} pattern`} placeholder="*.example.com" spellcheck={false} disabled={['TrueCondition', 'FalseCondition'].includes(rule.condition.conditionType)} value={rule.condition.pattern ?? ''} onInput={e => editRule(index, { ...rule, condition: { ...rule.condition, pattern: e.currentTarget.value } })}/>}
                 <select aria-label={`Rule ${index + 1} target`} value={rule.profileName} onChange={e => editRule(index, { ...rule, profileName: e.currentTarget.value })}>{choices(m.options)}</select>
                 <div class="proxy-rule-actions"><button aria-label={`Move rule ${index + 1} up`} title="Move up" disabled={index === 0} onClick={() => editRule(index, rule, -1)}><ArrowUp size={13}/></button><button aria-label={`Move rule ${index + 1} down`} title="Move down" disabled={index === (profile.rules?.length ?? 0) - 1} onClick={() => editRule(index, rule, 1)}><ArrowDown size={13}/></button><button aria-label={`Delete rule ${index + 1}`} title="Delete rule" onClick={() => editRule(index, null)}><X size={13}/></button></div>

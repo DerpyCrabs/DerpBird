@@ -1,6 +1,6 @@
 import { ShellDialog } from './Overlay';
 import { Effect } from 'effect';
-import { mount, modelOwner, view } from 'effectweb';
+import { list, sequence, mount, modelOwner, view } from 'effectweb';
 import { Button } from './button';
 import type { ImportPort, ImportReport, ImportStatus } from '../browser/import-protocol';
 interface Model { status: ImportStatus | null; profile: string; bookmarks: boolean; history: boolean; tabs: boolean; busy: boolean; report: ImportReport | null; error: string | null }
@@ -22,7 +22,7 @@ export function openImportManager(host: HTMLElement, port: ImportPort, onClosed:
 
       {m.status?.profiles.length ? <>
         <label>Chrome profile<select aria-label="Chrome profile" disabled={m.busy} value={m.profile} onChange={e => patch({ profile: e.currentTarget.value, report: null })}>
-          {m.status.profiles.map(profile => <option value={profile.id}>{profile.name}</option>)}
+          {list(m.status.profiles, profile => profile.id, profile => <option value={profile.id}>{profile.name}</option>)}
         </select></label>
         <div class="import-options">
           <label><input type="checkbox" checked={m.bookmarks} disabled={m.busy} onChange={e => patch({ bookmarks: e.currentTarget.checked })}/>Bookmarks and folders</label>
@@ -46,7 +46,7 @@ export function openImportManager(host: HTMLElement, port: ImportPort, onClosed:
         {m.report.passwords !== undefined ? <p>{m.report.passwords} passwords imported</p> : null}
         {m.report.skipped ? <p>{m.report.skipped} duplicate or unsupported entries skipped</p> : null}
         {m.report.failed ? <p role="alert">{m.report.failed} passwords could not be saved. Unlock your keyring and retry; imported logins will be skipped.</p> : null}
-        {m.report.warnings?.map(warning => <p role="alert">{warning}</p>)}
+        {list(sequence(m.report.warnings ?? []), warning => <p role="alert">{warning}</p>)}
       </section> : null}
       {m.error ? <p role="alert">{m.error}</p> : null}
     </div>

@@ -8,15 +8,46 @@ export function splitFor(browser: BrowserSnapshot, tabId: string | undefined | n
 
 /** Place each pair at its first encountered member, retaining its page order. */
 export function tabUnits(browser: BrowserSnapshot): { id: string; tabs: readonly Tab[] }[] {
-  const seen = new Set<string>();
+  if (!browser.splits?.length) return browser.tabs.map(tab => ({ id: tab.id, tabs: [tab] }));
+  const pairs = new Map<string, SplitView>();
+  for (const split of browser.splits) {
+    pairs.set(split.firstTabId, split);
+    pairs.set(split.secondTabId, split);
+  }
   const byId = new Map(browser.tabs.map(tab => [tab.id, tab]));
-  return browser.tabs.flatMap(tab => {
-    if (seen.has(tab.id)) return [];
-    const split = splitFor(browser, tab.id);
-    const tabs = split ? [byId.get(split.firstTabId)!, byId.get(split.secondTabId)!] : [tab];
-    tabs.forEach(member => seen.add(member.id));
-    return [{ id: split ? `split:${split.id}` : tab.id, tabs }];
-  });
+  const units: { id: string; tabs: readonly Tab[] }[] = [];
+  const emitted = new Set<SplitView>();
+  for (const tab of browser.tabs) {
+    const split = pairs.get(tab.id);
+    if (!split) units.push({ id: tab.id, tabs: [tab] });
+    else if (!emitted.has(split)) {
+      units.push({ id: `split:${split.id}`, tabs: [byId.get(split.firstTabId)!, byId.get(split.secondTabId)!] });
+      emitted.add(split);
+    }
+  }
+  return units;
+}
+
+function tabLayout(browser: BrowserSnapshot) {
+  const pinned = [], regular = [];
+  const parents = new Set<string>();
+  for (const tab of browser.tabs) if (tab.parentId) parents.add(tab.parentId);
+  for (const unit of tabUnits(browser)) {
+    if (unit.tabs[0]!.pinned) pinned.push(unit);
+    else regular.push(unit);
+  }
+  return { pinned, regular, parents };
+}
+
+// Shell interactions republish the same immutable browser snapshot.
+const layouts = new WeakMap<BrowserSnapshot, ReturnType<typeof tabLayout>>();
+export function shellTabLayout(browser: BrowserSnapshot) {
+  let layout = layouts.get(browser);
+  if (!layout) {
+    layout = tabLayout(browser);
+    layouts.set(browser, layout);
+  }
+  return layout;
 }
 
 export function splitEdge(x: number, y: number, width: number, height: number): 'left' | 'right' | 'top' | 'bottom' | undefined {

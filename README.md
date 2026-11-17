@@ -8,20 +8,8 @@ and native MCP automation.
 
 This is currently a multi-repository workspace, not a standalone source release.
 The engine fork referenced in `.gitmodules` must be accessible to the builder.
-The following sibling source checkouts are also required by `package.json`:
-
-```text
-workspace/
-  DerpBird/
-  EffectWeb/       # packages/runtime, compiler, lucide, shadcn
-  DerpDesign/      # packages/harness
-```
-
-These dependencies are source-workspace dependencies; replacing them with
-registry versions requires confirming API compatibility. Obtain access to the
-matching workspaces before installing. A public clone is not independently
-buildable until the engine fork and these dependencies are publicly available
-or replaced with reproducible public dependencies.
+EffectWeb 0.16.0 installs from npm. The demo harness uses the adjacent
+`../DerpDesign/packages/harness` checkout.
 
 With Bun, Python 3, and the prerequisites from Ladybird's
 [build instructions](https://github.com/LadybirdBrowser/ladybird/blob/master/Documentation/BuildInstructionsLadybird.md):

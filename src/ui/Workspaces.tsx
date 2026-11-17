@@ -30,8 +30,8 @@ export function workspaceEditor(model: ShellModel, controller: ShellController) 
   <form onSubmit={e=>{e.preventDefault();controller.saveWorkspace();}}>
    <input name="workspace-name" aria-label="Workspace name" placeholder="Workspace name" required={true} maxlength={32} value={draft.name} onInput={e=>controller.editWorkspace({name:e.currentTarget.value})}/>
    <div class="workspace-customize">
-    <div class={`workspace-symbols tone-${draft.color}`} role="group" aria-label="Workspace icon"><span class="workspace-choice-label">Icon</span>{workspaceIcons.map(icon=><button type="button" aria-label={`${icon} icon`} aria-pressed={draft.icon===icon} onClick={()=>controller.editWorkspace({icon})}>{symbol(icon)}</button>)}</div>
-    <div class="workspace-colors" role="group" aria-label="Workspace color"><span class="workspace-choice-label">Color</span>{workspaceColors.map(color=><button type="button" class={`tone-${color}`} aria-label={`${color} color`} aria-pressed={draft.color===color} onClick={()=>controller.editWorkspace({color})}/>)}</div>
+    <div class={`workspace-symbols tone-${draft.color}`} role="group" aria-label="Workspace icon"><span class="workspace-choice-label">Icon</span>{list(workspaceIcons, icon=><button type="button" aria-label={`${icon} icon`} aria-pressed={draft.icon===icon} onClick={()=>controller.editWorkspace({icon})}>{symbol(icon)}</button>)}</div>
+    <div class="workspace-colors" role="group" aria-label="Workspace color"><span class="workspace-choice-label">Color</span>{list(workspaceColors, color=><button type="button" class={`tone-${color}`} aria-label={`${color} color`} aria-pressed={draft.color===color} onClick={()=>controller.editWorkspace({color})}/>)}</div>
    </div>
    <footer><button type="submit" class="workspace-primary">{draft.id?'Save':'Create'}</button></footer>
   </form>
