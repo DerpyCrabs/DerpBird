@@ -9,7 +9,7 @@ To package an already built and verified engine without rebuilding it:
 
 ```sh
 DERPBIRD_PACKAGE_REUSE_BUILD=1 makepkg -f
-sudo pacman -U ./derpbird-0.1.0-7-x86_64.pkg.tar.zst
+sudo pacman -U ./derpbird-0.1.0-8-x86_64.pkg.tar.zst
 ```
 
 `DERPBIRD_ENGINE_BUILD` selects an alternative engine build directory.
