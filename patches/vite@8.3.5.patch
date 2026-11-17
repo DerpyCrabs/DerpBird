@@ -1,0 +1,12 @@
+diff --git a/dist/node/chunks/node.js b/dist/node/chunks/node.js
+index 797794fd975e746a691212c9fe265fca28167242..b80d5062728d70fc1dbe1d52f1ab7181ba75897d 100644
+--- a/dist/node/chunks/node.js
++++ b/dist/node/chunks/node.js
+@@ -24591,6 +24591,7 @@ function createWebSocketServer(server, config, httpsOptions) {
+ 	const handleUpgrade = (req, socket, head, isPing) => {
+ 		wss.handleUpgrade(req, socket, head, (ws) => {
+ 			if (isPing) {
++				ws.on("error", () => ws.terminate());
+ 				ws.close(1e3);
+ 				return;
+ 			}

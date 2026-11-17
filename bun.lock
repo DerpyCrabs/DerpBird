@@ -32,6 +32,7 @@
     },
   },
   "patchedDependencies": {
+    "vite@8.3.5": "patches/vite@8.3.5.patch",
     "@effectweb/base-ui@0.15.0": "patches/@effectweb%2Fbase-ui@0.15.0.patch",
   },
   "packages": {
