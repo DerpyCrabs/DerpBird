@@ -2,13 +2,14 @@
 """Run production layout, Settings, URL focus and drag checks on an owned compositor."""
 import json, os, signal, subprocess, tempfile, time, sys
 from pathlib import Path
+from test_compositor import sway_executable
 from build_config import engine_build
 root = Path(__file__).resolve().parents[1]
 out = Path(tempfile.mkdtemp(prefix='browser-layouts-', dir=root / 'artifacts'))
 runtime = out / 'runtime'; runtime.mkdir(mode=0o700)
 config = out / 'sway.conf'
 config.write_text('output HEADLESS-1 resolution 1280x800\noutput * bg #222222 solid_color\ndefault_border none\ndefault_floating_border none\n')
-compositor = Path(os.environ.get('DERPBIRD_TEST_SWAY', '/tmp/derpbird-test-compositor/usr/bin/sway'))
+compositor = sway_executable()
 assert compositor.is_file(), 'Set DERPBIRD_TEST_SWAY to the isolated-test sway executable'
 env = dict(os.environ, XDG_RUNTIME_DIR=str(runtime), WLR_BACKENDS='headless', WLR_RENDERER='pixman', WLR_LIBINPUT_NO_DEVICES='1', LD_LIBRARY_PATH=str(compositor.parent.parent / 'lib'))
 env.pop('WAYLAND_DISPLAY', None); env.pop('DISPLAY', None)

@@ -45,12 +45,13 @@ try {
     if (!process.env.HYPRLAND_INSTANCE_SIGNATURE) throw new Error('Not on Hyprland');
     desktopWindows=JSON.parse(execFileSync('hyprctl',['clients','-j'],{encoding:'utf8'})).filter((w:any)=>w.pid===child.pid);
     assert.equal(desktopWindows.length,3);
-    assert(desktopWindows.every((w:any)=>w.class==='org.derpbird.Agent' && w.workspace.id===5));
+    assert(desktopWindows.every((w:any)=>w.class==='org.derpbird.Agent'));
+    if (process.env.DERPBIRD_TEST_WORKSPACE) assert(desktopWindows.every((w:any)=>String(w.workspace.id)===process.env.DERPBIRD_TEST_WORKSPACE));
     assert(desktopWindows.every((w:any)=>!w.title.startsWith('[Agent]')),'No title-based routing');
   } catch(error) { if(process.env.HYPRLAND_INSTANCE_SIGNATURE) throw error; }
 
   if(process.env.SWAYSOCK) {
-    const tree=JSON.parse(execFileSync('/tmp/derpbird-test-compositor/usr/bin/swaymsg',['-t','get_tree','-r'],{encoding:'utf8',env:{...process.env,LD_LIBRARY_PATH:'/tmp/derpbird-test-compositor/usr/lib'}}));
+    const tree=JSON.parse(execFileSync(process.env.DERPBIRD_TEST_SWAYMSG ?? 'swaymsg',['-t','get_tree','-r'],{encoding:'utf8',env:process.env}));
     const flatten=(node:any):any[]=>[node,...(node.nodes??[]).flatMap(flatten),...(node.floating_nodes??[]).flatMap(flatten)];
     desktopWindows=flatten(tree).filter((w:any)=>w.pid===child.pid&&w.app_id);
     assert.equal(desktopWindows.filter((w:any)=>w.app_id==='org.derpbird.Agent').length,2);

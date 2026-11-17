@@ -1,6 +1,6 @@
-# Haz research and DerpBird redesign
+# Browser UI research and implementation
 
-DerpDesign demo `derpbird-haz-tabs`: **Haz · tabs, settings & dialogs**.
+DerpDesign demo `derpbird-haz-tabs`: **DerpBird · browser UI**.
 Fourteen real Ladybird panes: tab reference at 640 and 360 px and 2× density,
 horizontal and vertical browser shells, settings at 1040 and 440 px, a modal, parent/child groups in both orientations, two split-view scenarios, compact chrome, and a live gallery of 1–10 pins.
 Neutral charcoal replaces the previous green styling. Browser panes import the

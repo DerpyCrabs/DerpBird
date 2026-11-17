@@ -34,6 +34,8 @@ for directory in ('bin', 'lib', 'libexec'):
         subprocess.run(['patchelf', '--set-rpath', '$ORIGIN:$ORIGIN/../lib', str(path)], check=True)
 licenses = Path(sys.argv[1]) / 'usr/share/licenses/derpbird'
 licenses.mkdir(parents=True)
+shutil.copy2(ROOT / 'LICENSE', licenses / 'DerpBird')
+shutil.copy2(ROOT / 'THIRD_PARTY_NOTICES.md', licenses / 'THIRD_PARTY_NOTICES.md')
 shutil.copy2(ROOT / 'vendor/ladybird/LICENSE', licenses / 'Ladybird')
 for path in (triplet / 'share').glob('*/copyright'):
     shutil.copy2(path, licenses / path.parent.name)
