@@ -1,0 +1,181 @@
+{
+  "steps": [
+    {
+      "action": "click",
+      "selector": "#haz-tab-0"
+    },
+    {
+      "action": "assert",
+      "selector": ".haz-card[data-contour-animating=false]"
+    },
+    {
+      "action": "capture",
+      "label": "tab-0"
+    },
+    {
+      "action": "key",
+      "key": "ArrowRight"
+    },
+    {
+      "action": "assert",
+      "selector": "#haz-tab-1[aria-selected=true]",
+      "exists": true
+    },
+    {
+      "action": "assert",
+      "selector": ".haz-card[data-contour-animating=false]"
+    },
+    {
+      "action": "capture",
+      "label": "tab-1"
+    },
+    {
+      "action": "key",
+      "key": "ArrowRight"
+    },
+    {
+      "action": "assert",
+      "selector": "#haz-tab-2[aria-selected=true]",
+      "exists": true
+    },
+    {
+      "action": "assert",
+      "selector": ".haz-card[data-contour-animating=false]"
+    },
+    {
+      "action": "capture",
+      "label": "tab-2"
+    },
+    {
+      "action": "key",
+      "key": "ArrowRight"
+    },
+    {
+      "action": "assert",
+      "selector": "#haz-tab-3[aria-selected=true]",
+      "exists": true
+    },
+    {
+      "action": "assert",
+      "selector": ".haz-card[data-contour-animating=false]"
+    },
+    {
+      "action": "capture",
+      "label": "tab-3"
+    },
+    {
+      "action": "key",
+      "key": "ArrowRight"
+    },
+    {
+      "action": "assert",
+      "selector": "#haz-tab-4[aria-selected=true]",
+      "exists": true
+    },
+    {
+      "action": "assert",
+      "selector": ".haz-card[data-contour-animating=false]"
+    },
+    {
+      "action": "capture",
+      "label": "tab-4"
+    },
+    {
+      "action": "key",
+      "key": "ArrowRight"
+    },
+    {
+      "action": "assert",
+      "selector": "#haz-tab-5[aria-selected=true]",
+      "exists": true
+    },
+    {
+      "action": "assert",
+      "selector": ".haz-card[data-contour-animating=false]"
+    },
+    {
+      "action": "capture",
+      "label": "tab-5"
+    },
+    {
+      "action": "key",
+      "key": "ArrowRight"
+    },
+    {
+      "action": "assert",
+      "selector": "#haz-tab-6[aria-selected=true]",
+      "exists": true
+    },
+    {
+      "action": "assert",
+      "selector": ".haz-card[data-contour-animating=false]"
+    },
+    {
+      "action": "capture",
+      "label": "tab-6"
+    },
+    {
+      "action": "key",
+      "key": "ArrowRight"
+    },
+    {
+      "action": "assert",
+      "selector": "#haz-tab-7[aria-selected=true]",
+      "exists": true
+    },
+    {
+      "action": "assert",
+      "selector": ".haz-card[data-contour-animating=false]"
+    },
+    {
+      "action": "capture",
+      "label": "tab-7"
+    },
+    {
+      "action": "key",
+      "key": "ArrowRight"
+    },
+    {
+      "action": "assert",
+      "selector": "#haz-tab-8[aria-selected=true]",
+      "exists": true
+    },
+    {
+      "action": "assert",
+      "selector": ".haz-card[data-contour-animating=false]"
+    },
+    {
+      "action": "capture",
+      "label": "tab-8"
+    },
+    {
+      "action": "key",
+      "key": "ArrowRight"
+    },
+    {
+      "action": "assert",
+      "selector": "#haz-tab-9[aria-selected=true]",
+      "exists": true
+    },
+    {
+      "action": "assert",
+      "selector": ".haz-card[data-contour-animating=false]"
+    },
+    {
+      "action": "capture",
+      "label": "tab-9"
+    },
+    {
+      "action": "key",
+      "key": "Home"
+    },
+    {
+      "action": "assert",
+      "selector": ".haz-card[data-contour-animating=false]"
+    },
+    {
+      "action": "capture",
+      "label": "home"
+    }
+  ]
+}

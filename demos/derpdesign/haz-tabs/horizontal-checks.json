@@ -1,0 +1,77 @@
+{
+  "steps": [
+    {
+      "action": "click",
+      "selector": "[data-tab-id=research]"
+    },
+    {
+      "action": "key",
+      "key": "End"
+    },
+    {
+      "action": "assert",
+      "selector": ".tab-list[data-scroll-animating=false]"
+    },
+    {
+      "action": "assert",
+      "selector": "[data-tab-id=reading-18][aria-selected=true]",
+      "exists": true
+    },
+    {
+      "action": "capture",
+      "label": "last-tab-keyboard"
+    },
+    {
+      "action": "key",
+      "key": "Home"
+    },
+    {
+      "action": "assert",
+      "selector": ".tab-list[data-scroll-animating=false]"
+    },
+    {
+      "action": "click",
+      "selector": "[data-tab-id=research]",
+      "button": "right"
+    },
+    {
+      "action": "assert",
+      "selector": ".tab-menu",
+      "contains": "Pin tab"
+    },
+    {
+      "action": "key",
+      "key": "Escape"
+    },
+    {
+      "action": "assert",
+      "selector": ".tab-menu",
+      "exists": false
+    },
+    {
+      "action": "click",
+      "selector": "[data-tab-id=accessibility]"
+    },
+    {
+      "action": "assert",
+      "selector": "[data-tab-id=accessibility][aria-selected=true]",
+      "exists": true
+    },
+    {
+      "action": "assert",
+      "selector": ".haz-proposal",
+      "exists": true
+    },
+    {
+      "action": "assert",
+      "selector": ".shell.horizontal .haz-contour path",
+      "styles": {
+        "height": "40.5px"
+      }
+    },
+    {
+      "action": "capture",
+      "label": "selection-and-menu"
+    }
+  ]
+}

@@ -19,7 +19,7 @@ export function workspaceControls(model: ShellModel, controller: ShellController
 export function workspaceEditor(model: ShellModel, controller: ShellController) {
  const draft=model.workspaceEditor;
  if(!draft)return null;
- const trigger=()=>document.querySelector<HTMLElement>('.workspace-shortcuts:not([hidden]) [aria-pressed=true]') ?? document.querySelector<HTMLElement>('button[aria-label=Menu]');
+ const trigger=()=>Array.from(document.querySelectorAll<HTMLElement>('[data-workspace-trigger], .workspace-shortcuts:not([hidden]) [aria-pressed=true]')).find(element=>element.getBoundingClientRect().width>0) ?? document.querySelector<HTMLElement>('button[aria-label=Menu]');
  const anchor={getBoundingClientRect:()=>{
   const rect=trigger()?.getBoundingClientRect() ?? new DOMRect(8,8,0,0);
   const sidebar=document.querySelector('.vertical .tabs')?.getBoundingClientRect();

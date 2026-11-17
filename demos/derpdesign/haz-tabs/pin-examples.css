@@ -1,0 +1,7 @@
+.haz-pin-examples{height:100%;overflow:auto;padding:16px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-content:start;background:var(--pref-panel)}
+.haz-pin-examples>section{padding:12px;border:1px solid var(--pref-line);border-radius:12px;height:auto;min-height:0;box-sizing:border-box;background:var(--pref-bg)}
+.haz-pin-examples h2{font-size:12px;font-weight:500;color:var(--pref-muted);margin:0 0 12px}
+.haz-proposal .haz-pin-examples .shell{display:block;height:auto}
+.haz-pin-examples .shell>.navigation,.haz-pin-examples .shell>.content-surface,.haz-pin-examples #sidebar-resize,.haz-pin-examples .new-tab,.haz-pin-examples .workspace-shortcuts,.haz-pin-examples .tab-list>.tab-unit{display:none}
+.haz-proposal .haz-pin-examples .tabs,.haz-proposal .haz-pin-examples .tab-list{display:block;overflow:visible;padding:0;border:0}
+.haz-proposal .haz-pin-examples .shell.vertical .pinned-tabs{margin:0}

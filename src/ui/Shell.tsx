@@ -24,10 +24,10 @@ import Bookmark from '@effectweb/lucide/icons/bookmark';
 import { suggestionDetails } from '../browser/address-suggestions';
 import File from '@effectweb/lucide/icons/file';
 import LoaderCircle from '@effectweb/lucide/icons/loader-circle';
-import Pin from '@effectweb/lucide/icons/pin';
 import type { ShellController, ShellModel } from '../browser/controller';
 
 export function shellView(controller: ShellController, openStyles?: () => void, openScripts?: () => void, openCredentials?: (proposal?: CapturedCredential) => void, openImport?: () => void, autofill?: (token: string, id?: string) => void, openProxy?: () => void, openPageSources?: (kind: SourceKind) => void) {
+  const lastSourceCounts: Record<SourceKind, number> = { styles: 0, scripts: 0 };
   return view<ShellModel>(model => {
     const arrangement = model.chromeLayout;
     const compact = arrangement?.preset === 'compact';
@@ -76,7 +76,7 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
               const tabId = tabs[target]?.dataset.tabId;
               if (tabId) controller.send({ type: 'tab.activate', tabId, focus: 'tab' });
             }} tabindex={tab.id === model.browser.activeTabId ? 0 : -1} aria-selected={tab.id === model.browser.activeTabId} onClick={() => controller.send({ type: 'tab.activate', tabId: tab.id })} title={model.tabMenu ? undefined : `${tab.title || 'New tab'}\n${tab.url}`}>
-              <span class="tab-icon" aria-hidden="true">{tab.loading ? <LoaderCircle class="tab-loading" size={16}/> : tab.favicon ? <img class="tab-favicon" src={tab.favicon} alt=""/> : tab.pinned ? <Pin size={13}/> : <File class="tab-placeholder" size={16}/>}</span>
+              <span class="tab-icon" aria-hidden="true">{tab.loading ? <LoaderCircle class="tab-loading" size={16}/> : tab.favicon ? <img class="tab-favicon" src={tab.favicon} alt=""/> : <File class="tab-placeholder" size={16}/>}</span>
               <span class="tab-title">{tab.title || 'New tab'}</span>{tab.muted ? <VolumeX size={13} aria-label="Muted"/> : tab.audible ? <Volume2 size={13} aria-label="Playing audio"/> : null}{tab.private ? <span aria-label="Private">◈</span> : null}
             </button>
             {!tab.pinned ? <button class="close-tab" aria-label={`Close ${tab.title || 'tab'}`} onClick={() => controller.send({ type: 'tab.close', tabId: tab.id })}><X size={13}/></button> : null}
@@ -102,7 +102,8 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
         {(['styles', 'scripts'] as const).map(kind => {
           const matches = model.pageSources && model.pageSources.tabId === active?.id && model.pageSources.url === active?.url ? model.pageSources[kind] : [];
           const count = matches.filter(item => item.enabled).length;
-          return <Button variant="ghost" size="icon" class="page-sources-button" aria-label={kind === 'styles' ? 'Styles on this page' : 'Scripts on this page'} aria-haspopup="dialog" title={`${kind === 'styles' ? 'Styles' : 'Scripts'} · ${count} enabled on this page`} disabled={!model.connected || !openPageSources || !active || !!active.private} onClick={() => { controller.setPanel(null); openPageSources?.(kind); }}>{kind === 'styles' ? <Palette size={17}/> : <CodeXml size={17}/>}<span class="source-count" hidden={!count}>{count}</span></Button>;
+          if (count) lastSourceCounts[kind] = count;
+          return <Button variant="ghost" size="icon" class="page-sources-button" aria-label={kind === 'styles' ? 'Styles on this page' : 'Scripts on this page'} aria-haspopup="dialog" title={`${kind === 'styles' ? 'Styles' : 'Scripts'} · ${count} enabled on this page`} disabled={!model.connected || !openPageSources || !active || !!active.private} onClick={() => { controller.setPanel(null); openPageSources?.(kind); }}>{kind === 'styles' ? <Palette size={17}/> : <CodeXml size={17}/>}<span class="source-count" data-visible={count > 0} aria-hidden="true">{lastSourceCounts[kind]}</span></Button>;
         })}
         <Button variant="ghost" size="icon" class="proxy-switcher-button" aria-label="Proxy switcher" aria-haspopup="dialog" title={`Proxy · ${model.browser.proxyProfile === 'direct' ? 'Direct connection' : model.browser.proxyProfile === 'system' || !model.browser.proxyProfile ? 'System proxy' : model.browser.proxyProfile}`} disabled={!model.connected || !openProxy || !!active?.private} onClick={() => { controller.setPanel(null); openProxy?.(); }}><Globe size={17}/>{model.browser.proxyProfile && !['direct', 'system'].includes(model.browser.proxyProfile) ? <span class="proxy-active-dot"/> : null}</Button>
         <Button variant="ghost" size="icon" aria-label="Menu" aria-controls="browser-menu-popup" aria-expanded={model.panel === 'menu'} onClick={() => controller.setPanel(model.panel ? null : 'menu')}><Menu size={17}/></Button>
@@ -180,12 +181,7 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
         <Button role="menuitem" variant="ghost" aria-label="Bookmarks" disabled={!model.connected} onClick={() => controller.openPage('bookmarks')}>Bookmarks</Button>
         <Button role="menuitem" variant="ghost" disabled={!model.connected || !openImport || !!active?.private} onClick={() => { controller.setPanel(null); openImport?.(); }}>Import browser data</Button>
         <Button role="menuitem" variant="ghost" aria-label="Passwords" disabled={!model.connected || !openCredentials || !!active?.private} onClick={() => { controller.setPanel(null); openCredentials?.(); }}>Passwords</Button>
-        <Button role="menuitem" variant="ghost" aria-label="User styles" disabled={!model.connected || !openStyles || !!active?.private} onClick={() => { controller.setPanel(null); openStyles?.(); }}>User styles</Button>
-        <Button role="menuitem" variant="ghost" aria-label="Userscripts" disabled={!model.connected || !openScripts || !!active?.private} onClick={() => { controller.setPanel(null); openScripts?.(); }}>Userscripts</Button>
         <Button role="menuitem" variant="ghost" aria-label="Settings" disabled={!model.connected} onClick={() => controller.openPage('settings')}>Settings</Button>
-        <hr/>
-        <Button role="menuitem" variant="ghost" onClick={() => controller.setLayout(model.layout === 'vertical' ? 'horizontal' : 'vertical')}>{model.layout === 'vertical' ? 'Horizontal tabs' : 'Vertical tabs'}</Button>
-        {model.layout === 'horizontal' ? <Button role="menuitem" variant="ghost" aria-pressed={model.wrapTabs} onClick={() => controller.setWrapTabs(!model.wrapTabs)}>Wrap tabs into rows <span>{model.wrapTabs ? 'On' : 'Off'}</span></Button> : null}
       </ShellMenu> : null}
       {model.panel === 'blocking' ? <ShellDialog class="blocking-log" aria-label="Request log" onDismiss={() => controller.setPanel(null)} trigger={() => document.querySelector('button[aria-label="Menu"]')}>
         <header><div><h2>Request log</h2><p>{active?.title || 'Active tab'}{active?.private ? ' · Private' : ''}</p></div><Button variant="ghost" size="icon" aria-label="Close log" onClick={() => controller.setPanel(null)}><X size={17}/></Button></header>

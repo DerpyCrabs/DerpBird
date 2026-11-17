@@ -1,0 +1,23 @@
+{"steps":[
+ {"action":"assert","selector":"#haz-tab-0[aria-selected=true]","text":"Overview"},
+ {"action":"assert","selector":".haz-overflow[data-before=false][data-after=true]","exists":true},
+ {"action":"click","selector":".haz-scroll.next"},
+ {"action":"assert","selector":".haz-overflow[data-before=true]","exists":true},
+ {"action":"click","selector":".haz-scroll.next"},
+ {"action":"click","selector":".haz-scroll.next"},
+ {"action":"click","selector":".haz-scroll.next"},
+ {"action":"click","selector":".haz-scroll.next"},
+ {"action":"assert","selector":".haz-scroll.next[aria-disabled=true]","styles":{"visibility":"visible"}},
+ {"action":"capture","label":"end-chevron-retained-under-pointer"},
+ {"action":"click","selector":"#haz-panel"},
+ {"action":"assert","selector":".haz-scroll.next[aria-disabled=true]","styles":{"visibility":"hidden"}},
+ {"action":"click","selector":"#haz-tab-9"},
+ {"action":"key","key":"Home"},
+ {"action":"assert","selector":"#haz-tab-0[aria-selected=true]","exists":true},
+ {"action":"key","key":"End"},
+ {"action":"assert","selector":"#haz-tab-9[aria-selected=true]","exists":true},
+ {"action":"assert","selector":"#haz-panel","text":"Keep your services in sync."},
+ {"action":"key","key":"ArrowLeft"},
+ {"action":"assert","selector":"#haz-tab-8[aria-selected=true]","exists":true},
+ {"action":"capture","label":"keyboard-focus-clear-of-edge"}
+]}

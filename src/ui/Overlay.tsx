@@ -1,5 +1,6 @@
 import { createPopover, PopoverPopup, createDialog, DialogPopup, createMenu, MenuPopup, type OverlayHandle, type OverlayChangeCause } from '@effectweb/base-ui';
 import { controllerView, modelOwner, view, type JSX } from 'effectweb';
+import { overlaySurface } from './overlay-surface';
 import { observeShellDismissal, shouldRestoreShellFocus } from '../browser/shell-interaction';
 
 type Props = {
@@ -8,11 +9,14 @@ type Props = {
   readonly id?: string;
   readonly style?: JSX.IntrinsicElements['div']['style'];
   readonly 'aria-label'?: string;
+  readonly 'aria-labelledby'?: string;
+  readonly 'aria-describedby'?: string;
   readonly tabindex?: number;
   readonly onKeyDown?: JSX.EventHandler<HTMLElement, KeyboardEvent>;
   readonly onDismiss: (reason: OverlayChangeCause['reason']) => void;
   readonly trigger?: () => HTMLElement | null | undefined;
-  readonly initialFocus?: boolean | 'surface';
+  readonly initialFocus?: boolean | 'surface' | (() => HTMLElement | null | undefined);
+  readonly restoreFocus?: boolean;
   readonly side?: 'top' | 'bottom';
   readonly anchor?: { readonly getBoundingClientRect: () => DOMRect };
 };
@@ -29,13 +33,13 @@ function surface(kind: 'popover' | 'menu' | 'dialog') {
     if (kind !== 'dialog') owner.own(observeShellDismissal({ deactivate: () => handle.hide({ reason: 'focus-out', event: new Event('blur') }) }));
     return { source: owner.source, lifetime: owner, handle, receive: (next: Props) => { owner.patch({ props: next }); handle.attachTrigger(next.trigger?.() ?? undefined); } };
   } }, view(model => {
-    const { onDismiss: _, trigger: __, initialFocus, anchor, side = 'bottom', children, ...props } = model.props;
+    const { onDismiss: _, trigger: __, initialFocus, restoreFocus, anchor, side = 'bottom', children, ...props } = model.props;
     const handle = model.actions.handle;
     const firstFocus = initialFocus === 'surface' ? () => handle.popup() : initialFocus;
-    const finalFocus = () => shouldRestoreShellFocus();
-    if (kind === 'dialog') return <DialogPopup {...props} dialog={handle} initialFocus={firstFocus} finalFocus={finalFocus}>{children}</DialogPopup>;
-    if (kind === 'menu') return <MenuPopup {...props} menu={handle as ReturnType<typeof createMenu>} anchor={anchor} side={side} align="end" initialFocus={firstFocus} finalFocus={finalFocus}>{children}</MenuPopup>;
-    return <PopoverPopup {...props} popover={handle} anchor={anchor} side={side} align="end" initialFocus={firstFocus} finalFocus={finalFocus}>{children}</PopoverPopup>;
+    const finalFocus = () => restoreFocus ?? shouldRestoreShellFocus();
+    if (kind === 'dialog') return <DialogPopup {...props} class={`${props.class ?? ''} shell-overlay-motion`} use={overlaySurface(kind)} dialog={handle} initialFocus={firstFocus} finalFocus={finalFocus}>{children}</DialogPopup>;
+    if (kind === 'menu') return <MenuPopup {...props} class={`${props.class ?? ''} shell-overlay-motion`} use={overlaySurface(kind)} menu={handle as ReturnType<typeof createMenu>} anchor={anchor} side={side} align="end" initialFocus={firstFocus} finalFocus={finalFocus}>{children}</MenuPopup>;
+    return <PopoverPopup {...props} class={`${props.class ?? ''} shell-overlay-motion`} use={overlaySurface(kind)} popover={handle} anchor={anchor} side={side} align="end" initialFocus={firstFocus} finalFocus={finalFocus}>{children}</PopoverPopup>;
   }));
 }
 export const ShellPopover = surface('popover');

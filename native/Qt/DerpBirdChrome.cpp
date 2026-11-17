@@ -1138,6 +1138,8 @@ JsonValue DerpBirdChrome::snapshot()
     chrome_layout.set("address"sv, settings.address_bar_on_bottom ? "bottom"sv : "top"sv);
     preferences.set("chromeLayout"sv, AK::move(chrome_layout));
     preferences.set("sidebarWidth"sv, clamp<int>(settings.vertical_tabs_expanded_width.value_or(196), 120, 600));
+    preferences.set("theme"sv, m_shell_preferences->value("theme", "dark").toString() == "light" ? "light"sv : "dark"sv);
+    preferences.set("alwaysClose"sv, m_shell_preferences->value("alwaysClose", true).toBool());
     preferences.set("wrapTabs"sv, m_shell_preferences->value("wrapTabs", false).toBool());
     state.set("preferences"sv, AK::move(preferences));
     state.set("tabs"sv, AK::move(tabs));
@@ -1400,6 +1402,18 @@ ErrorOr<void> DerpBirdChrome::command(JsonValue const& value)
         auto settings = Application::settings().tab_settings();
         settings.vertical_tabs_expanded_width = static_cast<u16>(*width);
         Application::settings().set_tab_settings(settings);
+        return {};
+    }
+    if (type == "shell.set-appearance"sv) {
+        auto theme = data.get_string("theme"sv);
+        auto always_close = data.get_bool("alwaysClose"sv);
+        if (!theme.has_value() || !theme->is_one_of("dark"sv, "light"sv) || !always_close.has_value())
+            return Error::from_string_literal("Invalid appearance setting");
+        m_shell_preferences->setValue("theme", *theme == "light"sv ? "light" : "dark");
+        m_shell_preferences->setValue("alwaysClose", *always_close);
+        m_shell_preferences->sync();
+        if (m_shell_preferences->status() != QSettings::NoError) return Error::from_string_literal("Cannot save appearance setting");
+        Application::settings().set_tab_settings(Application::settings().tab_settings());
         return {};
     }
     if (type == "shell.set-wrap-tabs"sv) {

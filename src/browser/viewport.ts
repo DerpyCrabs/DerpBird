@@ -8,6 +8,10 @@ export function surfaceRect(rect: Pick<DOMRect, 'left' | 'top' | 'right' | 'bott
   return { x, y, width: Math.max(0, end(rect.right - inset) - x), height: Math.max(0, end(rect.bottom - inset) - y) };
 }
 
+const overlaySelector = '.address-suggestions, .browser-menu, .tab-menu, .error, .style-manager, .blocking-log, .credential-autofill, .workspace-popover, .haz-workspace-menu, .split-divider';
+const captureSelector = 'dialog[open], .shell-overlay-exit, [data-internal-page], .split-drag-surface:not([hidden])';
+const surfaceSelector = `${overlaySelector}, dialog, .shell-overlay-exit, #content-surface, .split-drag-surface`;
+
 /** Coalesce geometry changes into one update per frame; no idle polling. */
 export function observeViewport(document: Document, send: (command: Command) => void, connected: () => boolean) {
   const window = document.defaultView!;
@@ -24,8 +28,8 @@ export function observeViewport(document: Document, send: (command: Command) => 
     const rect = surfaceRect(content.getBoundingClientRect(), 0, 'cover');
     // Input capture raises the transparent shell above the native page. Keep
     // the entire page painted, including behind rounded dialog corners/shadows.
-    const captureInput = !!document.querySelector('dialog[open], .split-drag-surface:not([hidden])');
-    const overlays = captureInput ? [] : Array.from(document.querySelectorAll('.address-suggestions, .browser-menu, .tab-menu, .error, .style-manager, .blocking-log, .credential-autofill, .workspace-popover, .split-divider'), element => surfaceRect(element.getBoundingClientRect()));
+    const captureInput = !!document.querySelector(captureSelector);
+    const overlays = captureInput ? [] : Array.from(document.querySelectorAll(overlaySelector), element => surfaceRect(element.getBoundingClientRect()));
     const command = { type: 'shell.viewport', rect, overlays, ...(captureInput ? { captureInput: true } : {}) } as const;
     const serialized = JSON.stringify(command);
     if (serialized === previous) return;
@@ -38,8 +42,23 @@ export function observeViewport(document: Document, send: (command: Command) => 
   const resize = new window.ResizeObserver(schedule);
   resize.observe(content);
   resize.observe(document.documentElement);
-  const mutations = new window.MutationObserver(schedule);
-  mutations.observe(document.getElementById('app')!, { attributes: true, childList: true, subtree: true });
+  const observed = new Set<Element>();
+  const syncSurfaces = () => {
+    const next = new Set(document.querySelectorAll(surfaceSelector));
+    for (const element of observed) if (!next.has(element)) { resize.unobserve(element); observed.delete(element); }
+    for (const element of next) if (!observed.has(element)) { resize.observe(element); observed.add(element); }
+  };
+  const containsSurface = (node: Node) => node instanceof window.Element &&
+    (node.matches(surfaceSelector) || !!node.querySelector(surfaceSelector));
+  const mutations = new window.MutationObserver(records => {
+    const structural = records.some(record => record.type === 'childList' &&
+      [...record.addedNodes, ...record.removedNodes].some(containsSurface));
+    const geometry = records.some(record => record.type === 'attributes' &&
+      (observed.has(record.target as Element) || (record.target as Element).matches(surfaceSelector)));
+    if (structural || geometry) { syncSurfaces(); schedule(); }
+  });
+  mutations.observe(document.body, { attributes: true, attributeFilter: ['class', 'style', 'open', 'hidden', 'data-internal-page'], childList: true, subtree: true });
+  syncSurfaces();
   window.addEventListener('resize', schedule);
   schedule();
   return () => {

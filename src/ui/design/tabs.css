@@ -1,0 +1,1108 @@
+/* Shared reference behavior. Borders never participate in the scroll mask. */
+.haz-overflow-host {
+  position: relative;
+}
+.haz-overflow {
+  scrollbar-width: none;
+  scroll-padding: 38px;
+  overscroll-behavior: contain;
+}
+.haz-overflow::-webkit-scrollbar {
+  display: none;
+}
+.haz-overflow[data-axis='horizontal'] {
+  --direction: to right;
+}
+.haz-overflow[data-axis='vertical'] {
+  --direction: to bottom;
+}
+.haz-overflow[data-before='false'][data-after='true'] {
+  mask-image: linear-gradient(
+    var(--direction),
+    #000 calc(100% - 38px),
+    transparent
+  );
+}
+.haz-overflow[data-before='true'][data-after='false'] {
+  mask-image: linear-gradient(var(--direction), transparent, #000 38px);
+}
+.haz-overflow[data-before='true'][data-after='true'] {
+  mask-image: linear-gradient(
+    var(--direction),
+    transparent,
+    #000 38px,
+    #000 calc(100% - 38px),
+    transparent
+  );
+}
+.haz-scroll {
+  position: absolute;
+  z-index: 4;
+  display: none;
+  width: 28px;
+  height: 28px;
+  padding: 5px;
+  border: 1px solid #444449;
+  border-radius: 7px;
+  background: #27272a;
+  color: #ededf0;
+  box-shadow: 0 1px 3px #0004;
+  cursor: default;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(var(--haz-entrance, 0px));
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease,
+    background-color 160ms ease;
+}
+.haz-scroll svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+@media (any-pointer: fine) {
+  .haz-scroll {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .haz-scroll[data-present='true'] {
+    visibility: visible;
+  }
+  .haz-scroll[aria-disabled='false'] {
+    opacity: 1;
+    transform: translateX(0);
+    transition-delay: 0s;
+  }
+  .haz-scroll[aria-disabled='true']:hover {
+    opacity: 0.35;
+    transform: translateX(0);
+    transition-delay: 0s;
+    cursor: default;
+  }
+}
+.haz-scroll:hover {
+  background: #38383d;
+}
+.haz-contour {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: hidden;
+}
+.haz-contour path {
+  fill: #222225;
+  stroke: #3b3b40;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+/* Browser proposal: the real shell, with one neutral opt-in surface system. */
+body.haz-proposal {
+  background: var(--pref-bg);
+  color: var(--pref-text);
+}
+.haz-proposal .shell {
+  background: var(--pref-bg);
+}
+.haz-proposal .navigation {
+  background: var(--pref-bg);
+  border-color: var(--pref-line);
+  padding: 5px 8px;
+  color: var(--pref-muted);
+}
+.haz-proposal .navigation button {
+  border-radius: 6px;
+}
+.haz-proposal .navigation button:hover {
+  background: var(--pref-hover);
+  color: var(--pref-text);
+}
+.haz-proposal .tabs {
+  background: var(--pref-bg);
+  padding: 8px;
+  gap: 6px;
+  overflow: hidden;
+}
+.haz-proposal .tab-list {
+  gap: 3px;
+}
+.haz-proposal .tab {
+  min-height: 34px;
+  border-radius: 7px;
+  color: var(--pref-muted);
+  border: 1px solid transparent;
+  box-shadow: none;
+}
+.haz-proposal .tab.active {
+  background: var(--pref-raised);
+  border-color: var(--pref-line);
+  color: var(--pref-text);
+  box-shadow: 0 1px 2px #0002;
+}
+.haz-proposal .tab:hover:not(.active) {
+  background: #ffffff09;
+  color: var(--pref-text);
+}
+.haz-proposal .tab > button:first-child {
+  padding: 5px 12px;
+  gap: 8px;
+}
+.haz-proposal .tab-title {
+  font-size: 13px;
+  min-width: 0;
+  width: 0;
+  flex: 1 1 0%;
+  display: block;
+  text-overflow: ellipsis;
+  mask-image: none;
+}
+.haz-proposal .close-tab {
+  display: flex;
+  opacity: 0.6;
+  align-self: center;
+  margin: 0 8px 0 0;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  padding: 4px;
+  justify-content: center;
+  align-items: center;
+}
+.haz-proposal.haz-quiet-close .tab:not(:hover):not(:focus-within) .close-tab {
+  opacity: 0;
+}
+.haz-proposal .tab:hover .close-tab,
+.haz-proposal .tab:focus-within .close-tab,
+.haz-proposal.haz-always-close .close-tab {
+  opacity: 0.7;
+}
+.haz-proposal .tab .close-tab:hover {
+  opacity: 1;
+  background: #ffffff12;
+  border-radius: 5px;
+}
+.haz-proposal .shell.vertical .tabs {
+  padding: 0;
+}
+.haz-proposal .shell.vertical .tab-list {
+  flex: 1;
+  padding: 0;
+  overflow-x: hidden;
+}
+.haz-proposal .shell.vertical .tab-list > .tab-unit {
+  margin-left: 6px;
+  margin-right: 6px;
+}
+.haz-proposal .shell.vertical .pinned-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: start;
+  margin: 6px 6px 3px;
+  padding: 0;
+  border: 0;
+  gap: 4px;
+}
+.haz-proposal .shell.vertical .pinned-tab-unit {
+  flex: 1 0 var(--haz-pin-basis, 34px);
+  width: 0;
+  height: 34px;
+}
+.haz-proposal .shell .pinned-tabs .tab {
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  box-shadow: none;
+}
+.haz-proposal .shell .pinned-tabs .tab:hover:not(.active) {
+  background: #ffffff09;
+}
+.haz-proposal .shell .pinned-tabs .tab.active {
+  background: var(--pref-raised);
+  border-color: var(--pref-line);
+}
+.haz-proposal .shell .pinned-tabs .tab > button {
+  padding: 8px;
+  border-radius: 0;
+}
+.haz-proposal .shell.horizontal .tabs {
+  padding: 4px 6px;
+  gap: 4px;
+}
+.haz-proposal .shell.horizontal {
+  grid-template-rows: 38px 40px minmax(0, 1fr);
+}
+.haz-proposal .shell.horizontal .tab {
+  height: 34px;
+  width: 200px;
+  border-radius: 8px;
+  box-shadow: none;
+}
+.haz-proposal .shell.horizontal .tab:after {
+  display: none;
+}
+.haz-proposal .shell.horizontal.wrap-tabs {
+  grid-template-rows: auto 40px minmax(0, 1fr);
+}
+.haz-proposal .shell .content-surface {
+  border: 0;
+  border-left: 1px solid var(--pref-line);
+  border-radius: 0;
+  background: var(--pref-panel);
+}
+.haz-proposal .shell.horizontal .content-surface {
+  border-left: 0;
+}
+.haz-proposal .address input {
+  background: #18181b;
+  color: var(--pref-text);
+  border-color: transparent;
+  border-radius: 7px;
+  box-shadow: none;
+}
+.haz-proposal .address input:focus-visible {
+  border-color: var(--pref-focus);
+  outline: 1px solid var(--pref-focus);
+  outline-offset: 0;
+}
+.haz-proposal .new-tab {
+  border-radius: 7px;
+  color: var(--pref-muted);
+  min-height: 34px;
+  padding-left: 8px;
+}
+.haz-proposal .new-tab:hover {
+  background: var(--pref-hover);
+  color: var(--pref-text);
+}
+.haz-proposal .workspace-shortcuts {
+  padding-top: 10px;
+  border-top: 1px solid var(--pref-line);
+  gap: 8px;
+}
+.haz-proposal .workspace-shortcuts button {
+  border-radius: 7px;
+  width: 30px;
+  height: 30px;
+  color: var(--pref-muted);
+}
+.haz-proposal .workspace-shortcuts button[aria-pressed='true'] {
+  color: var(--pref-text);
+  background: var(--pref-raised);
+  box-shadow: inset 0 0 0 1px var(--pref-line);
+}
+.haz-proposal .workspace-shortcuts button:hover {
+  background: var(--pref-hover);
+}
+.haz-proposal
+  :is(
+    .browser-menu,
+    .tab-menu,
+    .workspace-popover,
+    .address-palette,
+    .address-suggestions
+  ) {
+  background: var(--pref-panel);
+  color: var(--pref-text);
+  border: 1px solid var(--pref-line);
+  border-radius: 12px;
+  padding: 4px;
+  box-shadow: 0 12px 40px #0006;
+}
+.haz-proposal :is(.browser-menu, .tab-menu) button {
+  border-radius: 7px;
+  min-height: 32px;
+  padding: 7px 10px;
+}
+.haz-proposal :is(.browser-menu, .tab-menu) button:hover {
+  background: var(--pref-hover);
+}
+.haz-proposal :is(.browser-menu, .tab-menu) hr {
+  border-color: var(--pref-line);
+  margin: 4px 6px;
+}
+.haz-proposal .workspace-popover {
+  padding: 16px;
+}
+.haz-proposal .workspace-popover input {
+  background: var(--pref-raised);
+  border-color: var(--pref-control-edge);
+  border-radius: 8px;
+  color: var(--pref-text);
+}
+.haz-proposal .workspace-popover footer .workspace-primary {
+  background: #ededf0;
+  color: #202024;
+  border-color: #ededf0;
+  border-radius: 7px;
+}
+.haz-proposal .shell button:focus-visible,
+.haz-proposal .workspace-popover button:focus-visible {
+  outline: 2px solid var(--pref-focus);
+  outline-offset: -2px;
+}
+.haz-proposal .tab[data-drop='inside'] {
+  outline-color: var(--pref-focus);
+  background: var(--pref-hover);
+}
+.haz-proposal #sidebar-resize:hover {
+  border-color: var(--pref-focus);
+}
+.haz-proposal .tab[data-drop='before'] {
+  box-shadow: 0 -2px var(--pref-focus);
+}
+.haz-proposal .tab[data-drop='after'] {
+  box-shadow: 0 2px var(--pref-focus);
+}
+@media (pointer: coarse) {
+  .haz-proposal .close-tab {
+    opacity: 0.7;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .haz-overflow {
+    scroll-behavior: auto;
+  }
+}
+.haz-proposal .shell.horizontal .tab[data-drop='before'] {
+  box-shadow: -2px 0 var(--pref-focus);
+}
+.haz-proposal .shell.horizontal .tab[data-drop='after'] {
+  box-shadow: 2px 0 var(--pref-focus);
+}
+.haz-proposal .shell.horizontal .tab[data-group]:before {
+  background: var(--pref-control-edge);
+}
+.haz-proposal .tab-loading {
+  color: var(--pref-text);
+}
+.haz-proposal #sidebar-resize[data-resizing],
+.haz-proposal #sidebar-resize:focus-visible {
+  border-color: var(--pref-focus);
+}
+.haz-proposal :is(.browser-menu, .tab-menu) summary:focus-visible {
+  outline-color: var(--pref-focus);
+}
+.haz-proposal .workspace-popover input:focus {
+  outline-color: var(--pref-focus);
+}
+
+/* Keep the real shell's broad button resets from flattening the overflow controls. */
+.haz-proposal .tabs > .haz-scroll {
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 5px;
+  border-radius: 7px;
+  align-items: center;
+  justify-content: center;
+  transform: translateX(var(--haz-entrance, 0px));
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease,
+    background-color 160ms ease;
+}
+.haz-proposal .tabs > .haz-contour {
+  display: none;
+}
+.haz-proposal .shell.horizontal:not(.wrap-tabs) .tabs {
+  padding: 0 4px;
+  gap: 2px;
+  border-bottom: 0;
+  isolation: isolate;
+}
+.haz-proposal .shell.horizontal:not(.wrap-tabs) .tabs > .haz-contour {
+  display: block;
+  z-index: 0;
+}
+.haz-proposal .shell.horizontal:not(.wrap-tabs) .tab-list {
+  height: 38px;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 0 8px;
+}
+.haz-proposal .shell.horizontal:not(.wrap-tabs) .tab {
+  height: 38px;
+  border: 0;
+  border-radius: 12px 12px 0 0;
+  background: transparent;
+  position: relative;
+}
+.haz-proposal .shell.horizontal:not(.wrap-tabs) .tab.active {
+  background: transparent;
+  box-shadow: none;
+}
+.haz-proposal .shell.horizontal:not(.wrap-tabs) .tab {
+  isolation: isolate;
+}
+.haz-proposal .shell.horizontal:not(.wrap-tabs) .tab:hover:not(.active) {
+  background: transparent;
+}
+.haz-proposal
+  .shell.horizontal:not(.wrap-tabs)
+  .tab
+  > button:first-child:before {
+  content: '';
+  position: absolute;
+  inset: 4px 2px;
+  z-index: -1;
+  border-radius: 7px;
+  background: #ffffff0b;
+  opacity: 0;
+  transition: opacity 160ms ease;
+  pointer-events: none;
+}
+.haz-proposal
+  .shell.horizontal:not(.wrap-tabs)
+  .tab:hover:not(.active)
+  > button:first-child:before {
+  opacity: 1;
+}
+.haz-proposal .shell.horizontal:not(.wrap-tabs) .tab:after {
+  display: block;
+  top: 11px;
+  bottom: 11px;
+  background: var(--pref-line);
+}
+.haz-proposal .shell.horizontal .tab:hover:after,
+.haz-proposal
+  .shell.horizontal
+  .tab-unit:has(+ .tab-unit .tab:hover)
+  .tab:after,
+.haz-proposal
+  .shell.horizontal
+  .tab-unit:has(+ .tab-unit .tab.active)
+  .tab:after {
+  visibility: hidden;
+}
+.haz-proposal .shell.horizontal .pinned-tabs {
+  display: flex;
+  align-items: flex-start;
+  height: 38px;
+  padding: 0;
+  margin-right: 4px;
+  gap: 4px;
+}
+.haz-proposal .shell.horizontal .pinned-tab-unit {
+  flex: 0 0 40px;
+  width: 40px;
+}
+.haz-proposal .shell.horizontal .pinned-tabs .tab {
+  width: 40px;
+  height: 38px;
+  min-height: 38px;
+  background: transparent;
+  border: 0;
+  border-radius: 12px 12px 0 0;
+}
+.haz-proposal .shell.horizontal .pinned-tabs .tab > button {
+  padding: 11px 12px;
+  justify-content: center;
+}
+.haz-proposal .shell.horizontal .pinned-tabs .tab:hover:not(.active) {
+  background: transparent;
+}
+
+.haz-proposal .shell.horizontal .pinned-tabs .tab.active {
+  background: transparent;
+}
+.haz-proposal .shell.horizontal .pinned-tabs .tab:after {
+  display: none;
+}
+.haz-proposal .shell.horizontal .new-tab,
+.haz-proposal .shell.horizontal .workspace-shortcuts {
+  align-self: center;
+}
+.haz-proposal .shell.horizontal .tabs > .haz-scroll {
+  margin-top: 2px;
+}
+.haz-proposal .tab,
+.haz-proposal .close-tab {
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    opacity 150ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .haz-proposal .tab,
+  .haz-proposal .close-tab,
+  .haz-proposal .tabs > .haz-scroll {
+    transition: none;
+  }
+}
+
+/* Vertical lists already have a familiar scrollbar; do not float arrows over rows. */
+.haz-proposal .haz-overflow[data-axis='vertical'] {
+  mask-image: none;
+  scrollbar-width: none;
+  scrollbar-color: #45454c transparent;
+  scroll-padding: 8px;
+}
+.haz-proposal .haz-overflow[data-axis='vertical']::-webkit-scrollbar {
+  display: none;
+  width: 0;
+}
+.haz-proposal .haz-overflow[data-axis='vertical']::-webkit-scrollbar-thumb {
+  background: #45454c;
+  border-radius: 4px;
+}
+@media (any-pointer: fine) {
+  .haz-proposal .tabs > .haz-scroll {
+    display: flex;
+  }
+}
+.haz-proposal .shell.horizontal:not(.wrap-tabs) .tab-list,
+.haz-proposal .shell.horizontal:not(.wrap-tabs) .tabs > .new-tab,
+.haz-proposal .shell.horizontal:not(.wrap-tabs) .tabs > .workspace-shortcuts {
+  position: relative;
+  z-index: 1;
+}
+
+.haz-proposal .shell.horizontal .workspace-shortcuts {
+  display: none;
+}
+.haz-workspace-switch {
+  display: none;
+}
+.haz-proposal .shell.horizontal .haz-workspace-switch {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  z-index: 5;
+}
+.haz-proposal .tabs .haz-workspace-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  max-width: 160px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--pref-muted);
+  background: transparent;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+.haz-workspace-trigger span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.haz-workspace-trigger svg {
+  flex-shrink: 0;
+}
+.haz-proposal .tabs .haz-workspace-trigger:hover,
+.haz-proposal .tabs .haz-workspace-trigger[aria-expanded='true'] {
+  background: #ffffff09;
+  color: var(--pref-text);
+}
+.haz-workspace-menu {
+  width: 220px;
+  padding: 5px;
+  border: 1px solid var(--pref-line);
+  border-radius: 12px;
+  background: var(--pref-panel);
+  color: var(--pref-text);
+  box-shadow: 0 12px 40px #0006;
+}
+.haz-proposal .haz-workspace-menu button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 34px;
+  border: 0;
+  border-radius: 7px;
+  padding: 7px 10px;
+  font-size: 13px;
+  text-align: left;
+  transition: background-color 160ms ease;
+}
+.haz-workspace-menu button span:first-child {
+  flex: 1;
+}
+.haz-workspace-menu button:hover,
+.haz-workspace-menu button:focus-visible {
+  background: #ffffff09;
+}
+.haz-workspace-menu hr {
+  margin: 5px 7px;
+  border-color: var(--pref-line);
+}
+.haz-proposal .tabs > .haz-scroll[aria-disabled='false'],
+.haz-proposal .tabs > .haz-scroll[aria-disabled='true']:hover {
+  transform: translateX(0);
+  transition-delay: 0s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .haz-scroll,
+  .haz-proposal .tabs > .haz-scroll,
+  .haz-proposal .shell.horizontal .tab > button:first-child:before {
+    transition: none;
+  }
+}
+.haz-proposal .shell.vertical .workspace-shortcuts {
+  flex-wrap: wrap;
+}
+.haz-proposal .workspace-symbols button[aria-pressed='true'] {
+  color: var(--pref-text);
+  background: var(--pref-raised);
+}
+
+.haz-proposal .shell.horizontal .tab-unit:not(.pinned-tab-unit) {
+  width: 200px;
+}
+.haz-proposal .shell.vertical .tab > button:first-child {
+  padding-left: 8px;
+  padding-right: 4px;
+}
+/* Group structure is visible without spending a second title column on it. */
+.haz-proposal .tab.tree-root .tab-title {
+  font-weight: 600;
+}
+.haz-proposal .shell.vertical .tree-child {
+  position: relative;
+  margin-left: 18px;
+}
+.haz-proposal .shell.vertical .tree-child > button:first-child {
+  padding-left: 8px;
+}
+.haz-proposal .shell.vertical .tree-child:before {
+  content: '';
+  position: absolute;
+  left: -7px;
+  top: -4px;
+  bottom: -4px;
+  width: 7px;
+  border-left: 1px solid #45454c;
+  pointer-events: none;
+}
+.haz-proposal .shell.vertical .tree-child:after {
+  content: '';
+  position: absolute;
+  left: -7px;
+  top: 50%;
+  width: 7px;
+  border-top: 1px solid #45454c;
+  pointer-events: none;
+}
+.haz-proposal .shell.vertical .tree-child[data-group-end='true']:before {
+  bottom: 50%;
+  border-bottom: 1px solid #45454c;
+  border-bottom-left-radius: 5px;
+}
+.haz-proposal .shell.vertical .tree-child[data-group-end='true']:after {
+  display: none;
+}
+.haz-proposal .shell.horizontal .tab[data-group]:before {
+  display: none;
+}
+
+/* A pair keeps both page names and both close actions readable. */
+.haz-proposal .shell.vertical .split-tab {
+  flex-direction: column;
+  border: 1px solid var(--pref-line);
+  border-radius: 9px;
+  overflow: hidden;
+}
+.haz-proposal .shell.vertical .split-tab > .tab {
+  width: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.haz-proposal .shell.vertical .split-tab > .tab + .tab {
+  border-top: 1px solid var(--pref-line);
+}
+.haz-proposal .shell.vertical .split-tab > .tab:has([aria-selected='true']) {
+  background: var(--pref-raised);
+}
+.haz-proposal .split-tab > .tab:not(:has([aria-selected='true'])) {
+  color: var(--pref-muted);
+}
+.haz-proposal
+  .split-tab:hover
+  > .tab:not(:hover):not(:has([aria-selected='true'])) {
+  background: transparent;
+}
+.haz-proposal .shell.horizontal .tab-unit.split-tab {
+  width: 400px;
+}
+.haz-proposal .shell.horizontal:not(.wrap-tabs) .split-tab > .tab {
+  border: 0;
+  border-radius: 0;
+}
+.haz-proposal .shell.horizontal .split-tab > .tab + .tab:after {
+  display: none;
+}
+.haz-proposal .shell.horizontal .split-tab > .tab + .tab:before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 11px;
+  bottom: 11px;
+  width: 1px;
+  height: auto;
+  background: var(--pref-line);
+}
+.haz-proposal .split-divider {
+  background: var(--pref-line);
+  transition: background-color 150ms ease;
+}
+.haz-proposal .split-divider:hover,
+.haz-proposal .split-divider:focus-visible {
+  background: #777780;
+}
+.haz-proposal
+  .shell.vertical
+  .split-tab
+  > .tab:hover:not(:has([aria-selected='true'])) {
+  background: #ffffff09;
+}
+.haz-proposal
+  .shell.horizontal:not(.wrap-tabs)
+  .split-tab
+  > .tab:hover:not(:has([aria-selected='true']))
+  > button:first-child:before {
+  opacity: 1;
+}
+
+/* Keep the fixed actions compact and make clipped rows read as overflow. */
+.haz-proposal .shell.vertical .workspace-shortcuts {
+  display: none;
+}
+.haz-proposal .shell.vertical .haz-workspace-switch {
+  display: flex;
+  flex: 0 0 auto;
+  margin: 0 6px 6px;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.haz-proposal .shell.vertical .haz-workspace-trigger {
+  width: 100%;
+  max-width: none;
+  justify-content: flex-start;
+  padding: 0 12px;
+  height: 30px;
+}
+.haz-proposal .shell.vertical .haz-workspace-trigger span {
+  flex: 1;
+  text-align: left;
+}
+.haz-proposal .shell.vertical .tabs {
+  gap: 4px;
+}
+.haz-proposal .shell.vertical .new-tab {
+  margin: 0 6px;
+  padding: 5px 12px;
+  min-height: 30px;
+  font-size: 13px;
+  gap: 6px;
+}
+.haz-proposal
+  .haz-overflow[data-axis='vertical'][data-before='false'][data-after='true'] {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent);
+}
+.haz-proposal
+  .haz-overflow[data-axis='vertical'][data-before='true'][data-after='false'] {
+  mask-image: linear-gradient(to bottom, transparent, #000 18px);
+}
+.haz-proposal
+  .haz-overflow[data-axis='vertical'][data-before='true'][data-after='true'] {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 18px,
+    #000 calc(100% - 18px),
+    transparent
+  );
+}
+
+.haz-proposal .shell.horizontal:not(.wrap-tabs) .tab > button:first-child {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.haz-proposal .shell.horizontal:not(.wrap-tabs) .tab .close-tab {
+  margin-bottom: 0;
+}
+.haz-proposal .shell.horizontal .pinned-tabs .tab > button:first-child {
+  padding: 11px 12px;
+}
+
+.haz-proposal .shell.vertical .pinned-tabs .tab > button:first-child {
+  padding: 8px;
+  justify-content: center;
+}
+
+.haz-proposal .shell.horizontal .tabs > .new-tab {
+  align-self: flex-start;
+  display: flex;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  margin: 5px 0 0;
+  padding: 6px;
+  justify-content: center;
+  align-items: center;
+}
+.haz-proposal .shell.horizontal .haz-workspace-switch {
+  align-self: flex-start;
+  margin-top: 4px;
+  margin-left: 4px;
+  padding-left: 4px;
+}
+
+.haz-proposal[data-theme='light'] .address input {
+  background: #f0f0f2;
+  box-shadow: none;
+}
+
+.haz-proposal .chrome-layout .navigation > .compact-address {
+  background: #111114;
+  border: 0;
+  box-shadow: none;
+  border-radius: 7px;
+  color: var(--pref-text);
+  margin: 4px 2px 0;
+  padding: 0 8px;
+  flex-basis: calc(100% - 4px);
+  width: calc(100% - 4px);
+}
+.haz-proposal .chrome-layout .navigation > .compact-address:hover {
+  background: #18181b;
+}
+.haz-proposal .compact-address kbd {
+  color: var(--pref-muted);
+}
+.haz-proposal[data-theme='light']
+  .chrome-layout
+  .navigation
+  > .compact-address {
+  background: #f0f0f2;
+}
+.haz-proposal .shell.horizontal.address-bottom {
+  grid-template-rows: 38px minmax(0, 1fr) 40px;
+}
+/* Wrapped rows use the ordinary tab surface rather than the connected contour. */
+.haz-proposal .shell.horizontal.wrap-tabs .pinned-tabs {
+  height: 34px;
+  padding: 0;
+}
+.haz-proposal .shell.horizontal.wrap-tabs .pinned-tabs .tab {
+  height: 34px;
+  min-height: 34px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+}
+.haz-proposal
+  .shell.horizontal.wrap-tabs
+  .pinned-tabs
+  .tab
+  > button:first-child {
+  padding: 8px 10px;
+}
+.haz-proposal .shell.horizontal.wrap-tabs .pinned-tabs .tab.active {
+  background: var(--pref-raised);
+  border-color: var(--pref-line);
+}
+.haz-proposal .shell.horizontal.wrap-tabs .pinned-tabs .tab:hover:not(.active) {
+  background: #ffffff09;
+}
+
+.haz-proposal .shell.vertical .pinned-tabs .tab {
+  width: 100%;
+}
+.haz-proposal .shell.vertical .pinned-tabs .tab {
+  background: var(--pref-panel);
+  border-radius: 7px;
+}
+.haz-proposal .shell.vertical .pinned-tabs .tab:hover:not(.active) {
+  background: var(--pref-raised);
+}
+.haz-proposal .shell.vertical .pinned-tabs .tab.active {
+  background: var(--pref-raised);
+  border-color: var(--pref-control-edge);
+}
+
+/* Reference palette and a single separator geometry for the whole strip. */
+.haz-proposal {
+  --haz-tab-bg: #0c0e12;
+  --haz-tab-surface: #202226;
+  --haz-tab-line: #35373b;
+  --haz-tab-muted: #cdcfd3;
+  --haz-tab-text: #fff;
+}
+.haz-proposal .shell.horizontal:not(.wrap-tabs) .tabs {
+  background: var(--haz-tab-bg);
+  border-radius: 12px 12px 0 0;
+}
+.haz-proposal .shell.horizontal:not(.wrap-tabs) .navigation {
+  background: var(--haz-tab-surface);
+}
+.haz-proposal .shell.horizontal:not(.wrap-tabs) .haz-contour path {
+  fill: var(--haz-tab-surface);
+  stroke: var(--haz-tab-line);
+}
+.haz-proposal .haz-tab-frame {
+  fill: none;
+  stroke: var(--haz-tab-line);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.haz-proposal .shell.horizontal .haz-contour line {
+  stroke: var(--haz-tab-line);
+}
+.haz-proposal .shell.horizontal .tab {
+  color: var(--haz-tab-muted);
+}
+.haz-proposal .shell.horizontal .tab.active {
+  color: var(--haz-tab-text);
+}
+.haz-proposal .shell.horizontal:not(.wrap-tabs) .tab:after,
+.haz-proposal .shell.horizontal .split-tab > .tab + .tab:before {
+  top: 50%;
+  bottom: auto;
+  height: 14px;
+  width: 1px;
+  transform: translateY(-50%);
+  border: 0;
+  background: var(--haz-tab-line);
+}
+.haz-proposal .shell.horizontal .tabs[data-contour-animating='true'] .tab:after,
+.haz-proposal
+  .shell.horizontal
+  .tabs[data-contour-animating='true']
+  .split-tab
+  > .tab
+  + .tab:before,
+.haz-proposal
+  .shell.horizontal
+  .tab-list[data-tab-layout-animating='true']
+  .tab:after {
+  visibility: hidden;
+}
+
+.haz-proposal .shell.horizontal .haz-workspace-switch {
+  border-left: 0;
+  position: relative;
+}
+.haz-proposal .shell.horizontal .haz-workspace-switch:before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 1px;
+  height: 14px;
+  transform: translateY(-50%);
+  background: var(--haz-tab-line);
+}
+
+.haz-proposal .shell.horizontal:not(.wrap-tabs) .tab:after,
+.haz-proposal .shell.horizontal .split-tab > .tab + .tab:before,
+.haz-proposal .shell.horizontal .haz-workspace-switch:before {
+  width: 0;
+  border: 0;
+  border-left: 1px solid var(--haz-tab-line);
+  background: none;
+}
+.haz-proposal
+  .shell.horizontal
+  .tab-list[data-tab-layout-animating='true']
+  .split-tab
+  > .tab
+  + .tab:before {
+  visibility: hidden;
+}
+
+/* Narrow painted thumb with an six-pixel drag target at the list edge. */
+.haz-scroll-track {
+  position: absolute;
+  width: 6px;
+  z-index: 6;
+  touch-action: none;
+  cursor: default;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+.haz-scroll-track[hidden] {
+  display: none;
+}
+.haz-scroll-thumb {
+  width: 4px;
+  margin-left: 1px;
+  background: #45454c;
+  border-radius: 2px;
+  pointer-events: none;
+  transition: background-color 150ms ease;
+}
+.haz-scroll-track:hover .haz-scroll-thumb {
+  background: #606068;
+}
+
+.haz-scroll-track[data-scrolling='true'] {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .haz-scroll-track {
+    transition: none;
+  }
+}
+
+.haz-proposal .shell.vertical .tab .close-tab {
+  margin-right: 4px;
+}
+.haz-proposal .shell.vertical .split-tab > .tab > button:first-child {
+  padding-left: 9px;
+}
+.haz-proposal .shell.vertical .split-tab > .tab .close-tab {
+  margin-right: 5px;
+}
+
+.haz-proposal .address {
+  display: flex;
+  align-items: center;
+}
+.haz-proposal .address[hidden] {
+  display: none;
+}
+.haz-proposal .address input {
+  display: block;
+}
+
+.haz-proposal .shell.compact-chrome {
+  grid-template-rows: 78px minmax(0, 1fr);
+}
+.haz-proposal .shell.compact-chrome .navigation {
+  padding: 4px 4px 8px;
+}
+.haz-proposal .shell.compact-chrome .navigation > button:not(.compact-address) {
+  width: min(28px, calc((100% - 12px) / 7));
+  flex: 0 0 auto;
+  min-width: 0;
+  padding-inline: 0;
+}
+
+/* Native page pixels must remain visible beneath translucent dialogs. */
+body.native-shell,
+body.native-shell .shell,
+body.native-shell .shell .content-surface {
+  background: transparent;
+}

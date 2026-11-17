@@ -1,0 +1,74 @@
+{
+  "steps": [
+    {
+      "action": "key",
+      "key": "Escape"
+    },
+    {
+      "action": "click",
+      "selector": "#compact-location"
+    },
+    {
+      "action": "assert",
+      "selector": "#palette-location:focus",
+      "exists": true
+    },
+    {
+      "action": "key",
+      "key": "a",
+      "modifiers": [
+        "control"
+      ]
+    },
+    {
+      "action": "type",
+      "selector": "#palette-location",
+      "text": "accessibility"
+    },
+    {
+      "action": "assert",
+      "selector": "#palette-results",
+      "contains": "Accessibility checklist"
+    },
+    {
+      "action": "key",
+      "key": "ArrowDown"
+    },
+    {
+      "action": "assert",
+      "selector": "#palette-option-0[aria-selected=true]",
+      "exists": true
+    },
+    {
+      "action": "capture",
+      "label": "palette-keyboard-selection"
+    },
+    {
+      "action": "key",
+      "key": "Enter"
+    },
+    {
+      "action": "assert",
+      "selector": ".address-palette:not(.shell-overlay-exit)",
+      "exists": false
+    },
+    {
+      "action": "assert",
+      "selector": ".tab.active",
+      "contains": "Accessibility checklist"
+    },
+    {
+      "action": "click",
+      "selector": "#compact-location"
+    },
+    {
+      "action": "click",
+      "selector": "[aria-label=\"Close address palette\"]"
+    },
+    {
+      "action": "assert",
+      "selector": ".address-palette:not(.shell-overlay-exit)",
+      "exists": false
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+
+.haz-proposal .demo-article{padding:28px;color:var(--pref-text);background:var(--pref-panel)}
+.haz-proposal .demo-article h1{font:600 25px/1.2 Inter,system-ui,sans-serif;letter-spacing:-.6px;color:var(--pref-text);margin:0 0 16px}
+.haz-proposal .demo-article h2{font:600 15px/1.4 Inter,system-ui,sans-serif;margin:26px 0 12px;color:var(--pref-text)}
+.haz-proposal .demo-article p,.haz-proposal .demo-article li{font-size:13px;line-height:1.7;color:var(--pref-muted)}
+.haz-proposal .demo-article ul{padding-left:18px;list-style:disc}
+.haz-proposal .demo-article li+li{margin-top:10px}
+.haz-proposal .site-mast{border-color:var(--pref-line);color:var(--pref-text);letter-spacing:1px;margin-bottom:26px}
+.haz-proposal .site-mast span{color:var(--pref-muted)}
+.haz-proposal .demo-article blockquote{border-color:var(--pref-control-edge);color:var(--pref-text);font:14px/1.7 Inter,system-ui,sans-serif;margin:24px 0}
+.haz-proposal .checks label{border-color:var(--pref-line);font-size:13px;gap:10px;color:var(--pref-text)}
+.haz-proposal .checks input{accent-color:#bdbdc6}
+.haz-proposal .demo-article textarea{background:var(--pref-raised);border:1px solid var(--pref-control-edge);border-radius:8px;color:var(--pref-text);font:13px/1.5 Inter,system-ui,sans-serif}
+.haz-proposal .demo-page[data-active=true] .site-mast{border-bottom-color:var(--pref-control-edge)}
+.haz-proposal .demo-article textarea::placeholder{color:var(--pref-muted);opacity:1}

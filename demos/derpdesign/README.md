@@ -69,3 +69,11 @@ area grows with additional pin rows. `workspace-nine-checks.json` and
 `bun run test:workspaces:engine` builds the real browser and checks creation through
 the form, workspace isolation, nine pins, keyboard cycling, last-tab closure,
 restart persistence and private-window non-persistence on an isolated compositor.
+
+## Browser UI
+
+`derpbird-haz-tabs` contains a scrollable tab reproduction at two widths and
+horizontal/vertical layouts using the production shell, responsive settings,
+and a reusable modal/field component study. Fourteen Ladybird panes include child groups, split views, and a 2×
+density reference. See
+[the research, recommendations and verification instructions](haz-tabs/README.md).

@@ -1,0 +1,211 @@
+{
+  "steps": [
+    {
+      "action": "capture",
+      "label": "initial"
+    },
+    {
+      "action": "click",
+      "selector": ".haz-scroll.next"
+    },
+    {
+      "action": "capture",
+      "label": "forward-0-0"
+    },
+    {
+      "action": "capture",
+      "label": "forward-0-1"
+    },
+    {
+      "action": "capture",
+      "label": "forward-0-2"
+    },
+    {
+      "action": "capture",
+      "label": "forward-0-3"
+    },
+    {
+      "action": "capture",
+      "label": "forward-0-4"
+    },
+    {
+      "action": "capture",
+      "label": "forward-0-5"
+    },
+    {
+      "action": "capture",
+      "label": "forward-0-6"
+    },
+    {
+      "action": "capture",
+      "label": "forward-0-7"
+    },
+    {
+      "action": "click",
+      "selector": ".haz-scroll.next"
+    },
+    {
+      "action": "capture",
+      "label": "forward-1-0"
+    },
+    {
+      "action": "capture",
+      "label": "forward-1-1"
+    },
+    {
+      "action": "capture",
+      "label": "forward-1-2"
+    },
+    {
+      "action": "capture",
+      "label": "forward-1-3"
+    },
+    {
+      "action": "capture",
+      "label": "forward-1-4"
+    },
+    {
+      "action": "capture",
+      "label": "forward-1-5"
+    },
+    {
+      "action": "capture",
+      "label": "forward-1-6"
+    },
+    {
+      "action": "capture",
+      "label": "forward-1-7"
+    },
+    {
+      "action": "click",
+      "selector": ".haz-scroll.next"
+    },
+    {
+      "action": "capture",
+      "label": "forward-2-0"
+    },
+    {
+      "action": "capture",
+      "label": "forward-2-1"
+    },
+    {
+      "action": "capture",
+      "label": "forward-2-2"
+    },
+    {
+      "action": "capture",
+      "label": "forward-2-3"
+    },
+    {
+      "action": "capture",
+      "label": "forward-2-4"
+    },
+    {
+      "action": "capture",
+      "label": "forward-2-5"
+    },
+    {
+      "action": "capture",
+      "label": "forward-2-6"
+    },
+    {
+      "action": "capture",
+      "label": "forward-2-7"
+    },
+    {
+      "action": "click",
+      "selector": ".haz-scroll.next"
+    },
+    {
+      "action": "capture",
+      "label": "forward-3-0"
+    },
+    {
+      "action": "capture",
+      "label": "forward-3-1"
+    },
+    {
+      "action": "capture",
+      "label": "forward-3-2"
+    },
+    {
+      "action": "capture",
+      "label": "forward-3-3"
+    },
+    {
+      "action": "capture",
+      "label": "forward-3-4"
+    },
+    {
+      "action": "capture",
+      "label": "forward-3-5"
+    },
+    {
+      "action": "capture",
+      "label": "forward-3-6"
+    },
+    {
+      "action": "capture",
+      "label": "forward-3-7"
+    },
+    {
+      "action": "assert",
+      "selector": ".haz-scroll.next[aria-disabled=true]",
+      "styles": {
+        "visibility": "visible"
+      }
+    },
+    {
+      "action": "click",
+      "selector": "#haz-panel"
+    },
+    {
+      "action": "capture",
+      "label": "fade-out-0"
+    },
+    {
+      "action": "capture",
+      "label": "fade-out-1"
+    },
+    {
+      "action": "capture",
+      "label": "fade-out-2"
+    },
+    {
+      "action": "capture",
+      "label": "fade-out-3"
+    },
+    {
+      "action": "capture",
+      "label": "fade-out-4"
+    },
+    {
+      "action": "capture",
+      "label": "fade-out-5"
+    },
+    {
+      "action": "capture",
+      "label": "fade-out-6"
+    },
+    {
+      "action": "capture",
+      "label": "fade-out-7"
+    },
+    {
+      "action": "capture",
+      "label": "fade-out-8"
+    },
+    {
+      "action": "capture",
+      "label": "fade-out-9"
+    },
+    {
+      "action": "assert",
+      "selector": ".haz-scroll.next",
+      "styles": {
+        "visibility": "hidden",
+        "opacity": "0"
+      }
+    }
+  ]
+}

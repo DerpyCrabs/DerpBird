@@ -10,7 +10,8 @@ import { openImportManager } from './ui/ImportManager';
 import { observeSidebarResize } from './browser/sidebar-resize';
 import { checkSourceUpdates } from './browser/source-updates';
 import { syncScriptFolders, syncStyleFolders } from './browser/source-folder-sync';
-import { observeActiveTab } from './browser/tab-visibility';
+import {mountBrowserChrome} from './ui/design/chrome';
+import {mountInternalPages} from './ui/design/internal-pages';
 import { openCredentialManager } from './ui/CredentialManager';
 import type { CapturedCredential, CredentialPort } from './browser/credential-protocol';
 import { observeViewport } from './browser/viewport';
@@ -100,10 +101,13 @@ const showPageSources = pageSourcesPort ? (kind: SourceKind) => {
     () => { if (tabId && controller.state().browser.activeTabId === tabId) controller.send({ type: 'tab.reload', tabId }); });
 } : undefined;
 let lastSourcePage = '';
+let lastSourceLoading = false;
 const stopPageSources = pageSourcesPort ? (window.derpbird ?? webui)?.subscribe(() => {
   const browser = controller.state().browser, active = browser.tabs.find(t => t.id === browser.activeTabId);
-  const key = `${active?.id}:${active?.url}:${active?.loading}`;
-  if (key === lastSourcePage) return;
+  const key = `${active?.id}:${active?.url}`;
+  const finished = lastSourceLoading && !active?.loading;
+  lastSourceLoading = !!active?.loading;
+  if (key === lastSourcePage) { if (finished) void refreshPageSources(); return; }
   lastSourcePage = key;
   pageSourcePopup?.dispose(); pageSourcePopup = undefined;
   controller.setPageSources(); void refreshPageSources();
@@ -164,7 +168,9 @@ const autofill = autofillPort ? (token: string, id?: string) => { void autofillP
 const mounted = mount(document.getElementById('app')!, shellView(controller, showStyles, showScripts, showCredentials, showImport, autofill, showProxy, showPageSources), controller.source);
 const stopSplitInteractions = observeSplitInteractions(document, controller);
 const stopSidebarResize = observeSidebarResize(document, controller.previewSidebarWidth, controller.setSidebarWidth);
-const stopActiveTab = observeActiveTab(document);
+document.body.classList.add('native-shell');
+const stopChrome=mountBrowserChrome(controller);
+const stopPages=mountInternalPages(controller);
 const stopViewport = observeViewport(document, command => controller.send(command), () => controller.state().connected);
 const onKey = (event: KeyboardEvent) => {
   if (styleManager || scriptManager || credentialManager || importManager || proxyManager || pageSourcePopup) return;
@@ -191,7 +197,7 @@ window.addEventListener('pagehide', () => {
   document.removeEventListener('keydown', onKey);
   stopShellDismissal();
   stopViewport();
-  stopActiveTab();
+  stopPages();stopChrome();
   stopSplitInteractions(); stopSidebarResize();
   styleManager?.dispose();
   scriptManager?.dispose();

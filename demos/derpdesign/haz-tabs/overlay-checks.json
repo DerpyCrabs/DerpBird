@@ -1,0 +1,83 @@
+{
+  "steps": [
+    {
+      "action": "click",
+      "selector": ".navigation [aria-label=\"Styles on this page\"]"
+    },
+    {
+      "action": "assert",
+      "selector": ".page-sources-popup.styles:not(.shell-overlay-exit)",
+      "exists": true
+    },
+    {
+      "action": "click",
+      "selector": ".navigation [aria-label=\"Scripts on this page\"]"
+    },
+    {
+      "action": "assert",
+      "selector": ".page-sources-popup.scripts:not(.shell-overlay-exit)",
+      "exists": true
+    },
+    {
+      "action": "click",
+      "selector": ".navigation [aria-label=\"Proxy switcher\"]"
+    },
+    {
+      "action": "assert",
+      "selector": ".proxy-popup:not(.shell-overlay-exit)",
+      "exists": true
+    },
+    {
+      "action": "click",
+      "selector": ".navigation [aria-label=\"Menu\"]"
+    },
+    {
+      "action": "assert",
+      "selector": ".browser-menu:not(.shell-overlay-exit)",
+      "exists": true
+    },
+    {
+      "action": "key",
+      "key": "Escape"
+    },
+    {
+      "action": "click",
+      "selector": ".navigation [aria-label=\"Scripts on this page\"]"
+    },
+    {
+      "action": "click",
+      "selector": "input[data-source-id=\"copy\"]"
+    },
+    {
+      "action": "assert",
+      "selector": ".page-sources-reload-slot[data-visible=true]",
+      "exists": true
+    },
+    {
+      "action": "capture",
+      "label": "reload-shown"
+    },
+    {
+      "action": "click",
+      "selector": ".page-sources-reload button"
+    },
+    {
+      "action": "assert",
+      "selector": ".page-sources-reload-slot[data-visible=false]",
+      "exists": true
+    },
+    {
+      "action": "capture",
+      "label": "reload-hidden"
+    },
+    {
+      "action": "key",
+      "key": "Escape"
+    },
+    {
+      "action": "assert",
+      "selector": ".shell-overlay-motion:not(.shell-overlay-exit)",
+      "exists": false
+    }
+  ]
+}

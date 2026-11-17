@@ -66,3 +66,41 @@ test('Default-only workspace snapshots stay valid and creation retains original 
  f.switchWorkspace('research-space');
  expect(decodeSnapshot(f.snapshot()).tabs).toHaveLength(6);
 });
+
+
+test('split fixtures follow native detachment, regrouping and surviving-page selection',async()=>{
+ for(const edge of ['left','right','top','bottom']){
+  const f=createBirdFixture('vertical',canDropTab);f.enableWorkspaces();f.seedReadingTabs(['First child','Second child']);
+  const send=async(c:any)=>{await f.port.request(c);return decodeSnapshot(f.snapshot());};
+  await send({type:'tab.tree-move',tabId:'reading-1',targetId:'research',placement:'inside'});
+  await send({type:'tab.tree-move',tabId:'reading-2',targetId:'accessibility',placement:'inside'});
+  let s=await send({type:'tab.split',tabId:'accessibility',targetId:'research',edge});
+  expect(s.tabs.slice(0,3).every((t:any)=>t.pinned)).toBe(true);
+  const first=s.splits[0].firstTabId,second=s.splits[0].secondTabId;
+  expect(s.tabs.filter((t:any)=>t.id.startsWith('reading-')).every((t:any)=>!t.parentId)).toBe(true);
+  for(const tabId of ['reading-1','reading-2'])s=await send({type:'tab.tree-move',tabId,targetId:second,placement:'inside'});
+  expect(s.tabs.filter((t:any)=>t.id.startsWith('reading-')).map((t:any)=>t.parentId)).toEqual([first,first]);
+  await send({type:'tab.activate',tabId:second});
+  s=await send({type:'tab.close',tabId:second});expect(s.activeTabId).toBe(first);
+  s=await send({type:'tab.reopen'});expect(s.tabs.filter((t:any)=>t.id.startsWith('reading-'))).toHaveLength(2);
+ }
+});
+
+
+test('detaching a child never inserts it inside the following group',async()=>{
+ const f=createBirdFixture('vertical',canDropTab);f.seedReadingTabs(['One','Two','Three']);
+ for(const [tabId,targetId] of [['reading-1','research'],['reading-2','research'],['reading-3','accessibility']])await f.port.request({type:'tab.tree-move',tabId,targetId,placement:'inside'});
+ for(const tabId of ['reading-2','reading-1']){
+  await f.port.request({type:'tab.ungroup',tabId});
+  const s=decodeSnapshot(f.snapshot());expect(s.tabs.find((t:any)=>t.id===tabId)?.parentId).toBeUndefined();
+  expect(s.tabs.find((t:any)=>t.id==='reading-3')?.parentId).toBe('accessibility');
+ }
+});
+
+test('appearance changes survive subsequent native-shaped snapshot updates', async () => {
+ const f=createBirdFixture('vertical',canDropTab);
+ await f.port.request({type:'shell.set-appearance',theme:'light',alwaysClose:false});
+ await f.port.request({type:'tab.activate',tabId:'accessibility'});
+ const s=decodeSnapshot(f.snapshot());
+ expect(s.preferences.theme).toBe('light');expect(s.preferences.alwaysClose).toBe(false);
+});

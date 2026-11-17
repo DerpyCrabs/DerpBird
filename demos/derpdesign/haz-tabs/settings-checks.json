@@ -1,0 +1,204 @@
+{
+  "steps": [
+    {
+      "action": "click",
+      "selector": ".haz-themes button:nth-child(2)"
+    },
+    {
+      "action": "assert",
+      "selector": ".haz-page[data-theme=light]",
+      "exists": true
+    },
+    {
+      "action": "capture",
+      "label": "settings-light"
+    },
+    {
+      "action": "click",
+      "selector": ".haz-themes button:nth-child(1)"
+    },
+    {
+      "action": "click",
+      "selector": "input[name=browser-layout][value=classic]"
+    },
+    {
+      "action": "assert",
+      "selector": ".shell.horizontal",
+      "exists": true
+    },
+    {
+      "action": "click",
+      "selector": "input[name=browser-layout][value=sidebar]"
+    },
+    {
+      "action": "assert",
+      "selector": ".shell.vertical",
+      "exists": true
+    },
+    {
+      "action": "click",
+      "selector": ".haz-settings-nav button:nth-child(2)"
+    },
+    {
+      "action": "assert",
+      "selector": "body.haz-always-close"
+    },
+    {
+      "action": "click",
+      "selector": "#always-close"
+    },
+    {
+      "action": "assert",
+      "selector": "body.haz-quiet-close"
+    },
+    {
+      "action": "click",
+      "selector": "#always-close"
+    },
+    {
+      "action": "assert",
+      "selector": "body.haz-always-close",
+      "exists": true
+    },
+    {
+      "action": "capture",
+      "label": "tab-preferences"
+    },
+    {
+      "action": "click",
+      "selector": ".haz-settings-nav button:nth-child(3)"
+    },
+    {
+      "action": "click",
+      "selector": "#rename-workspace"
+    },
+    {
+      "action": "assert",
+      "selector": "#workspace-new-name:focus",
+      "exists": true
+    },
+    {
+      "action": "key",
+      "key": "End"
+    },
+    {
+      "action": "key",
+      "key": "Backspace"
+    },
+    {
+      "action": "key",
+      "key": "Backspace"
+    },
+    {
+      "action": "key",
+      "key": "Backspace"
+    },
+    {
+      "action": "key",
+      "key": "Backspace"
+    },
+    {
+      "action": "key",
+      "key": "Backspace"
+    },
+    {
+      "action": "key",
+      "key": "Backspace"
+    },
+    {
+      "action": "key",
+      "key": "Backspace"
+    },
+    {
+      "action": "key",
+      "key": "Backspace"
+    },
+    {
+      "action": "key",
+      "key": "Backspace"
+    },
+    {
+      "action": "key",
+      "key": "Backspace"
+    },
+    {
+      "action": "key",
+      "key": "Backspace"
+    },
+    {
+      "action": "key",
+      "key": "Backspace"
+    },
+    {
+      "action": "click",
+      "selector": ".pref-dialog button[type=submit]"
+    },
+    {
+      "action": "assert",
+      "selector": "#workspace-new-name-error",
+      "text": "Enter a workspace name."
+    },
+    {
+      "action": "capture",
+      "label": "dialog-validation"
+    },
+    {
+      "action": "type",
+      "selector": "#workspace-new-name",
+      "text": "Design research"
+    },
+    {
+      "action": "click",
+      "selector": ".pref-dialog button[type=submit]"
+    },
+    {
+      "action": "assert",
+      "selector": ".pref-dialog",
+      "exists": false
+    },
+    {
+      "action": "assert",
+      "selector": ".haz-workspace-row strong",
+      "text": "Design research"
+    },
+    {
+      "action": "assert",
+      "selector": "#rename-workspace:focus",
+      "exists": true
+    },
+    {
+      "action": "click",
+      "selector": "#rename-workspace"
+    },
+    {
+      "action": "key",
+      "key": "Tab",
+      "modifiers": [
+        "shift"
+      ]
+    },
+    {
+      "action": "assert",
+      "selector": ".pref-dialog :focus",
+      "exists": true
+    },
+    {
+      "action": "key",
+      "key": "Escape"
+    },
+    {
+      "action": "assert",
+      "selector": ".pref-dialog",
+      "exists": false
+    },
+    {
+      "action": "assert",
+      "selector": "#rename-workspace:focus",
+      "exists": true
+    },
+    {
+      "action": "capture",
+      "label": "rename-saved-focus-restored"
+    }
+  ]
+}

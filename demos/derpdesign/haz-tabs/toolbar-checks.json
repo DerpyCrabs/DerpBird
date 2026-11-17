@@ -1,0 +1,127 @@
+{
+  "steps": [
+    {
+      "action": "click",
+      "selector": ".navigation [aria-label=\"Styles on this page\"]"
+    },
+    {
+      "action": "assert",
+      "selector": ".page-sources-popup.styles",
+      "styles": {
+        "background-color": "rgb(32, 32, 35)"
+      }
+    },
+    {
+      "action": "capture",
+      "label": "styles-on-this-page"
+    },
+    {
+      "action": "key",
+      "key": "Escape"
+    },
+    {
+      "action": "assert",
+      "selector": ".page-sources-popup.styles",
+      "exists": false
+    },
+    {
+      "action": "click",
+      "selector": ".navigation [aria-label=\"Scripts on this page\"]"
+    },
+    {
+      "action": "assert",
+      "selector": ".page-sources-popup.scripts",
+      "styles": {
+        "background-color": "rgb(32, 32, 35)"
+      }
+    },
+    {
+      "action": "capture",
+      "label": "scripts-on-this-page"
+    },
+    {
+      "action": "key",
+      "key": "Escape"
+    },
+    {
+      "action": "assert",
+      "selector": ".page-sources-popup.scripts",
+      "exists": false
+    },
+    {
+      "action": "click",
+      "selector": ".navigation [aria-label=\"Proxy switcher\"]"
+    },
+    {
+      "action": "assert",
+      "selector": ".proxy-popup",
+      "styles": {
+        "background-color": "rgb(32, 32, 35)"
+      }
+    },
+    {
+      "action": "capture",
+      "label": "proxy-switcher"
+    },
+    {
+      "action": "key",
+      "key": "Escape"
+    },
+    {
+      "action": "assert",
+      "selector": ".proxy-popup",
+      "exists": false
+    },
+    {
+      "action": "click",
+      "selector": ".navigation [aria-label=\"Menu\"]"
+    },
+    {
+      "action": "assert",
+      "selector": ".browser-menu",
+      "styles": {
+        "background-color": "rgb(32, 32, 35)"
+      }
+    },
+    {
+      "action": "capture",
+      "label": "menu"
+    },
+    {
+      "action": "key",
+      "key": "Escape"
+    },
+    {
+      "action": "assert",
+      "selector": ".browser-menu",
+      "exists": false
+    },
+    {
+      "action": "click",
+      "selector": ".navigation [aria-label=Menu]"
+    },
+    {
+      "action": "assert",
+      "selector": ".browser-menu [aria-label=\"User styles\"]",
+      "exists": false
+    },
+    {
+      "action": "assert",
+      "selector": ".browser-menu [aria-label=Userscripts]",
+      "exists": false
+    },
+    {
+      "action": "assert",
+      "selector": ".browser-menu",
+      "contains": "Settings"
+    },
+    {
+      "action": "capture",
+      "label": "shorter-menu"
+    },
+    {
+      "action": "key",
+      "key": "Escape"
+    }
+  ]
+}

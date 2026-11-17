@@ -107,3 +107,12 @@ test('autofill suggestions carry only metadata for one origin and reject private
     expect(() => decodeSnapshot({ ...snapshot(), credentialAutofill: { ...suggestion, ...change } })).toThrow();
   expect(() => decodeSnapshot({ ...snapshot(), tabs: [{ ...tab, private: true }], credentialAutofill: suggestion })).toThrow();
 });
+
+test('appearance preferences accept persisted values and reject malformed input', () => {
+  for (const theme of ['dark', 'light'] as const) {
+    const preferences = {layout: 'vertical' as const, theme, alwaysClose: false};
+    expect(decodeSnapshot({...snapshot(), preferences}).preferences).toEqual(preferences);
+  }
+  for (const extra of [{theme: 'blue'}, {theme: null}, {alwaysClose: 'false'}, {alwaysClose: 0}])
+    expect(() => decodeSnapshot({...snapshot(), preferences: {...snapshot().preferences, ...extra}})).toThrow();
+});

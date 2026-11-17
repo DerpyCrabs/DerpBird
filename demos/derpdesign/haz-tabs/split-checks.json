@@ -1,0 +1,21 @@
+{"steps":[
+ {"action":"assert","selector":".split-tab [data-tab-id=research]"},
+ {"action":"assert","selector":".split-tab [data-tab-id=accessibility]"},
+ {"action":"assert","selector":".demo-pages[data-split=true][data-axis=horizontal]"},
+ {"action":"click","selector":".demo-page[data-id=accessibility] textarea"},
+ {"action":"assert","selector":"[data-tab-id=accessibility][aria-selected=true]"},
+ {"action":"type","selector":".demo-page[data-id=accessibility] textarea","text":"Review focus order."},
+ {"action":"drag","from":{"selector":".split-divider"},"to":{"selector":"#content-surface","x":0.65,"y":0.5}},
+ {"action":"assert","selector":".split-divider[aria-valuenow='65']"},
+ {"action":"capture","label":"split-resized"},
+ {"action":"click","selector":"[role=tab][data-tab-id=research]","button":"right"},
+ {"action":"click","selector":".tab-menu button:first-of-type"},
+ {"action":"assert","selector":".demo-pages[data-axis=vertical]"},
+ {"action":"capture","label":"split-axis-switched"},
+ {"action":"click","selector":"button[aria-label='Close Accessibility checklist']"},
+ {"action":"assert","selector":".split-tab","exists":false},
+ {"action":"assert","selector":".demo-pages[data-split=false]"},
+ {"action":"assert","selector":"[role=tab][data-tab-id=research]"},
+ {"action":"assert","selector":".tree-child [data-tab-id=reading-1]"},
+ {"action":"capture","label":"remaining-page-and-children"}
+]}

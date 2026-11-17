@@ -1,0 +1,12 @@
+.shell-overlay-motion{animation:shell-overlay-enter 160ms cubic-bezier(.2,.8,.2,1) both;transform-origin:top center}
+.shell-overlay-motion::backdrop{animation:shell-backdrop-enter 160ms ease both}
+.shell-overlay-exit{animation:shell-overlay-leave 120ms ease-in both!important;pointer-events:none!important}
+.shell-overlay-exit::backdrop{background:var(--shell-exit-backdrop,transparent);animation:shell-backdrop-leave 120ms ease-in both}
+@keyframes shell-backdrop-leave{from{opacity:1}to{opacity:0}}
+@keyframes shell-overlay-enter{from{opacity:0;translate:0 -3px}to{opacity:1;translate:0 0}}
+@keyframes shell-overlay-leave{from{opacity:1;translate:0 0}to{opacity:0;translate:0 -3px}}
+@keyframes shell-backdrop-enter{from{opacity:0}to{opacity:1}}
+.page-sources-reload-slot{display:grid;grid-template-rows:0fr;opacity:0;transition:grid-template-rows 180ms ease,opacity 140ms ease;pointer-events:none}
+.page-sources-reload-slot[data-visible=true]{grid-template-rows:1fr;opacity:1;pointer-events:auto}
+.page-sources-reload-clip{min-height:0;overflow:hidden}
+@media(prefers-reduced-motion:reduce){.shell-overlay-motion,.shell-overlay-motion::backdrop{animation:none}.page-sources-reload-slot{transition:none}}

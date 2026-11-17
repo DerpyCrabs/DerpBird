@@ -75,3 +75,29 @@ for (const className of ['address-palette', 'style-manager']) test(`${className}
     expect(commands.at(-1)).toEqual({type:'shell.viewport',rect:{x:240,y:0,width:760,height:760},overlays:[]});
   } finally {stop();await window.happyDOM.close();}
 });
+
+test('tab animation attributes do not remeasure native surfaces, but popover placement does', async () => {
+  const window = new Window();
+  const document = window.document;
+  document.body.innerHTML = '<main><div class="tab"><button role="tab"></button></div><section id="content-surface"></section><div class="browser-menu"></div></main>';
+  let measurements = 0;
+  const surface = document.getElementById('content-surface')!;
+  surface.getBoundingClientRect = () => { measurements++; return new window.DOMRect(240, 40, 760, 720); };
+  const menu = document.querySelector('.browser-menu')!;
+  let x = 600;
+  menu.getBoundingClientRect = () => new window.DOMRect(x, 40, 300, 200);
+  const commands: Command[] = [];
+  const stop = observeViewport(document as unknown as Document, command => commands.push(command), () => true);
+  const settle = () => new Promise(resolve => setTimeout(resolve, 30));
+  try {
+    await settle(); const initial = measurements;
+    const tab = document.querySelector('.tab') as unknown as HTMLElement;
+    for (let i = 0; i < 10; i++) { tab.style.transform = `translateX(${i}px)`; tab.dataset.tabLayoutAnimating = 'true'; }
+    await settle(); expect(measurements).toBe(initial);
+    x = 620; menu.setAttribute('style', 'left:620px');
+    await settle(); expect(commands.at(-1)).toMatchObject({overlays:[{x:620,y:40,width:300,height:200}]});
+    const ghost = document.createElement('div'); ghost.className = 'shell-overlay-exit'; document.body.append(ghost);
+    await settle(); expect(commands.at(-1)).toMatchObject({captureInput:true});
+    ghost.remove(); await settle(); expect(commands.at(-1)).not.toHaveProperty('captureInput');
+  } finally { stop(); await window.happyDOM.close(); }
+});

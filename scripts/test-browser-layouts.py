@@ -25,7 +25,8 @@ try:
     # Keep the seat's keyboard capability alive between short wtype commands.
     keyboard=subprocess.Popen(['wtype','-s','240000'],env=dict(os.environ,**json.loads(env_file.read_text())))
     print(out,flush=True)
-    subprocess.run(['python3',str(root/'scripts/test-split-view.py'),'--environment',str(env_file),'--output',str(out/'checks'),('--workspaces' if '--workspaces' in sys.argv else '--layouts'),'--browser',str(engine_build()/'bin/Ladybird')],cwd=root,check=True,timeout=240)
+    mode=['--workspaces'] if '--workspaces' in sys.argv else [] if '--splits' in sys.argv else ['--layouts']
+    subprocess.run(['python3',str(root/'scripts/test-split-view.py'),'--environment',str(env_file),'--output',str(out/'checks'),*mode,'--browser',str(engine_build()/'bin/Ladybird')],cwd=root,check=True,timeout=240)
 finally:
     if keyboard is not None:
         keyboard.terminate();keyboard.wait(timeout=5)

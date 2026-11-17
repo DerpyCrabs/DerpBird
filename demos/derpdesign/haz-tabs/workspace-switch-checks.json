@@ -1,0 +1,18 @@
+{"steps":[
+ {"action":"click","selector":".haz-workspace-trigger"},
+ {"action":"assert","selector":".haz-workspace-menu","contains":"New workspace"},
+ {"action":"capture","label":"workspace-menu"},
+ {"action":"click","selector":".haz-workspace-menu button:nth-of-type(2)"},
+ {"action":"assert","selector":".haz-workspace-trigger","contains":"Personal"},
+ {"action":"assert","selector":"[data-tab-id=weekend]"},
+ {"action":"click","selector":".haz-workspace-trigger"},
+ {"action":"click","selector":".haz-workspace-menu button:nth-of-type(1)"},
+ {"action":"assert","selector":"[data-tab-id=research]"},
+ {"action":"click","selector":".haz-workspace-trigger"},
+ {"action":"click","selector":".haz-workspace-menu button:last-child"},
+ {"action":"assert","selector":".workspace-popover","contains":"New workspace"},
+ {"action":"capture","label":"workspace-create-anchor"},
+ {"action":"key","key":"Escape"},
+ {"action":"assert","selector":".workspace-popover","exists":false},
+ {"action":"assert","selector":".haz-workspace-trigger:focus"}
+]}

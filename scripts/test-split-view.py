@@ -90,7 +90,19 @@ def main():
         log.close()
         until('document.querySelectorAll("[role=tab]").length>=3')
     def tab_center(tab_id):
-        r = bounds('[role=tab][data-tab-id="'+tab_id+'"]'); return (r['x']+r['width']/2, r['y']+r['height']/2)
+        selector = '[role=tab][data-tab-id="'+tab_id+'"]'
+        # Pin/unpin now animates the real tab. Resolve the pointer destination
+        # only after its rendered geometry settles, not from a transient frame.
+        previous = None
+        stable = 0
+        deadline = time.monotonic() + 3
+        while stable < 3:
+            r = bounds(selector)
+            stable = stable + 1 if r == previous else 0
+            previous = r
+            assert time.monotonic() < deadline, ('Tab did not settle', tab_id, r)
+            time.sleep(.05)
+        return (r['x']+r['width']/2, r['y']+r['height']/2)
     def open_child(name, method, keep=False):
         command({'type': 'tab.activate', 'tabId': ids[name]})
         before = snapshot()
@@ -237,7 +249,8 @@ def main():
     def check_pair_highlight():
         assert evaluate('document.querySelectorAll(".split-tab .tab.active").length') == 2
         assert evaluate('document.querySelectorAll(".split-tab [aria-selected=true]").length') == 1
-        assert evaluate('new Set(Array.from(document.querySelectorAll(".split-tab .tab"),e=>getComputedStyle(e).backgroundColor)).size') == 1
+        if evaluate('document.querySelector(".shell").classList.contains("vertical")'):
+            assert evaluate('(()=>{const rows=[...document.querySelectorAll(".split-tab .tab")];const active=rows.find(row=>row.querySelector("[aria-selected=true]"));const inactive=rows.find(row=>!row.querySelector("[aria-selected=true]"));return getComputedStyle(active).backgroundColor!==getComputedStyle(inactive).backgroundColor})()'), 'Selected split member must have a distinct surface'
     def workspace_cases():
         state = snapshot()
         assert len(state['workspaces']['items']) == 1
@@ -341,7 +354,8 @@ def main():
         assert state['splits'][0]['axis'] == 'horizontal'
         capture('01-side-by-side')
         widths = json.loads(evaluate('JSON.stringify(Array.from(document.querySelectorAll(".tab-unit"),e=>e.getBoundingClientRect().width))'))
-        assert len(widths) == 2 and abs(widths[0]-widths[1]) <= 1, widths
+        # The approved design gives each split member a full ordinary-tab width.
+        assert len(widths) == 2 and abs(widths[0]-2*widths[1]) <= 1, widths
         halves = json.loads(evaluate('JSON.stringify(Array.from(document.querySelectorAll(".split-tab .tab"),e=>e.getBoundingClientRect().width))'))
         assert abs(halves[0]-halves[1]) <= 1 and abs(sum(halves)-widths[0]) <= 1, halves
         preview = Image.open(args.output/'00-edge-preview.png')
@@ -427,7 +441,8 @@ def main():
         for edge, x, y, axis in [('left', .01, .5, 'horizontal'), ('top', .5, .01, 'vertical'), ('bottom', .5, .99, 'vertical')]:
             page = bounds('#content-surface')
             drag(tab_center(ids['Release']), (page['x']+page['width']*x, page['y']+page['height']*y))
-            state = snapshot(); split = state['splits'][0]
+            state = snapshot(); assert state['splits'], (edge, state)
+            split = state['splits'][0]
             assert split['axis'] == axis and all('parentId' not in tab for tab in state['tabs']), state
             assert split['firstTabId' if edge in ['left', 'top'] else 'secondTabId'] == ids['Release']
             command({'type': 'tab.pin', 'tabId': ids['Release'], 'value': True})

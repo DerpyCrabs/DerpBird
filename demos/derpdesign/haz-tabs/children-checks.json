@@ -1,0 +1,15 @@
+{"steps":[
+ {"action":"assert","selector":".tree-root [data-tab-id=research]"},
+ {"action":"assert","selector":".tree-child[data-group=research] [data-tab-id=reading-1]"},
+ {"action":"click","selector":"[data-tab-id=reading-3]"},
+ {"action":"assert","selector":"[data-tab-id=reading-3][aria-selected=true]"},
+ {"action":"click","selector":"[data-tab-id=reading-3]","button":"right"},
+ {"action":"assert","selector":".tab-menu","contains":"Move out of group"},
+ {"action":"click","selector":".tab-menu button:first-of-type"},
+ {"action":"assert","selector":".tree-child [data-tab-id=reading-3]","exists":false},
+ {"action":"click","selector":"button[aria-label='Close Tabs UI · Diego Haz']"},
+ {"action":"assert","selector":"[data-tab-id=reading-1]","exists":false},
+ {"action":"assert","selector":".tree-root [data-tab-id=research]"},
+ {"action":"assert","selector":".tree-child [data-tab-id=reading-2]"},
+ {"action":"capture","label":"child-detached-and-sibling-closed"}
+]}

@@ -1,0 +1,280 @@
+{
+  "steps": [
+    {
+      "action": "click",
+      "selector": "#haz-tab-0"
+    },
+    {
+      "action": "assert",
+      "selector": ".haz-card[data-contour-animating=false]"
+    },
+    {
+      "action": "capture",
+      "label": "start"
+    },
+    {
+      "action": "click",
+      "selector": "#haz-tab-2"
+    },
+    {
+      "action": "capture",
+      "label": "select-2-0"
+    },
+    {
+      "action": "capture",
+      "label": "select-2-1"
+    },
+    {
+      "action": "capture",
+      "label": "select-2-2"
+    },
+    {
+      "action": "capture",
+      "label": "select-2-3"
+    },
+    {
+      "action": "capture",
+      "label": "select-2-4"
+    },
+    {
+      "action": "capture",
+      "label": "select-2-5"
+    },
+    {
+      "action": "capture",
+      "label": "select-2-6"
+    },
+    {
+      "action": "capture",
+      "label": "select-2-7"
+    },
+    {
+      "action": "capture",
+      "label": "select-2-8"
+    },
+    {
+      "action": "capture",
+      "label": "select-2-9"
+    },
+    {
+      "action": "click",
+      "selector": "#haz-tab-0"
+    },
+    {
+      "action": "capture",
+      "label": "select-0-0"
+    },
+    {
+      "action": "capture",
+      "label": "select-0-1"
+    },
+    {
+      "action": "capture",
+      "label": "select-0-2"
+    },
+    {
+      "action": "capture",
+      "label": "select-0-3"
+    },
+    {
+      "action": "capture",
+      "label": "select-0-4"
+    },
+    {
+      "action": "capture",
+      "label": "select-0-5"
+    },
+    {
+      "action": "capture",
+      "label": "select-0-6"
+    },
+    {
+      "action": "capture",
+      "label": "select-0-7"
+    },
+    {
+      "action": "capture",
+      "label": "select-0-8"
+    },
+    {
+      "action": "capture",
+      "label": "select-0-9"
+    },
+    {
+      "action": "click",
+      "selector": ".haz-scroll.next"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-next-0"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-next-1"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-next-2"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-next-3"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-next-4"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-next-5"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-next-6"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-next-7"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-next-8"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-next-9"
+    },
+    {
+      "action": "click",
+      "selector": ".haz-scroll.next"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-next-0"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-next-1"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-next-2"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-next-3"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-next-4"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-next-5"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-next-6"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-next-7"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-next-8"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-next-9"
+    },
+    {
+      "action": "click",
+      "selector": ".haz-scroll.previous"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-previous-0"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-previous-1"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-previous-2"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-previous-3"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-previous-4"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-previous-5"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-previous-6"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-previous-7"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-previous-8"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-previous-9"
+    },
+    {
+      "action": "click",
+      "selector": ".haz-scroll.previous"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-previous-0"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-previous-1"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-previous-2"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-previous-3"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-previous-4"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-previous-5"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-previous-6"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-previous-7"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-previous-8"
+    },
+    {
+      "action": "capture",
+      "label": "scroll-previous-9"
+    }
+  ]
+}

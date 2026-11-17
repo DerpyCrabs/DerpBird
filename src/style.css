@@ -427,7 +427,9 @@ p.subtle { font-size: 12px; color: #7e858b; }
 .source-manager [role=alert], .source-notice { padding: 10px; background: #382b29; color: #efb8ac; border-radius: 4px; }
 .page-sources-button { position: relative; }
 .source-count { position: absolute; right: -3px; top: -3px; min-width: 13px; height: 13px; padding: 0 2px; border-radius: 5px; color: #17211c; background: #b5c9bd; font: 600 9px/13px Inter,sans-serif; }
-.source-count[hidden] { display: none; }
+.source-count { opacity: 0; transform: scale(.65); transform-origin: center; pointer-events: none; transition: opacity 160ms ease, transform 180ms ease; }
+.source-count[data-visible=true] { opacity: 1; transform: scale(1); transition-delay: 0s; }
+@media (prefers-reduced-motion: reduce) { .source-count { transition: none; } }
 .page-sources-popup { inset: 44px 10px auto auto; width: min(370px, calc(100vw - 20px)); max-height: calc(100vh - 58px); padding: 0; gap: 0; background: #25272a; color: #dfe4e8; border: 1px solid #42484c; border-radius: 7px; box-shadow: 0 12px 36px #0006; outline: none; font-size: 12px; }
 .horizontal .page-sources-popup { top: 78px; }
 .page-sources-popup header { padding: 15px 16px; border-bottom: 1px solid #383e42; }
@@ -495,15 +497,15 @@ dialog.style-manager::backdrop, dialog.blocking-log::backdrop { background: #000
 .chrome-layout.compact-chrome .navigation { grid-row: 1; grid-column: 1; flex-wrap: wrap; align-content: start; border: 0; padding: 4px; }
 .chrome-layout.compact-chrome.tabs-right .navigation { grid-column: 2; }
 .chrome-layout.compact-chrome .content-surface { grid-row: 1 / -1; }
-.chrome-layout.compact-chrome .navigation > .page-sources-button, .chrome-layout.compact-chrome .proxy-switcher-button { display: none; }
-.chrome-layout.compact-chrome .navigation > button[aria-label=Menu] { margin-left: auto; }
+.chrome-layout.compact-chrome .navigation > .page-sources-button, .chrome-layout.compact-chrome .proxy-switcher-button { display: inline-flex; }
+.chrome-layout.compact-chrome .navigation > button[aria-label="Styles on this page"] { margin-left: auto; }
 .chrome-layout .navigation > .compact-address { flex: 0 0 calc(100% - 12px); display: flex; align-items: center; gap: 7px; width: calc(100% - 12px); min-width: 0; height: 32px; margin: 4px 6px 2px; padding: 0 10px; font-size: 12px; border: 1px solid #36393d; border-radius: 5px; background: #242629; color: #dadcde; }
 .compact-address:hover { background: #303337; border-color: #59635e; }
 .compact-address span { flex: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .compact-address kbd { font-size: 10px; color: #929b96; flex-shrink: 0; }
 .chrome-layout.compact-chrome #sidebar-resize { top: 0; }
 .compact-chrome .address { display: none; }
-.address-palette { position: fixed; z-index: 110; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 620px; max-width: calc(100vw - 32px); max-height: calc(100vh - 32px); overflow: auto; background: #222628; border: 1px solid #59675f; border-radius: 10px; box-shadow: 0 20px 80px #0009; padding: 0 8px 8px; }
+.address-palette { position: fixed; z-index: 110; inset: 0; margin: auto; transform: none; width: 560px; height: fit-content; max-width: calc(100vw - 32px); max-height: calc(100vh - 32px); overflow: auto; background: #222628; border: 1px solid #59675f; border-radius: 10px; box-shadow: 0 20px 80px #0009; padding: 0 8px 8px; }
 .address-palette form { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-bottom: 1px solid #3c4440; color: #9cbaad; }
 .address-palette form > svg { width: 18px; height: 18px; flex: 0 0 18px; }
 .address-palette form > button { flex: 0 0 32px; width: 32px; height: 32px; padding: 8px; margin-right: -7px; }
@@ -513,5 +515,6 @@ dialog.style-manager::backdrop, dialog.blocking-log::backdrop { background: #000
 .address-palette [role=option]:hover, .address-palette [role=option][aria-selected=true] { background: #354039; }
 .address-palette .palette-action { font-size: 11px; color: #a9bcb0; white-space: nowrap; }
 .address-palette footer { display: flex; gap: 18px; border-top: 1px solid #3c4440; margin-top: 7px; padding: 10px 8px 2px; font-size: 10px; color: #97a49c; }
-.address-palette kbd { color: #c1cec6; }
+.address-palette footer > span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.address-palette kbd { color: #c1cec6; font: inherit; line-height: inherit; }
 @media (max-width: 520px) { .layout-settings { padding: 16px; } .layout-presets { gap: 8px; } .layout-choice { padding: 10px; } .layout-mini { width: 85px; } .address-palette .palette-action { font-size: 10px; } }
