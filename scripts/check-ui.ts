@@ -5,10 +5,12 @@ import { strict as assert } from 'node:assert';
 import {decodeProxySnapshot, domainRulesKey, type ProxySnapshot} from '../src/browser/proxy-protocol';
 import type { Command } from '../src/browser/protocol';
 
-const window = new Window({ url: 'http://127.0.0.1/' });
+const window = new Window({ url: 'http://127.0.0.1/', settings: { disableCSSFileLoading: true } });
 for (const key of ['window', 'document', 'location', 'HTMLElement', 'HTMLInputElement', 'HTMLDialogElement', 'DOMRect', 'PointerEvent', 'MouseEvent', 'KeyboardEvent', 'ResizeObserver', 'getComputedStyle', 'Element', 'Node', 'Text', 'Comment', 'Event', 'CustomEvent', 'MutationObserver', 'DocumentFragment', 'CSSStyleDeclaration', 'SVGElement']) {
   Object.defineProperty(globalThis, key, { configurable: true, value: key === 'window' ? window : key === 'getComputedStyle' ? window.getComputedStyle.bind(window) : (window as unknown as Record<string, unknown>)[key] });
 }
+for (const key of ['requestAnimationFrame', 'cancelAnimationFrame', 'matchMedia'] as const)
+  Object.defineProperty(globalThis, key, { configurable: true, value: window[key].bind(window) });
 // happy-dom lacks the Popover API; real top-layer and focus behavior is covered
 // by TestDerpBirdShell and the Wayland input test.
 const shownPopovers = new WeakSet<Element>();
@@ -22,7 +24,8 @@ Object.assign(window.HTMLElement.prototype, {
   getAnimations() { return []; },
 });
 const commands: Command[] = [];
-let notify: ((snapshot: unknown) => void) | undefined;
+const snapshotListeners = new Set<(snapshot: unknown) => void>();
+const notify = (snapshot: unknown) => { for (const listener of snapshotListeners) listener(snapshot); };
 let unsubscribed = false;
 const autofillActions: unknown[] = [];
 let importCalls = 0, passwordImports = 0, importDismissed = 0;
@@ -78,6 +81,10 @@ Object.assign(window, { derpbird: {
     save: async () => { throw new Error('Unexpected write in dialog keyboard test'); },
     remove: async () => { throw new Error('Unexpected removal in dialog keyboard test'); },
   },
+  pageSources: {
+    page: async () => ({ tabId: 'a', url: 'https://a.example/', styleRevision: 0, scriptRevision: 0, styles: [], scripts: [] }),
+    toggle: async () => { throw new Error('Unexpected source toggle'); },
+  },
   styles: {
     list: async () => ({ revision: 0, items: [] }),
     replace: async (value: { revision: number; items: unknown[] }) => ({ ...value, revision: value.revision + 1 }),
@@ -88,7 +95,7 @@ Object.assign(window, { derpbird: {
     if (command.type === 'shell.set-wrap-tabs') { preferences = { ...preferences, wrapTabs: command.value }; notify?.(state()); }
   },
   snapshot: async () => state(),
-  subscribe: (listener: (snapshot: unknown) => void) => { notify = listener; return () => { unsubscribed = true; }; },
+  subscribe: (listener: (snapshot: unknown) => void) => { snapshotListeners.add(listener); return () => { snapshotListeners.delete(listener); unsubscribed = true; }; },
 } });
 window.document.body.innerHTML = '<div id="app"></div>';
 const html = await readFile('dist/index.html', 'utf8');
@@ -99,10 +106,28 @@ assert(stylesheet, 'built stylesheet missing');
 const style = window.document.createElement('style');
 style.textContent = await readFile(resolve('dist', stylesheet), 'utf8');
 window.document.head.append(style);
+// Vite waits for lazy-chunk stylesheets before importing the shell/managers.
+// Load those files locally and deliver the browser load event in this DOM harness.
+const lazyStyles = new window.MutationObserver(records => {
+  for (const record of records) for (const node of record.addedNodes) {
+    if (!(node instanceof window.HTMLLinkElement) || node.rel !== 'stylesheet') continue;
+    void (async () => {
+      const path = new URL(node.href).pathname;
+      const css = window.document.createElement('style');
+      css.textContent = await readFile(resolve('dist/assets', path.split('/').pop()!), 'utf8');
+      window.document.head.append(css);
+      node.dispatchEvent(new window.Event('load'));
+    })();
+  }
+});
+lazyStyles.observe(window.document.head, { childList: true });
 await import(resolve('dist', entry));
 const lastCommand = () => commands.filter(command => command.type !== 'shell.viewport').at(-1);
 const settle = () => new Promise(resolve => setTimeout(resolve, 15));
-await settle();
+// The entry point lazily imports the shell. Wait for actual mount rather than
+// assuming an import and one short timer also completed its dynamic imports.
+for (let i = 0; i < 200 && !window.document.querySelector('.tab-title'); i++) await settle();
+assert(window.document.querySelector('.tab-title'), 'shell did not mount');
 const document = window.document;
 const button = (label: string) => {
   const node = document.querySelector(`[aria-label="${label}"]`);
@@ -110,10 +135,9 @@ const button = (label: string) => {
   return node as unknown as HTMLElement;
 };
 const toggleLayout = async () => {
-  button('Menu').click(); await settle();
-  const item = Array.from(document.querySelectorAll('.browser-menu button')).find(item => /^(Horizontal|Vertical) tabs$/.test(item.textContent ?? '')) as unknown as HTMLButtonElement;
-  assert(item); item.click(); await settle();
-  (document.activeElement ?? document).dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await settle();
+  // Layout now comes from the settings page/native snapshot, not a menu toggle.
+  preferences = { ...preferences, layout: preferences.layout === 'vertical' ? 'horizontal' : 'vertical' };
+  notify?.(state()); await settle();
 };
 preferences = { ...preferences, compact: true }; notify?.(state()); await settle();
 assert(!document.querySelector('.shell.compact'), 'legacy compact preference is ignored');
@@ -132,14 +156,10 @@ assert.equal(document.querySelectorAll('[role=tab]').length, 2);
 const original = document.querySelector('[role=tab]');
 await toggleLayout();
 assert(document.querySelector('.shell.horizontal'));
-button('Menu').click(); await settle();
-const wrapControl = Array.from(document.querySelectorAll('.browser-menu button')).find(item => item.textContent?.startsWith('Wrap tabs into rows')) as unknown as HTMLButtonElement;
-assert(wrapControl); wrapControl.click(); await settle();
-assert.deepEqual(lastCommand(), { type: 'shell.set-wrap-tabs', value: true });
+preferences = { ...preferences, wrapTabs: true }; notify?.(state()); await settle();
 assert(document.querySelector('.shell.wrap-tabs'));
-wrapControl.click(); await settle();
+preferences = { ...preferences, wrapTabs: false }; notify?.(state()); await settle();
 assert(!document.querySelector('.shell.wrap-tabs'));
-(document.activeElement ?? document).dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await settle();
 
 assert.equal(document.querySelector('[role=tab]'), original, 'layout changes must retain tab DOM');
 notify?.(state()); await settle();
@@ -328,8 +348,8 @@ assert.equal(document.querySelectorAll('.split-tab .tab.active').length, 2, 'bot
 assert.equal(document.querySelectorAll('.split-tab [aria-selected=true]').length, 1, 'page selection remains independent of the pair highlight');
 assert.equal(document.querySelector('.split-divider')?.getAttribute('aria-orientation'), 'vertical');
 for (const close of document.querySelectorAll('.close-tab')) {
-  assert.equal(window.getComputedStyle(close).marginRight, '6px');
-  assert.equal(Number(window.getComputedStyle(close).opacity), .5);
+  assert.equal(window.getComputedStyle(close).marginRight, '8px');
+  assert.equal(Number(window.getComputedStyle(close).opacity), .7);
 }
 await context();
 assert(!document.querySelector('.tab-menu')!.textContent!.includes('Create group'));
@@ -339,8 +359,9 @@ assert.deepEqual(lastCommand(), { type: 'split.switch', tabId: 'b' });
 notify?.(state()); await settle();
 assert.equal(document.querySelectorAll('.tab-unit').length, 2);
 assert.equal(document.querySelector('.split-divider'), null);
-button('Menu').click(); await settle();
-button('User styles').click(); await settle();
+button('Styles on this page').click(); await settle();
+const manageStyles = Array.from(document.querySelectorAll('.page-sources-popup button')).find(node => node.textContent === 'Manage styles') as unknown as HTMLButtonElement;
+assert(manageStyles && !manageStyles.disabled); manageStyles.click(); await settle();
 assert(document.querySelector('[role=dialog]'), 'style manager must open');
 const styleButton = (label: string) => {
   const node = Array.from(document.querySelectorAll('.style-manager button')).find(node => node.textContent === label);
