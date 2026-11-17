@@ -56,6 +56,22 @@ checks an explicitly configured Hyprland workspace ID.
 See [DerpDesign demos](demos/derpdesign/README.md) for interactive fixtures and
 [Arch packaging](packaging/README.md) for installation instructions.
 
+## Performance suite
+
+```sh
+bun run test:perf
+bun run test:perf:reporting
+```
+
+The offline suite builds first, then runs native page, blocking, script/style,
+layout, network/cache, resource, shell, desktop autocomplete, and component
+workloads sequentially. It retains raw samples, correctness checks, CPU/RSS
+samples, captures, and JSON/HTML reports. Saved complete reports can be compared
+with `--compare`; no production optimizations are applied by the suite.
+
+See [performance coverage, dependencies, and interpretation](tests/performance/README.md)
+for the matrix, baseline rules, focused runs, and measurement limits.
+
 ## License
 
 Original DerpBird code is licensed under MIT. Ladybird and derived files retain

@@ -13,34 +13,47 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('browser','environment','settings','output'):p.add_argument('--'+name,type=Path,required=True)
     p.add_argument('--samples',type=int,default=30)
+    p.add_argument('--warmups',type=int,default=3)
+    p.add_argument('--port',type=int,default=18993)
+    p.add_argument('--url',default='about:blank')
+    p.add_argument('--profile',type=Path,help='Owned disposable profile path; must not exist')
+    p.add_argument('--wayland-output',default='WAYLAND-1')
     p.add_argument('--max-p95-ms',type=float)
-    a=p.parse_args();assert 5<=a.samples<=100
+    a=p.parse_args();assert 2<=a.samples<=100 and 1<=a.warmups<=10
     env=dict(os.environ,**json.loads(a.environment.read_text()));assert 'artifacts' in env['XDG_RUNTIME_DIR']
     capture=dict(os.environ,XDG_RUNTIME_DIR=env['XDG_RUNTIME_DIR'],WAYLAND_DISPLAY=env['WAYLAND_DISPLAY'])
-    a.output.mkdir(parents=True,exist_ok=True);profile=a.output/'profile';assert not profile.exists()
+    a.output.mkdir(parents=True,exist_ok=True);profile=a.profile or a.output/'profile';assert not profile.exists()
     (profile/'config').mkdir(parents=True);settings=json.loads(a.settings.read_text());settings['restorePreviousSession']=False;settings['derpbirdSessionRestoreInitialized']=True;settings.setdefault('searchEngine',{})['suggestions']=False
     (profile/'config/Settings.json').write_text(json.dumps(settings))
+    (profile/'data').mkdir();(profile/'data/ImportWelcomeSeen').write_text('1\n')
     helper=Path(__file__).with_name('ladybird-devtools-eval.py')
     def evaluate(code):
         f=a.output/'evaluate.js';f.write_text(code)
-        r=subprocess.run(['python3',str(helper),'--port','18993','--url','about:derpbird','--script',str(f)],capture_output=True,text=True,timeout=15,check=True)
+        r=subprocess.run(['python3',str(helper),'--port',str(a.port),'--url','about:derpbird','--script',str(f)],capture_output=True,text=True,timeout=15,check=True)
         return json.loads(r.stdout).get('result')
     def until(code,timeout=20):
-        end=time.monotonic()+timeout
+        end=time.monotonic()+timeout;last_error=None
         while time.monotonic()<end:
             try:
                 v=evaluate(code)
                 if v:return v
-            except subprocess.CalledProcessError:pass
+            except subprocess.CalledProcessError as error:last_error=error.stderr
             time.sleep(.1)
-        raise AssertionError(code)
+        raise AssertionError(f"{code}: {last_error or 'condition stayed false'}")
     def shot(name):
-        time.sleep(.2);subprocess.run(['grim','-o','WAYLAND-1',str(a.output/(name+'.png'))],env=capture,check=True,timeout=10)
+        time.sleep(.2);subprocess.run(['grim','-o',a.wayland_output,str(a.output/(name+'.png'))],env=capture,check=True,timeout=10)
     with (a.output/'browser.log').open('w') as log:
-        browser=subprocess.Popen([str(a.browser),'--profile-path',str(profile.resolve()),'--devtools=18993','about:blank'],env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+        browser=subprocess.Popen([str(a.browser),'--profile-path',str(profile.resolve()),'--devtools='+str(a.port),a.url],env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
     spec=importlib.util.spec_from_file_location('pointer',Path(__file__).with_name('test-shell-surface-transitions.py'));m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);pointer=m.Pointer(capture,[1280,720])
+    result={'passed':False,'samples':[]}
     try:
         until('!!document.querySelector("[role=tab]")')
+        # Establish native shell focus before synthetic timing inputs. DOM focus
+        # alone does not move focus from the separate page widget.
+        r=json.loads(evaluate('JSON.stringify({r:document.getElementById("location").getBoundingClientRect().toJSON(),dpr:devicePixelRatio})'))
+        pointer.move((r['r']['left']+30)*r['dpr'],(r['r']['top']+r['r']['height']/2)*r['dpr'])
+        time.sleep(.15);pointer.button(True);time.sleep(.06);pointer.button(False)
+        until('document.hasFocus() && document.activeElement === document.getElementById("location")')
         evaluate('''window.urlbarBench={done:false};(async()=>{
           const input=document.getElementById('location'), samples=[];
           const frame=()=>new Promise(resolve=>requestAnimationFrame(resolve));
@@ -48,7 +61,7 @@ def main():
           const rect=()=>JSON.stringify(input.getBoundingClientRect().toJSON());
           const original=rect();
           for(const scenario of ['first-character','multiple-results']) {
-            for(let i=0;i<SAMPLES+3;i++) {
+            for(let i=0;i<SAMPLES+WARMUPS;i++) {
               input.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
               await frame(); await frame();
               input.focus(); input.value=scenario==='first-character'?'e':'about:';
@@ -62,11 +75,11 @@ def main():
               await frame();
               const row={scenario,domMs,nextRafMs:performance.now()-started,rows:document.querySelectorAll('#address-suggestions [role=option]').length};
               if(rect()!==original)throw Error('Address input moved');
-              if(i>=3)samples.push(row);
+              if(i>=WARMUPS)samples.push(row);
             }
           }
           window.urlbarBench={done:true,samples,geometryStable:true,dpr:devicePixelRatio};
-        })().catch(e=>window.urlbarBench={done:true,error:String(e)});true'''.replace('SAMPLES',str(a.samples)))
+        })().catch(e=>window.urlbarBench={done:true,error:String(e)});true'''.replace('SAMPLES',str(a.samples)).replace('WARMUPS',str(a.warmups)))
         result=json.loads(until('window.urlbarBench.done&&JSON.stringify(window.urlbarBench)',90));assert not result.get('error'),result
         def stats(values):
             v=sorted(values);return {'p50':v[len(v)//2],'p95':v[min(len(v)-1,int(len(v)*.95))],'max':max(v)}
@@ -77,12 +90,19 @@ def main():
         pointer.move(1200,600)
         evaluate('document.getElementById("location").dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowDown",bubbles:true,cancelable:true}));true');shot('03-keyboard')
         result['keyboardSelection']=evaluate('document.querySelector("#address-suggestions [aria-selected=true]")?.id===document.getElementById("location").getAttribute("aria-activedescendant")')
-        pointer.button(True);pointer.button(False);until('!document.getElementById("address-suggestions")');shot('04-page-dismiss')
+        pointer.button(True);time.sleep(.06);pointer.button(False);until('!document.getElementById("address-suggestions")');shot('04-page-dismiss')
         result['pageDismiss']=True
-        (a.output/'results.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result['summary']))
+        print(json.dumps(result['summary']))
         assert result['keyboardSelection']
         if a.max_p95_ms is not None:assert all(s['nextRafMs']['p95']<=a.max_p95_ms for s in result['summary'].values()),result['summary']
+        result['passed']=True
+    except Exception as error:
+        result['passed']=False;result['error']=str(error)
+        try:shot('failure')
+        except Exception:pass
+        raise
     finally:
+        (a.output/'results.json').write_text(json.dumps(result,indent=2)+'\n')
         pointer.close()
         if browser.poll() is None:
             os.killpg(browser.pid,signal.SIGTERM)
