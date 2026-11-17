@@ -1,0 +1,33 @@
+<!doctype html><meta charset="utf-8"><title>Desktop performance fixture</title>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden}body{background:rgb(93,137,171)}
+video,canvas{position:fixed;inset:0;width:100%;height:100%;object-fit:fill}
+#scroll{position:absolute;inset:0;overflow:auto} .band{height:180px}
+</style>
+<script>
+const query=new URLSearchParams(location.search);
+const scene=query.get('scene')||'static',color=query.has('reload')?window.fixtureNavigation:Number(query.get('color')||1);
+const palette=i=>[53,97,131].map(f=>(i*f)%160+40);
+window.desktopPerf={scene,color,moves:0,scrolls:0,frames:0,blocked:0};
+addEventListener('mousemove',e=>{if(e.isTrusted)desktopPerf.moves++});
+addEventListener('DOMContentLoaded',()=>{
+ document.title='Perf '+color;
+ document.body.style.backgroundColor=`rgb(${palette(color)})`;
+ if(scene==='scroll'){
+  const root=document.createElement('div');root.id='scroll';
+  for(let i=0;i<500;i++){const band=document.createElement('div');band.className='band';band.style.background=`linear-gradient(rgb(${palette(i+1)}),rgb(${palette(i+2)}))`;root.append(band)}
+  root.addEventListener('scroll',()=>desktopPerf.scrolls++);document.body.append(root);
+ }
+ if(scene==='animation'){
+  function tick(t){document.body.style.backgroundColor=`rgb(${palette(Math.floor(t/40)%200)})`;desktopPerf.frames++;requestAnimationFrame(tick)}requestAnimationFrame(tick);
+ }
+ if(scene==='video'){
+  const video=document.createElement('video');video.src='/motion.webm';video.muted=true;video.loop=true;video.autoplay=true;document.body.append(video);
+  video.play().catch(e=>desktopPerf.videoError=String(e));
+ }
+});
+window.fillBlockingLog=async()=>{
+ for(let batch=0;batch<8;batch++)await Promise.all(Array.from({length:16},(_,i)=>fetch('/blocked/'+(batch*16+i)+'?q='+'x'.repeat(1800)).then(()=>{throw Error('Block rule did not apply')},()=>desktopPerf.blocked++)));
+ return desktopPerf.blocked;
+};
+</script>

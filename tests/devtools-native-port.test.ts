@@ -38,3 +38,22 @@ test('background DOM updates do not request a panel switch',async()=>{
  t.emit({dom:{id:2,type:'element',name:'div'}});t.emit({styles:{color:'red'},nodeId:'2'});t.emit({nodeId:'2',revealElement:true});
  expect(reveals).toEqual([undefined,undefined,true]);p.dispose();
 });
+
+test('DOM mutation subtrees replace children and preserve selected styles',async()=>{
+ const t=transport({requests:[],sources:[],messages:[],nodeId:'2',styles:{color:'red'},dom:{id:1,type:'document',name:'#document',children:[{id:2,type:'element',name:'span',children:[{id:3,type:'text',text:'old'}]}]}});
+ const p=(await connectDevTools(t))!;
+ t.emit({domMutations:[{id:2,type:'element',name:'span',attributes:{class:'new'},children:[{id:4,type:'text',text:'changed'}]}]});
+ expect(p.elements.map(e=>e.id)).toEqual(['1','2','4']);
+ expect(p.elements[1]?.styles.color).toBe('red');expect(p.elements[2]?.text).toBe('changed');
+ t.emit({domMutations:[{id:3,type:'text',text:'stale removed node'}]});
+ expect(p.elements.map(e=>e.id)).toEqual(['1','2','4']);
+ t.emit({dom:{id:10,type:'document',name:'#document',children:[]},domMutations:[{id:2,type:'element',name:'stale'}]});
+ expect(p.elements.map(e=>e.id)).toEqual(['10']);p.dispose();
+});
+
+test('whitespace mutation targets remain indexed when not rendered',async()=>{
+ const t=transport({dom:{id:1,type:'element',name:'p',children:[{id:2,type:'text',text:'  '}]}});
+ const p=(await connectDevTools(t))!;expect(p.elements.length).toBe(1);
+ t.emit({domMutations:[{id:2,type:'text',text:'now visible'}]});
+ expect(p.elements[1]?.text).toBe('now visible');p.dispose();
+});

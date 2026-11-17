@@ -754,6 +754,7 @@ void DerpBirdChrome::observe_tab(Tab& tab)
     auto observe_view = [this, &tab, scope] {
         auto& observation = m_observed_tabs[&tab];
         observation.view = &tab.view();
+        tab.view().on_blocking_log_change = [this] { if (m_blocking_log_visible) queue_snapshot(); };
         tab.view().installEventFilter(this);
         tab.view().on_derpbird_inspect = [self = QPointer(this), target = QPointer(&tab)](Web::UniqueNodeID node) {
             if (self && target) { if (auto result = self->inspect_tab(*target, node); result.is_error()) warnln("{}", result.error()); }
@@ -870,6 +871,7 @@ void DerpBirdChrome::release_observation(Tab* tab)
     m_observed_tabs.erase(found);
     delete observation.scope;
     if (auto view = observation.view) {
+        view->on_blocking_log_change = nullptr;
         view->on_derpbird_inspect = nullptr;
         view->on_derpbird_credential_focus = nullptr;
         view->removeEventFilter(this);

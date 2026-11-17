@@ -105,16 +105,17 @@ def compare(current, baseline, relative=.20, absolute_ms=2):
                 raise ValueError(f'Failed scenario: {name}')
             if set(result['summary'])!=set(prior['summary']):raise ValueError(f'Baseline metrics differ: {name}')
             for metric, values in result['summary'].items():
-                floor=absolute_ms if metric.endswith('Ms') else 16 if metric.endswith('MiB') else 2 if metric.endswith('PercentOneCore') else None
-                if floor is None:continue
+                floor=(max(absolute_ms,20) if name=='full-browser' else absolute_ms) if metric.endswith('Ms') else 16 if metric.endswith('MiB') else (10 if name=='full-browser' else 2) if metric.endswith('PercentOneCore') else None
+                if floor is None and not metric.endswith('visibleUpdatesPerSecond'):continue
                 old=prior['summary'][metric]['median'];new=values['median'];stats([old,new])
-                if new>old*(1+relative) and new-old>floor:
+                regressed = (new < old*(1-relative) and old-new > 2) if metric.endswith('visibleUpdatesPerSecond') else (new>old*(1+relative) and new-old>floor)
+                if regressed:
                     changes.append(dict(scenario=name,metric=metric,before=old,after=new,percent=100*(new-old)/old if old else None))
     return changes
 
 
 def fixture_hash():
-    paths=list((ROOT/'tests/performance').glob('*.js'))+[ROOT/path for path in ('native/Tests/TestDerpBirdPerformance.cpp','scripts/performance_suite.py','scripts/benchmark-performance.py','scripts/benchmark-desktop.py','scripts/benchmark-urlbar.py','scripts/benchmark-page-filtering.ts','tests/helpers/procedural-performance.ts','tests/native/style-benchmark.cpp','tests/native/script-values-benchmark.cpp')]
+    paths=list((ROOT/'tests/performance').glob('*.js'))+[ROOT/path for path in ('native/Tests/TestDerpBirdPerformance.cpp','scripts/performance_suite.py','scripts/benchmark-performance.py','scripts/benchmark-desktop.py','scripts/benchmark-urlbar.py','scripts/benchmark-browser.py','scripts/desktop_perf_harness.py','tests/performance/desktop.html','scripts/test-shell-surface-transitions.py','scripts/benchmark-page-filtering.ts','tests/helpers/procedural-performance.ts','tests/native/style-benchmark.cpp','tests/native/script-values-benchmark.cpp')]
     digest=hashlib.sha256()
     for path in sorted(p for p in paths if p.is_file()):
         digest.update(str(path.relative_to(ROOT)).encode());digest.update(path.read_bytes())

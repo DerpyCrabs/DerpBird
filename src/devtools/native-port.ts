@@ -34,6 +34,12 @@ export async function connectDevTools(transport: DevToolsTransport): Promise<(De
   let stopped = false;
   let selectedId = '';
   let selectedStyles: Record<string,string> = {};
+  let dom: Record<string, any> = {};
+  const domNodes = new Map<string, Record<string, any>>();
+  const indexDOM = (root: Record<string, any>, remove=false) => {
+    const stack=[root];
+    while(stack.length){const node=stack.pop()!;if(node.id!==undefined){if(remove)domNodes.delete(String(node.id));else domNodes.set(String(node.id),node);}for(const child of node.children??[])stack.push(record(child));}
+  };
   const apply = (raw: unknown, initial=false) => {
     const packet=record(raw), update: DevToolsUpdate={};
     if(packet.revealElement===true)update.revealElement=true;
@@ -49,13 +55,21 @@ export async function connectDevTools(transport: DevToolsTransport): Promise<(De
       }
       update.requests=[...requests.values()].sort((a,b)=>a.start-b.start);
     }
-    if(packet.dom!==undefined){update.elements=decodeDOM(packet.dom);if(selectedId)update.selectedNodeId=selectedId;}
+    if(packet.dom!==undefined){dom=record(packet.dom);domNodes.clear();indexDOM(dom);}
+    if(packet.domMutations!==undefined){
+      for(const raw of list(packet.domMutations)){
+        const replacement=record(raw), target=domNodes.get(String(replacement.id));
+        if(!target)continue; // A removed subtree may still have queued mutations.
+        indexDOM(target,true);for(const key of Object.keys(target))delete target[key];Object.assign(target,replacement);indexDOM(target);
+      }
+    }
+    if(packet.dom!==undefined||packet.domMutations!==undefined){update.elements=decodeDOM(dom);if(selectedId)update.selectedNodeId=selectedId;}
     if(packet.sources!==undefined)update.sources=list(packet.sources).map(s=>({id:text(s.id),name:text(s.name),text:text(s.text)}));
     if(packet.messages!==undefined)update.messages=list(packet.messages).map(m=>({level:['info','warning','error','result'].includes(m.level)?m.level:'info',text:text(m.text)} as ConsoleRecord));
     if(packet.nodeId!==undefined){selectedId=text(packet.nodeId);update.selectedNodeId=selectedId;}
     if(packet.styles!==undefined){selectedStyles=Object.fromEntries(Object.entries(record(packet.styles)).map(([key,value])=>[key,typeof value==='string'?value:JSON.stringify(value)]));}
     const elements=update.elements??port?.elements;
-    if(elements&&(packet.styles!==undefined||packet.dom!==undefined))update.elements=elements.map(e=>({...e,styles:e.id===selectedId?selectedStyles:{}}));
+    if(elements&&(packet.styles!==undefined||packet.dom!==undefined||packet.domMutations!==undefined))update.elements=elements.map(e=>({...e,styles:e.id===selectedId?selectedStyles:{}}));
     if(port){
       if(update.dock)port.dock=update.dock;
       if(update.picking!==undefined)port.picking=update.picking;
@@ -83,6 +97,7 @@ export async function connectDevTools(transport: DevToolsTransport): Promise<(De
       },
       evaluate:async expression=>text(await transport.devtoolsRequest({type:'devtools.evaluate',expression})),
       source:async id=>text(await transport.devtoolsRequest({type:'devtools.source',id})),
+      setPanel:async panel=>{await transport.devtoolsRequest({type:'devtools.panel',panel});},
       selectElement:async id=>{await transport.devtoolsRequest({type:'devtools.select',id});},
       clearRequests:async()=>{await transport.devtoolsRequest({type:'devtools.clear'});requests.clear();},
       refresh:async()=>{await transport.devtoolsRequest({type:'devtools.refresh'});},

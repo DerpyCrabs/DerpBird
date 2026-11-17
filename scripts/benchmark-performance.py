@@ -146,23 +146,16 @@ def main():
                 except Exception as error:component['error']=str(error)
                 save()
         if not args.scenario:
-            print('Desktop: native Qt URL-bar / autocomplete',flush=True)
-            desktop=dict(passed=False);report['components']['desktop-urlbar']=desktop
+            print('Full browser: native input, Hub and displayed pixels',flush=True)
+            desktop=dict(passed=False);report['components']['full-browser']=desktop
             try:
-                execute([sys.executable,'scripts/benchmark-desktop.py','--output',output/'desktop','--samples',args.samples,'--warmups',args.warmups],output/'desktop-runner',env,240)
-                data=json.loads((output/'desktop/urlbar/results.json').read_text())
-                if not data.get('geometryStable') or not data.get('keyboardSelection') or not data.get('pageDismiss'):
-                    raise ValueError('Desktop correctness checks failed')
-                summary={}
-                for scenario in ('first-character','multiple-results'):
-                    rows=[r for r in data['samples'] if r['scenario']==scenario]
-                    if len(rows)!=args.samples:raise ValueError('Desktop sample count mismatch')
-                    for metric in ('domMs','nextRafMs'):summary[scenario+'.'+metric]=stats([r[metric] for r in rows])
-                desktop['budgetsMs']=check_budgets('desktop-urlbar',summary)
-                desktop.update(passed=True,summary=summary,results=data)
+                execute([sys.executable,'scripts/benchmark-browser.py','--output',output/'browser','--samples',args.samples,'--warmups',args.warmups],output/'browser-runner',env,max(1800,(args.samples+args.warmups)*120))
+                data=json.loads((output/'browser/report.json').read_text())
+                if not data['passed']:raise ValueError('Full-browser correctness or presentation budget failed')
+                desktop.update(passed=True,summary={name+'.'+metric:values for name,result in data['scenarios'].items() for metric,values in result['summary'].items()},results=data)
             except Exception as error:
                 desktop['error']=str(error)
-                saved=output/'desktop/urlbar/results.json'
+                saved=output/'browser/report.json'
                 if saved.exists():desktop['results']=json.loads(saved.read_text())
             save()
         report['passed']=all(r['passed'] for r in report['results'].values()) and all(r['passed'] for r in report['components'].values())
@@ -174,7 +167,7 @@ def main():
             if report['regressions']:report['passed']=False
     except Exception as error:
         report['errors'].append(str(error));report['passed']=False;print(str(error),file=sys.stderr)
-    report['limitations']=['Offline synthetic workloads; no public-site load-time claim.', 'Headless compositor/RAF and capture, not physical display presentation or GPU FPS.', 'Aggregate RSS double-counts shared pages; sampled CPU can miss short-lived children.', 'Five-run p95 is descriptive, not a statistically stable tail estimate; use --samples 30 for release baselines.', 'Shell uses the shipped bundle and real WebUI transport with fixture tab services; excludes Qt/OS input latency.', 'Component microbenchmarks do not measure renderer IPC cost.']
+    report['limitations']=['Offline synthetic workloads; no public-site load-time claim.', 'Headless compositor/RAF and capture, not physical display presentation or GPU FPS.', 'Aggregate RSS double-counts shared pages; sampled CPU can miss short-lived children.', 'Five-run p95 is descriptive, not a statistically stable tail estimate; use --samples 30 for release baselines.', 'Headless page/shell scenarios are component diagnostics. The full-browser group covers Qt, Hub, native input and compositor pixel sampling on an isolated software-rendered desktop.', 'Component microbenchmarks do not measure renderer IPC cost.']
     report['durationSeconds']=time.time()-report['started'];save()
     write_html(report,output/'report.html')
     print(f'{"PASS" if report["passed"] else "FAIL"}: {output / "report.json"}',flush=True)

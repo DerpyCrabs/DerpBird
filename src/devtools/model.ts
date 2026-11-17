@@ -19,6 +19,7 @@ export interface DevToolsUpdate {
 export interface DevToolsPort {
   requests: RequestRecord[]; elements: DOMRecord[]; sources: SourceRecord[]; messages: ConsoleRecord[];
   dock?: DockPosition; picking?: boolean;
+  setPanel?(panel: 'Elements' | 'Console' | 'Sources' | 'Network'): Promise<void>;
   setDock?(position: DockPosition): Promise<void>;
   pickElement?(): Promise<void>;
   dismiss?(): Promise<void>;

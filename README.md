@@ -60,6 +60,7 @@ See [DerpDesign demos](demos/derpdesign/README.md) for interactive fixtures and
 
 ```sh
 bun run test:perf
+bun run test:perf:browser # full Qt/Hub/browser path against the current build
 bun run test:perf:reporting
 ```
 
