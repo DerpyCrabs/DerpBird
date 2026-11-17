@@ -11,6 +11,14 @@ expected = subprocess.check_output(['git', '-C', str(root), 'rev-parse', ':vendo
 actual = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
 if actual != expected:
     raise SystemExit(f'Engine pin mismatch: expected {expected}, found {actual}')
+# Keep small engine-only fixes reproducible from the parent checkout as well.
+for patch in sorted((root / 'native/patches').glob('*.patch')):
+    applied = subprocess.run(['git', '-C', str(source), 'apply', '--reverse', '--check', str(patch)], capture_output=True)
+    if applied.returncode == 0:
+        continue
+    subprocess.run(['git', '-C', str(source), 'apply', '--check', str(patch)], check=True)
+    subprocess.run(['git', '-C', str(source), 'apply', str(patch)], check=True)
+
 subprocess.run(['python3', str(root / 'scripts/generate-json-response-runtime.py')], check=True)
 for directory, destination in [('HTTP', 'Libraries/LibHTTP'), ('WebUI', 'Libraries/LibWebView/WebUI'), ('Qt', 'UI/Qt'), ('Tests', 'Tests/LibWebView'), ('EngineTests', 'Tests/LibWeb'), ('WebContent', 'Libraries/LibWeb/Page')]:
     for file in (root / 'native' / directory).glob('*'):
