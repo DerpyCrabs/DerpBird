@@ -10,12 +10,16 @@ export function observePinLayout(shell:HTMLElement){
   const next=shell.querySelector<HTMLElement>('.pinned-tabs');
   if(next!==host){if(host)resize.unobserve(host);host=next;if(host)resize.observe(host);}
   if(!host)return;
-  const capacity=Math.max(1,Math.min(6,Math.floor((host.clientWidth+4)/32)));
+  const width=host.clientWidth;
+  const capacity=Math.max(1,Math.min(6,Math.floor((width+4)/32)));
   const rows=pinRows(host.children.length,capacity),columns=rows[0]??1;
-  host.style.setProperty('--haz-pin-basis',`${Math.max(0,(host.clientWidth-4*(columns-1))/columns-.02)}px`);
-  host.dataset.pinRows=rows.join('+');
+  const basis=`${Math.max(0,(width-4*(columns-1))/columns-.02)}px`,signature=rows.join('+');
+  if(host.style.getPropertyValue('--haz-pin-basis')!==basis)host.style.setProperty('--haz-pin-basis',basis);
+  if(host.dataset.pinRows!==signature)host.dataset.pinRows=signature;
  };
  const resize=new ResizeObserver(update);
- const mutation=new MutationObserver(update);mutation.observe(shell,{subtree:true,childList:true});
+ const mutation=new MutationObserver(records=>{
+  if(records.some(record=>record.target===host||(record.target as Element).matches?.('.tab-list')||[...record.addedNodes,...record.removedNodes].some(node=>node.nodeType===1&&((node as Element).matches('.pinned-tabs,.tab-list')||(node as Element).querySelector('.pinned-tabs')))))update();
+ });mutation.observe(shell,{subtree:true,childList:true});
  update();return()=>{resize.disconnect();mutation.disconnect();};
 }
