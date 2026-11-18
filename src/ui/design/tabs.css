@@ -877,8 +877,8 @@ body.haz-proposal {
 }
 
 .haz-proposal .chrome-layout .navigation > .compact-address {
-  background: #111114;
-  border: 0;
+  background: var(--pref-raised);
+  border: 1px solid var(--pref-line);
   box-shadow: none;
   border-radius: 7px;
   color: var(--pref-text);
@@ -888,16 +888,11 @@ body.haz-proposal {
   width: calc(100% - 4px);
 }
 .haz-proposal .chrome-layout .navigation > .compact-address:hover {
-  background: #18181b;
+  background: var(--pref-hover);
+  border-color: var(--pref-control-edge);
 }
 .haz-proposal .compact-address kbd {
   color: var(--pref-muted);
-}
-.haz-proposal[data-theme='light']
-  .chrome-layout
-  .navigation
-  > .compact-address {
-  background: #f0f0f2;
 }
 .haz-proposal .shell.horizontal.address-bottom {
   grid-template-rows: 38px minmax(0, 1fr) 40px;
