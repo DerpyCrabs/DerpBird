@@ -25,6 +25,7 @@ for directory, destination in [('HTTP', 'Libraries/LibHTTP'), ('WebUI', 'Librari
         target = source / destination / file.name
         if not target.exists() or target.read_bytes() != file.read_bytes():
             shutil.copyfile(file, target)
+shutil.copyfile(root / "native/Resources/DerpBirdClickToLoad.html", source / "Base/res/ladybird/templates/derpbird-click-to-load.html")
 # Share one icon between the desktop launcher and the native Qt window.
 icon_source = root / 'packaging/derpbird.svg'
 icon_target = source / 'UI/Qt/derpbird.svg'
