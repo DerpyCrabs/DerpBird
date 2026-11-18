@@ -8,6 +8,8 @@ interface ElementReference { sharedId: string; context: string; tabContext: stri
 export class AgentBrowser {
   context: string | undefined;
   windowId: string | undefined;
+  private ownedWindow?: string;
+  restrictToWindow(id: string) { this.ownedWindow = id; }
   private references = new Map<string, ElementReference>();
   private nextRef = 0;
   private needsSettle = new Set<string>();
@@ -122,7 +124,10 @@ export class AgentBrowser {
     await this.shell(tab.windowId, { type: 'automation.files', tabId: tab.id, paths });
     return this.snapshot();
   }
-  async windows(): Promise<AgentWindow[]> { return (await this.connection.request('derpbird.windows')).windows; }
+  async windows(): Promise<AgentWindow[]> {
+    const { windows } = await this.connection.request('derpbird.windows');
+    return this.ownedWindow ? windows.filter((window: AgentWindow) => window.windowId === this.ownedWindow) : windows;
+  }
   async tabs(): Promise<AgentTab[]> { return (await this.windows()).flatMap(window => window.tabs.map(tab => ({ ...tab, windowId: window.windowId }))); }
   async select(index: number) {
     const tab = (await this.tabs())[index];
@@ -157,7 +162,10 @@ export class AgentBrowser {
       await new Promise(resolve => setTimeout(resolve, 50));
     }
   }
-  shell(windowId: string, payload: Record<string, unknown>) { return this.connection.request('derpbird.request', { windowId, payload }); }
+  shell(windowId: string, payload: Record<string, unknown>) {
+    if (this.ownedWindow && windowId !== this.ownedWindow) throw new Error('Window is outside this agent session');
+    return this.connection.request('derpbird.request', { windowId, payload });
+  }
   async currentShell(payload: Record<string, unknown>) { await this.target(); return this.shell(this.windowId!, payload); }
   async navigate(url: string) {
     const context = await this.target();

@@ -99,6 +99,7 @@ export class AgentSessions {
         if (Date.now() >= deadline) throw new Error('Agent window did not become ready. The running browser may need the installed update.');
         await new Promise(resolve => setTimeout(resolve, 100));
       }
+      session.browser.restrictToWindow(owned!.windowId);
       session.mode = 'agent-window';
       session.log = () => stderr;
       const tabs = await session.browser.tabs();

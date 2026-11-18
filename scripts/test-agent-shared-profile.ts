@@ -39,7 +39,8 @@ try {
   assert.notEqual(sessions.browser.windowId,firstWindow);
   await sessions.browser.navigate(fixture.url.href);
   assert.equal(await sessions.browser.evaluate('()=>localStorage.shared'),'agent');
-  const windows=await sessions.browser.windows();
+  assert.equal((await sessions.browser.windows()).length, 1);
+  const windows=await owner.windows();
   let desktopWindows:any[]=[];
   try {
     if (!process.env.HYPRLAND_INSTANCE_SIGNATURE) throw new Error('Not on Hyprland');
