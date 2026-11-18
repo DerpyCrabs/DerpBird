@@ -38,13 +38,13 @@ runScenario(async ({conditions})=>{
   const ui=mountDevTools(host,port,'Elements');tools={dispose(){ui.dispose();port.dispose();container.remove();}};
  };
  const proxyFixture=conditions.proxyDemo?createProxyFixture(conditions):undefined;
- const port={...fixture.port,request:async(command:any)=>{if(command.type==='tab.inspect'){await openTools();return;}if(command.type==='tab.reload')proxyFixture?.reload();return fixture.port.request(command);}};
+ const port={...fixture.port,request:async(command:any)=>{if(command.type==='tab.inspect'){await openTools();return;}if(command.type==='tab.reload')proxyFixture?.reload();const result=await fixture.port.request(command);if(command.type==='tab.create'&&!command.url)focusAddress(document,controller);return result;}};
  let proxy:any={revision:1,active:'system',options:{schemaVersion:2,'+Office':{name:'Office',profileType:'FixedProfile',color:'#6b94c4',fallbackProxy:{scheme:'http',host:'proxy.example.test',port:8080},bypassList:[]}}};
  let manager:any;
  const show=()=>{if(manager){manager.toggle();return;}manager=openProxyManager(document.querySelector('#style-manager-host')!,proxyFixture?.port??{get:async()=>structuredClone(proxy),replace:async(s:any)=>{proxy={...structuredClone(s),revision:proxy.revision+1};return structuredClone(proxy)}},()=>{manager=undefined},'https://example.test/0')};
  if(conditions.workspaceDemo)fixture.enableWorkspaces(conditions.singleDefault===true,conditions.pinCount===9?9:3);
  if(conditions.hazProposal){
-  fixture.seedReadingTabs(['Tabs UI · Diego Haz','Scrollable interfaces','Ariakit components','Keyboard navigation','Focus and selection','Sidebar explorations','Design principles','Interaction details','Motion guidelines','Color and contrast','Typography notes','Component anatomy','Browser workspaces','Progressive disclosure','Touch target sizes','Release checklist','Team handbook','Reading list']);
+  if(!conditions.shortTabStrip)fixture.seedReadingTabs(['Tabs UI · Diego Haz','Scrollable interfaces','Ariakit components','Keyboard navigation','Focus and selection','Sidebar explorations','Design principles','Interaction details','Motion guidelines','Color and contrast','Typography notes','Component anatomy','Browser workspaces','Progressive disclosure','Touch target sizes','Release checklist','Team handbook','Reading list']);
   if(conditions.hazSplit)await fixture.port.request({type:'tab.split',tabId:'accessibility',targetId:'research',edge:conditions.hazSplit==='vertical'?'bottom':'right'});
   if(conditions.hazChildren){
    for(const [tabId,targetId] of [['reading-1','research'],['reading-2','research'],['reading-3','research'],['reading-4','accessibility'],['reading-5','accessibility']])await fixture.port.request({type:'tab.tree-move',tabId,targetId,placement:'inside'});

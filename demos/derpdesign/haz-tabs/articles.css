@@ -13,3 +13,4 @@
 .haz-proposal .demo-article textarea{background:var(--pref-raised);border:1px solid var(--pref-control-edge);border-radius:8px;color:var(--pref-text);font:13px/1.5 Inter,system-ui,sans-serif}
 .haz-proposal .demo-page[data-active=true] .site-mast{border-bottom-color:var(--pref-control-edge)}
 .haz-proposal .demo-article textarea::placeholder{color:var(--pref-muted);opacity:1}
+#content-surface[data-new-tab] > :is(.haz-page-host, .demo-pages) { display: none; }

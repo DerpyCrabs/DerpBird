@@ -21,7 +21,7 @@ run this only when ready to replace that session, then select the desired demo.
 The compatibility path in DerpDesign resolves here, so existing registrations
 continue to use these sources without a catalog migration.
 
-Available demos: shell, horizontal tabs, proxy profiles, proxy site controls,
+Available demos: shell, Browser UI (including horizontal tabs), proxy profiles, proxy site controls,
 split view, developer tools, integrated developer tools, and browser layouts.
 The layout settings pane loads the same native Settings HTML and bundled source
 entry as the product; its WebUI boundary feeds the fixture's saved preferences.

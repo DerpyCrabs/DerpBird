@@ -83,7 +83,7 @@ export function createBirdFixture(layout:'horizontal'|'vertical',canDrop:CanDrop
    case 'shell.set-appearance':preferences.theme=c.theme;preferences.alwaysClose=c.alwaysClose;break;
    case 'shell.set-wrap-tabs':preferences.wrapTabs=c.value;break;
    case 'tab.activate':get(c.tabId);activeTabId=c.tabId;break;
-   case 'tab.create':{const t=makeTab(`new-${++serial}`,'New tab',c.url,c.private);tabs.push(t);activeTabId=t.id;break;}
+   case 'tab.create':{const t=makeTab(`new-${++serial}`,'New tab',c.url ?? 'about:newtab',c.private);tabs.push(t);activeTabId=t.id;break;}
    case 'tab.close':get(c.tabId);remove(new Set([c.tabId]));break;
    case 'tab.close-group':get(c.tabId);remove(new Set(block(c.tabId).map(t=>t.id)));break;
    case 'tab.close-others':get(c.tabId);remove(new Set(tabs.filter(t=>t.id!==c.tabId&&!t.pinned).map(t=>t.id)));break;

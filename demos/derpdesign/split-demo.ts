@@ -14,8 +14,7 @@ export function mountSplitDemo(controller:any, conditions:any, fixture:ReturnTyp
  function page(id:string){
   if(pages.has(id))return pages.get(id)!;
   const el=document.createElement('section');el.className='demo-page';el.dataset.id=id;
-  el.innerHTML=`<article class="demo-article ${id}">${articles[id]??'<h1></h1><p class="article-lead"></p>'}</article>`;
-  if(!articles[id]){const tab=fixture.snapshot().tabs.find(t=>t.id===id);el.querySelector('h1')!.textContent=tab?.title??'New tab';el.querySelector('p')!.textContent=tab?.url??'';}
+  if(articles[id])el.innerHTML=`<article class="demo-article ${id}">${articles[id]}</article>`;
   el.addEventListener('pointerdown',()=>controller.send({type:'tab.activate',tabId:id}));
   pages.set(id,el);return el;
  }
