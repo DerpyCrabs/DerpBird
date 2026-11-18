@@ -81,6 +81,10 @@ export function createWebUIPort(
     if (name === 'derpbird.sources-changed') { for (const listener of sourceListeners) listener(); return; }
     if (name === 'derpbird.snapshot') {
       for (const listener of listeners) listener(data);
+      if (data && typeof data === 'object' && 'focusAddress' in data && data.focusAddress === true) {
+        window.dispatchEvent(new Event('derpbird-shell-keyboard-focus'));
+        window.dispatchEvent(new Event('derpbird-focus-address'));
+      }
       return;
     }
     if (name !== 'derpbird.response' || !data || typeof data !== 'object') return;

@@ -59,6 +59,8 @@
 .haz-proposal .address-palette form{flex-shrink:0;min-height:44px;gap:10px;padding:6px 10px;color:var(--pref-muted);border-color:var(--pref-line)}
 /* Shift the lowercase URL optically up 1px while preserving its hit area. */
 .haz-proposal .address-palette input{height:32px;padding-top:0;padding-bottom:2px;font-size:14px;line-height:20px;color:var(--pref-text)}
+.haz-proposal .address-palette #palette-location:focus{outline:none;box-shadow:none;border:0}
+.haz-proposal .address-palette input::placeholder{color:var(--pref-muted);opacity:1}
 .haz-proposal .address-palette form>button{margin:0;padding:6px;width:28px;height:28px;flex-basis:28px;border-radius:6px;color:var(--pref-muted)}
 .haz-proposal .address-palette form>button:hover{background:var(--pref-hover);color:var(--pref-text)}
 .haz-proposal .address-palette [role=listbox]{min-height:0;overflow:auto;overscroll-behavior:contain;padding:4px 0;scrollbar-width:thin;scroll-padding:4px}

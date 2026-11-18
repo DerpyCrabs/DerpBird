@@ -159,7 +159,7 @@ export function createController(port?: NativePort) {
     },
     openAddressPalette() {
       const input = state.browser.tabs.find(tab => tab.id === state.browser.activeTabId)?.url ?? '';
-      patch({ addressPaletteOpen: true, addressInput: input === 'about:blank' ? '' : input, addressSelection: -1, addressSuggestionsOpen: false });
+      patch({ addressPaletteOpen: true, addressInput: input === 'about:blank' || input === 'about:newtab' ? '' : input, addressSelection: -1, addressSuggestionsOpen: false });
     },
     blurAddress() {
       patch({ addressSuggestionsOpen: false, addressSelection: -1, addressQuery: state.addressQuery + 1 });

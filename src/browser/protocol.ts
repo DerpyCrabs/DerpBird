@@ -3,6 +3,7 @@ import { decodeChromeLayout, type ChromeLayout } from './chrome-layout';
 import { decodeCapturedCredential, decodeCredential, type Credential, type CapturedCredential } from './credential-protocol';
 export const protocolVersion = 1 as const;
 export interface Tab {
+  readonly blankNewTab?: boolean;
   readonly parentId?: string;
   readonly id: string;
   readonly url: string;
@@ -18,6 +19,10 @@ export interface Tab {
   readonly favicon?: string;
   readonly private: boolean;
 }
+export function isNewTabPage(tab?: Tab) {
+  return tab?.url === 'about:newtab' || (tab?.url === 'about:blank' && tab.blankNewTab === true);
+}
+
 export interface ShellPreferences { readonly theme?: 'dark' | 'light'; readonly alwaysClose?: boolean; readonly chromeLayout?: ChromeLayout; readonly sidebarWidth?: number; readonly wrapTabs?: boolean; readonly layout: 'vertical' | 'horizontal' }
 export interface ScriptCommand { readonly id: string; readonly script: string; readonly label: string; readonly title: string; readonly accessKey: string; readonly autoClose: boolean }
 export interface ScriptCommandEvent { readonly keyboard: boolean; readonly key: string; readonly ctrlKey: boolean; readonly altKey: boolean; readonly shiftKey: boolean; readonly metaKey: boolean }
@@ -107,7 +112,7 @@ export function decodeSnapshot(value: unknown): BrowserSnapshot {
     if (t.favicon !== undefined && (typeof t.favicon !== 'string' || t.favicon.length > 16384 || (t.favicon !== '' && !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(t.favicon)))) throw new Error('Invalid favicon');
     if (t.zoom !== undefined && (typeof t.zoom !== 'number' || !Number.isFinite(t.zoom) || t.zoom <= 0 || t.zoom > 10)) throw new Error('Invalid tab zoom');
     if (t.parentId !== undefined && (typeof t.parentId !== 'string' || !t.parentId)) throw new Error('Invalid tab parent');
-    return Object.freeze({ ...(t.parentId === undefined ? {} : { parentId: t.parentId }), favicon: t.favicon ?? '', zoom: t.zoom ?? 1, id: t.id, url: t.url, title: t.title, loading: t.loading, canGoBack: t.canGoBack,
+    return Object.freeze({ ...(t.blankNewTab === true ? {blankNewTab:true} : {}), ...(t.parentId === undefined ? {} : { parentId: t.parentId }), favicon: t.favicon ?? '', zoom: t.zoom ?? 1, id: t.id, url: t.url, title: t.title, loading: t.loading, canGoBack: t.canGoBack,
       canGoForward: t.canGoForward, pinned: t.pinned, audible: t.audible, muted: t.muted, attention: t.attention === true, private: t.private }) as Tab;
   });
   const byId = new Map(tabs.map(tab => [tab.id, tab]));

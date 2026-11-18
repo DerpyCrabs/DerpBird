@@ -78,7 +78,7 @@ export function observeOverflow(list: HTMLElement, vertical = false) {
   list.dataset.before=String(before);list.dataset.after=String(after);list.dataset.axis=vertical?'vertical':'horizontal';
   buttons.forEach((b,i)=>{const available=i?after:before;b.setAttribute('aria-disabled',String(!available));presence(b,available);
    b.style.top=`${list.offsetTop+(vertical?(i?list.clientHeight-30:2):3)}px`;
-   b.style.left=`${list.offsetLeft+(vertical?(list.clientWidth-28)/2:(i?list.clientWidth-31:3))}px`;
+   b.style.left=`${list.offsetLeft+(vertical?(list.clientWidth-28)/2:(i?list.clientWidth-30:3))}px`;
   });
  };
  const schedule=()=>{if(!frame)frame=requestAnimationFrame(update);};

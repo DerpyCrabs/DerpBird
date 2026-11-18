@@ -26,6 +26,7 @@
     "test:fast": "python3 scripts/workflow.py fast",
     "test:native:fast": "python3 scripts/workflow.py native --engine --fast",
     "test:proxy": "python3 scripts/workflow.py proxy",
+    "test:new-tab:background": "python3 scripts/test-new-tab-background.py",
     "test:rendering:unit": "python3 -m unittest discover -s tests/rendering -v",
     "demo:register": "bun demos/derpdesign/register.ts",
     "test:workspaces:engine": "python3 scripts/workflow.py build && python3 scripts/test-browser-layouts.py --workspaces",

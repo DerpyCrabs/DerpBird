@@ -193,9 +193,12 @@ body.haz-proposal {
   padding: 0;
 }
 .haz-proposal .shell.vertical .tab-list {
-  flex: 1;
+  flex: 0 1 auto;
   padding: 0;
   overflow-x: hidden;
+}
+.haz-proposal .shell.vertical .tab-list > .tab-unit:first-child {
+  margin-top: 6px;
 }
 .haz-proposal .shell.vertical .tab-list > .tab-unit {
   margin-left: 6px;
@@ -430,7 +433,7 @@ body.haz-proposal {
   height: 38px;
   align-items: flex-start;
   gap: 4px;
-  padding: 0 8px;
+  padding: 0 3px 0 8px;
 }
 .haz-proposal .shell.horizontal:not(.wrap-tabs) .tab {
   height: 38px;
@@ -788,7 +791,7 @@ body.haz-proposal {
 .haz-proposal .shell.vertical .haz-workspace-switch {
   display: flex;
   flex: 0 0 auto;
-  margin: 0 6px 6px;
+  margin: auto 6px 6px;
   padding: 0;
   border: 0;
   min-width: 0;
@@ -809,7 +812,7 @@ body.haz-proposal {
 }
 .haz-proposal .shell.vertical .new-tab {
   margin: 0 6px;
-  padding: 5px 12px;
+  padding: 5px 8px;
   min-height: 30px;
   font-size: 13px;
   gap: 6px;
@@ -850,13 +853,13 @@ body.haz-proposal {
 }
 
 .haz-proposal .shell.horizontal .tabs > .new-tab {
-  align-self: flex-start;
+  align-self: center;
   display: flex;
   width: 28px;
   min-width: 28px;
   height: 28px;
   min-height: 28px;
-  margin: 5px 0 0;
+  margin: 0 3px 0 0;
   padding: 6px;
   justify-content: center;
   align-items: center;
@@ -864,7 +867,7 @@ body.haz-proposal {
 .haz-proposal .shell.horizontal .haz-workspace-switch {
   align-self: flex-start;
   margin-top: 4px;
-  margin-left: 4px;
+  margin-left: auto;
   padding-left: 4px;
 }
 
@@ -1105,4 +1108,8 @@ body.native-shell,
 body.native-shell .shell,
 body.native-shell .shell .content-surface {
   background: transparent;
+}
+
+.haz-proposal #content-surface[data-new-tab] {
+  background: #303134;
 }

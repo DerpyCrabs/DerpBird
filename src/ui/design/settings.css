@@ -1,5 +1,7 @@
 .haz-page-host,.haz-page{height:100%;min-height:0}
 .haz-page{overflow:auto;background:var(--pref-panel)}
+.haz-page:has(>.haz-start){background:#303134}
+.haz-page[data-theme=light]:has(>.haz-start){background:#e3e4e6}
 .haz-start{max-width:940px;margin:auto;padding:28px 40px;color:var(--pref-text)}
 .haz-start>header{display:flex;align-items:center;justify-content:space-between}
 .haz-wordmark{font-size:14px;font-weight:600;letter-spacing:-.3px}
