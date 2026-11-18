@@ -42,8 +42,11 @@ test('background DOM updates do not request a panel switch',async()=>{
 test('DOM mutation subtrees replace children and preserve selected styles',async()=>{
  const t=transport({requests:[],sources:[],messages:[],nodeId:'2',styles:{color:'red'},dom:{id:1,type:'document',name:'#document',children:[{id:2,type:'element',name:'span',children:[{id:3,type:'text',text:'old'}]}]}});
  const p=(await connectDevTools(t))!;
+ const originalRows=p.elements;
  t.emit({domMutations:[{id:2,type:'element',name:'span',attributes:{class:'new'},children:[{id:4,type:'text',text:'changed'}]}]});
  expect(p.elements.map(e=>e.id)).toEqual(['1','2','4']);
+ expect(p.elements[0]).toBe(originalRows[0]);
+ expect(originalRows.map(row=>row.id)).toEqual(['1','2','3']);
  expect(p.elements[1]?.styles.color).toBe('red');expect(p.elements[2]?.text).toBe('changed');
  t.emit({domMutations:[{id:3,type:'text',text:'stale removed node'}]});
  expect(p.elements.map(e=>e.id)).toEqual(['1','2','4']);

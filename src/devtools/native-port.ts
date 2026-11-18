@@ -10,9 +10,9 @@ const record = (value: unknown): Record<string, any> => {
 };
 const list = (value: unknown): any[] => { if (!Array.isArray(value)) throw Error('Invalid developer tools list'); return value; };
 const text = (value: unknown): string => { if (typeof value !== 'string') throw Error('Invalid developer tools text'); return value; };
-export function decodeDOM(value: unknown): DOMRecord[] {
+export function decodeDOM(value: unknown, rootDepth = 0): DOMRecord[] {
   const root = record(value), rows: DOMRecord[] = [];
-  const stack = [{ node: root, depth: 0 }];
+  const stack = [{ node: root, depth: rootDepth }];
   while (stack.length) {
     const {node,depth} = stack.pop()!;
     if (node.id !== undefined) {
@@ -55,21 +55,43 @@ export async function connectDevTools(transport: DevToolsTransport): Promise<(De
       }
       update.requests=[...requests.values()].sort((a,b)=>a.start-b.start);
     }
-    if(packet.dom!==undefined){dom=record(packet.dom);domNodes.clear();indexDOM(dom);}
+    let rows = port?.elements ?? [];
+    if(packet.dom!==undefined){dom=record(packet.dom);domNodes.clear();indexDOM(dom);rows=decodeDOM(dom);}
     if(packet.domMutations!==undefined){
       for(const raw of list(packet.domMutations)){
         const replacement=record(raw), target=domNodes.get(String(replacement.id));
         if(!target)continue; // A removed subtree may still have queued mutations.
+        const start = rows.findIndex(row => row.id === String(replacement.id));
         indexDOM(target,true);for(const key of Object.keys(target))delete target[key];Object.assign(target,replacement);indexDOM(target);
+        if (start < 0) {
+          // A previously hidden whitespace node can become visible.
+          rows = decodeDOM(dom);
+          continue;
+        }
+        const depth = rows[start].depth;
+        let end = start + 1;
+        while (end < rows.length && rows[end].depth > depth) end++;
+        rows = rows.slice(0, start).concat(decodeDOM(target, depth), rows.slice(end));
       }
     }
-    if(packet.dom!==undefined||packet.domMutations!==undefined){update.elements=decodeDOM(dom);if(selectedId)update.selectedNodeId=selectedId;}
+    if(packet.dom!==undefined||packet.domMutations!==undefined){update.elements=rows;if(selectedId)update.selectedNodeId=selectedId;}
     if(packet.sources!==undefined)update.sources=list(packet.sources).map(s=>({id:text(s.id),name:text(s.name),text:text(s.text)}));
     if(packet.messages!==undefined)update.messages=list(packet.messages).map(m=>({level:['info','warning','error','result'].includes(m.level)?m.level:'info',text:text(m.text)} as ConsoleRecord));
+    const previousId = selectedId;
     if(packet.nodeId!==undefined){selectedId=text(packet.nodeId);update.selectedNodeId=selectedId;}
     if(packet.styles!==undefined){selectedStyles=Object.fromEntries(Object.entries(record(packet.styles)).map(([key,value])=>[key,typeof value==='string'?value:JSON.stringify(value)]));}
-    const elements=update.elements??port?.elements;
-    if(elements&&(packet.styles!==undefined||packet.dom!==undefined||packet.domMutations!==undefined))update.elements=elements.map(e=>({...e,styles:e.id===selectedId?selectedStyles:{}}));
+    if (update.elements || packet.styles !== undefined || previousId !== selectedId) {
+      for (const id of new Set([previousId, selectedId])) {
+        if (!id) continue;
+        const index = rows.findIndex(row => row.id === id);
+        if (index < 0) continue;
+        const styles = id === selectedId ? selectedStyles : {};
+        if (rows[index].styles === styles) continue;
+        if (rows === port?.elements) rows = rows.slice();
+        rows[index] = { ...rows[index], styles };
+        update.elements = rows;
+      }
+    }
     if(port){
       if(update.dock)port.dock=update.dock;
       if(update.picking!==undefined)port.picking=update.picking;
