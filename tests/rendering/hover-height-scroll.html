@@ -1,0 +1,21 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Height transition beside a scrolled pane</title>
+<style>
+  body { margin: 0; background: #19191a; }
+  aside { width: 64px; height: 100vh; background: #de1243; }
+  #indicator { width: 8px; height: 8px; background: white; transition: height 200ms; }
+  #indicator.active { height: 20px; }
+  main { position: absolute; inset: 0 0 0 90px; overflow: auto; }
+  .spacer { height: 5600px; }
+  article { width: 500px; height: 540px; background: white; overflow: hidden; }
+</style>
+<aside><div id="indicator"></div></aside>
+<main><div class="spacer"></div><article></article><div class="spacer"></div></main>
+<script>
+  const indicator = document.querySelector('#indicator');
+  document.querySelector('main').scrollTop = 5500;
+  if (location.search === '?instant')
+    indicator.style.transition = 'none';
+  setInterval(() => indicator.classList.toggle('active'), 80);
+</script>
