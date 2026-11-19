@@ -3,7 +3,7 @@
 BUILDDIR="$startdir/artifacts/arch"
 pkgname=derpbird
 pkgver=0.1.0
-pkgrel=10
+pkgrel=11
 pkgdesc='DerpBird with native MCP automation'
 arch=('x86_64')
 license=('MIT' 'BSD-2-Clause' 'MPL-2.0' 'GPL-3.0-or-later' 'Apache-2.0')

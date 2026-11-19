@@ -8,7 +8,7 @@ export function paletteItems(model: ShellModel) {
   const openTabs = model.browser.tabs.filter(tab => tab.id !== active?.id && tab.private === (active?.private ?? false) && (!query || `${tab.title} ${tab.url}`.toLocaleLowerCase().includes(query))).slice(0, 3);
   const remote = model.addressSuggestionsOpen ? model.browser.addressSuggestions?.items ?? [] : [];
   return [
-    ...openTabs.map(tab => ({id:tab.id,title:tab.title,text:tab.url,detail:tab.url,source:'tab'})),
+    ...openTabs.map(tab => ({id:tab.id,title:tab.title,text:tab.url,detail:tab.url,favicon:tab.favicon,source:'tab'})),
     ...remote.map(item => ({...item,id:item.text,detail:suggestionDetails(item)})),
   ];
 }

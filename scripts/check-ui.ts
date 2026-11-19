@@ -565,8 +565,9 @@ const layouts = [
   {preset:'classic',side:'left',address:'top'}, {preset:'bottom',side:'left',address:'bottom'},
   ...['left','right'].flatMap(side=>[{preset:'compact',side,address:'top'},...['top','bottom'].map(address=>({preset:'sidebar',side,address}))]),
 ];
+const paletteFavicon = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
 for (const chromeLayout of layouts) {
-  const next = () => ({...state(),preferences:{...preferences,layout:['sidebar','compact'].includes(chromeLayout.preset)?'vertical':'horizontal',chromeLayout},tabs:[tab('a'),{...tab('b'),parentId:'a'}]});
+  const next = () => ({...state(),preferences:{...preferences,layout:['sidebar','compact'].includes(chromeLayout.preset)?'vertical':'horizontal',chromeLayout},tabs:[tab('a'),{...tab('b'),parentId:'a',favicon:paletteFavicon}]});
   notify?.(next());await settle();
   const row=document.querySelector('[data-tab-id=a]');
   const group=document.querySelector('[data-tab-id=b]');
@@ -577,6 +578,7 @@ for (const chromeLayout of layouts) {
   const input=document.querySelector<HTMLInputElement>(compact?'#palette-location':'#location')!;
   assert(input,`missing address input for ${JSON.stringify(chromeLayout)}`);
   assert.equal(document.activeElement,input);
+  if (compact) assert.equal(document.querySelector('#palette-results .suggestion-favicon')?.getAttribute('src'), paletteFavicon);
   input.value='typed.example';input.dispatchEvent(new window.Event('input',{bubbles:true}));await settle();
   window.dispatchEvent(new window.Event('derpbird-focus-address'));await settle();
   assert.equal(input.value,'typed.example','repeated Ctrl+L preserves the draft');
