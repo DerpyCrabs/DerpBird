@@ -158,8 +158,7 @@ bun run test:perf:browser --compare artifacts/browser-before/report.json \
   --output artifacts/browser-after
 ```
 
-`--browser` selects a binary; otherwise `DERPBIRD_ENGINE_BUILD` / the normal
-Release build applies. Reports identify the executable hash and source revisions.
+`--browser` selects a binary; otherwise the Release build applies. Reports identify the executable hash and source revisions.
 Run benchmarks sequentially on an otherwise idle machine. The focused runner
 uses three measured samples after one warmup by default; the complete runner
 passes its sample settings through. Failed baselines are never accepted.

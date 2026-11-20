@@ -1,5 +1,4 @@
 """Dependency-aware build operations shared by the command-line workflows."""
-import hashlib
 import subprocess
 import sys
 import shutil
@@ -25,9 +24,7 @@ def suite_sources():
 
 
 def suites_build():
-    default = ROOT / 'vendor/ladybird/Build/release'
-    suffix = '' if engine_build() == default else '-' + hashlib.sha256(str(engine_build()).encode()).hexdigest()[:10]
-    return ROOT / f'artifacts/engine-suites{suffix}'
+    return ROOT / 'artifacts/engine-suites'
 
 
 def configure_tests(source, directory, with_engine):
@@ -36,7 +33,7 @@ def configure_tests(source, directory, with_engine):
         command.append(f'-DCMAKE_CXX_COMPILER_LAUNCHER={cache}')
     if with_engine:
         if not (engine_build() / 'lib/liblagom-core.so').is_file():
-            raise ValueError('Native suites require a shared-library Linux engine build (Dev, Release, Debug or Sanitizer).')
+            raise ValueError('Native suites require a Release engine build.')
         cache = (engine_build() / 'CMakeCache.txt').read_text()
         compiler = next(line.split('=', 1)[1] for line in cache.splitlines()
                         if line.startswith(('CMAKE_CXX_COMPILER:FILEPATH=', 'CMAKE_CXX_COMPILER:STRING=')))

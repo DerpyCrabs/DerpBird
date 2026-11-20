@@ -24,7 +24,7 @@ if not (engine_build() / 'bin/Ladybird').is_file():
     raise SystemExit('Build the engine first: bun run build:engine')
 for path in (launcher, desktop, icon):
     path.parent.mkdir(parents=True, exist_ok=True)
-launcher.write_text('#!/usr/bin/env python3\nimport os, sys\nos.environ["DERPBIRD_ENGINE_BUILD"] = ' + repr(str(engine_build())) + '\nos.execv(sys.executable, [sys.executable, ' + repr(str(root / 'scripts/run.py')) + ', *sys.argv[1:]])\n')
+launcher.write_text('#!/usr/bin/env python3\nimport os, sys\nos.execv(sys.executable, [sys.executable, ' + repr(str(root / 'scripts/run.py')) + ', *sys.argv[1:]])\n')
 launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 # Desktop-entry Exec quoting differs from shell quoting; percent is a field marker.
 exe = str(launcher).replace('\\', '\\\\').replace('"', '\\"').replace('`', '\\`').replace('$', '\\$').replace('%', '%%')

@@ -17,20 +17,13 @@ spec.loader.exec_module(regressions)
 
 
 class ConfigurationTests(unittest.TestCase):
-    def test_preset_paths_and_custom_directories_cannot_share_native_artifacts(self):
-        with patch.dict(os.environ, {}, clear=True):
-            release = config.native_build(True)
-            self.assertEqual(config.engine_build().name, 'release')
-            with patch.dict(os.environ, {'DERPBIRD_BUILD_PRESET': 'Dev'}):
-                self.assertEqual(config.engine_build().name, 'dev')
-                self.assertNotEqual(config.native_build(True), release)
-            with patch.dict(os.environ, {'DERPBIRD_ENGINE_BUILD': 'artifacts/custom-engine'}):
-                self.assertEqual(config.engine_build(), config.ROOT / 'artifacts/custom-engine')
-                self.assertNotEqual(config.native_build(True), release)
+    def test_engine_path_is_always_release(self):
+        with patch.dict(os.environ, {'BUILD_PRESET': 'Debug', 'DERPBIRD_BUILD_PRESET': 'Dev',
+                                     'DERPBIRD_ENGINE_BUILD': 'artifacts/custom-engine'}):
+            self.assertEqual(config.engine_build(), config.ROOT / 'vendor/ladybird/Build/release')
 
     def test_invalid_configuration_fails_early(self):
-        for name, value, function in [('DERPBIRD_BUILD_PRESET', 'typo', config.build_preset),
-                                      ('DERPBIRD_BUILD_JOBS', '0', config.build_jobs),
+        for name, value, function in [('DERPBIRD_BUILD_JOBS', '0', config.build_jobs),
                                       ('DERPBIRD_TEST_JOBS', '-1', config.test_jobs)]:
             with self.subTest(name=name), patch.dict(os.environ, {name: value}), self.assertRaises(ValueError):
                 function()

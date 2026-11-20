@@ -4,26 +4,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ENGINE = ROOT / 'vendor/ladybird'
-PRESET_DIRECTORIES = {
-    'Release': 'release', 'Dev': 'dev', 'Debug': 'debug',
-    'Sanitizer': 'sanitizer', 'ThreadSanitizer': 'tsan',
-    'All_Debug': 'alldebug', 'Distribution': 'distribution', 'Fuzzers': 'fuzzers',
-}
-
-
-def build_preset():
-    preset = os.environ.get('DERPBIRD_BUILD_PRESET', os.environ.get('BUILD_PRESET', 'Release'))
-    if preset not in PRESET_DIRECTORIES:
-        raise ValueError(f'Unknown engine preset {preset!r}; choose from {", ".join(PRESET_DIRECTORIES)}')
-    return preset
 
 
 def engine_build(root=ROOT):
-    override = os.environ.get('DERPBIRD_ENGINE_BUILD')
-    if override:
-        path = Path(override).expanduser()
-        return (path if path.is_absolute() else root / path).resolve()
-    return root / 'vendor/ladybird/Build' / PRESET_DIRECTORIES[build_preset()]
+    return root / 'vendor/ladybird/Build/release'
 
 
 def positive_integer(value, name):
@@ -60,9 +44,4 @@ def test_jobs():
 def native_build(engine=False):
     if not engine:
         return ROOT / 'artifacts/native-tests'
-    # Custom engine directories must never reuse a native build linked to another engine.
-    import hashlib
-    selected = engine_build()
-    default = ROOT / 'vendor/ladybird/Build/release'
-    suffix = '' if selected == default else '-' + hashlib.sha256(str(selected).encode()).hexdigest()[:10]
-    return ROOT / f'artifacts/native-engine-tests{suffix}'
+    return ROOT / 'artifacts/native-engine-tests'

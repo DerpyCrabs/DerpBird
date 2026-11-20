@@ -8,7 +8,7 @@ and native MCP automation.
 
 This is currently a multi-repository workspace, not a standalone source release.
 The engine fork referenced in `.gitmodules` must be accessible to the builder.
-EffectWeb 0.16.0 installs from npm. The demo harness uses the adjacent
+EffectWeb 0.16.1 installs from npm. The demo harness uses the adjacent
 `../DerpDesign/packages/harness` checkout.
 
 With Bun, Python 3, and the prerequisites from Ladybird's
