@@ -1,0 +1,413 @@
+diff --git i/Base/res/ladybird/about-pages/bookmarks.html w/Base/res/ladybird/about-pages/bookmarks.html
+index 7481f899c..f4cb1298b 100644
+--- i/Base/res/ladybird/about-pages/bookmarks.html
++++ w/Base/res/ladybird/about-pages/bookmarks.html
+@@ -270,6 +270,7 @@
+                 font-size: 13px;
+             }
+         </style>
++    <script type="module" src="resource://ladybird/about-pages/derpbird-assets/collections.js"></script>
+     </head>
+     <body>
+         <nav class="folders" id="folders" aria-label="Bookmark folders">
+@@ -400,6 +401,10 @@
+                 return result;
+             }
+ 
++            function openBookmarkUI(action, target) {
++                document.dispatchEvent(new CustomEvent("bookmarkUI", { detail: {action, target} }));
++            }
++
+             function showContextMenu(event, item, parentId, anchor) {
+                 event.preventDefault();
+                 event.stopPropagation();
+@@ -412,7 +417,7 @@
+                     clientY = Math.round(rect.bottom + 4);
+                 }
+ 
+-                ladybird.sendMessage("showContextMenu", {
++                openBookmarkUI("menu", {
+                     clientX,
+                     clientY,
+                     id: item.id,
+@@ -476,7 +481,7 @@
+                 const id = folder ? folder.id : null;
+                 const children = folder ? folder.children || [] : BOOKMARKS;
+                 const link = createElement("a", { href: "#", className: "folder-link" });
+-                link.style.paddingLeft = `${10 + depth * 20}px`;
++                link.style.setProperty('--folder-depth', String(depth));
+                 link.innerHTML = FOLDER_SVG;
+                 link.append(
+                     createElement("span", {
+@@ -606,7 +611,7 @@
+             document.querySelector("main").addEventListener("contextmenu", event => {
+                 if (event.defaultPrevented) return;
+                 event.preventDefault();
+-                ladybird.sendMessage("showContextMenu", {
++                openBookmarkUI("menu", {
+                     clientX: event.clientX,
+                     clientY: event.clientY,
+                     targetFolderId: CURRENT_FOLDER_ID,
+@@ -614,7 +619,7 @@
+             });
+ 
+             document.getElementById("new-folder-button").addEventListener("click", () => {
+-                ladybird.sendMessage("newFolder", { targetFolderId: CURRENT_FOLDER_ID });
++                openBookmarkUI("folder", { targetFolderId: CURRENT_FOLDER_ID });
+             });
+ 
+             document.addEventListener("WebUILoaded", () => {
+diff --git i/Base/res/ladybird/about-pages/history.html w/Base/res/ladybird/about-pages/history.html
+index 16c7eeda6..57406f474 100644
+--- i/Base/res/ladybird/about-pages/history.html
++++ w/Base/res/ladybird/about-pages/history.html
+@@ -224,6 +224,7 @@
+                 border: 0;
+             }
+         </style>
++    <script type="module" src="resource://ladybird/about-pages/derpbird-assets/collections.js"></script>
+     </head>
+     <body>
+         <div class="history-header">
+@@ -240,7 +241,7 @@
+                 >
+                     <path d="M7 2.5a4.5 4.5 0 1 1 0 9a4.5 4.5 0 1 1 0-9zM10.5 10.5L14 14" />
+                 </svg>
+-                <input id="history-search" type="search" placeholder="Search history" spellcheck="false" autofocus />
++                <input id="history-search" type="search" placeholder="Search history" spellcheck="false" />
+             </label>
+             <button id="clear-history" class="secondary-button">Clear history…</button>
+         </div>
+@@ -339,18 +340,18 @@
+                 requestHistory(0);
+             }
+ 
+-            function removeEntry(entry) {
++            async function removeEntry(entry) {
+                 const name = entry.title || entry.url;
+-                if (!window.confirm(`Remove ${name} from browsing history?`)) return;
++                if (!await window.confirmHistoryChange(`Remove ${name} from browsing history?`)) return;
+ 
+                 ladybird.sendMessage("removeHistoryEntry", { url: entry.url });
+                 refreshHistory();
+             }
+ 
+-            function forgetSite(entry) {
++            async function forgetSite(entry) {
+                 if (!entry.siteKey) return;
+ 
+-                if (!window.confirm(`Forget all history from ${entry.siteKey}?`)) return;
++                if (!await window.confirmHistoryChange(`Forget all history from ${entry.siteKey}?`)) return;
+ 
+                 ladybird.sendMessage("forgetHistorySite", { url: entry.url });
+                 refreshHistory();
+diff --git i/Base/res/ladybird/about-pages/settings.html w/Base/res/ladybird/about-pages/settings.html
+index c711ceec7..680fe2679 100644
+--- i/Base/res/ladybird/about-pages/settings.html
++++ w/Base/res/ladybird/about-pages/settings.html
+@@ -997,10 +997,11 @@
+                 }
+             }
+         </style>
++        <meta name="viewport" content="width=device-width, initial-scale=1">
+     </head>
+-    <body>
++    <body class="unified preferences-theme">
+         <nav class="settings-sidebar">
+-            <label class="search-field">
++            <h1>Settings</h1><label class="search-field">
+                 <span class="visually-hidden">Search settings</span>
+                 <svg
+                     viewBox="0 0 16 16"
+@@ -1018,6 +1019,8 @@
+                 <button id="tab-button-appearance" class="tab-button active" data-tab="appearance" role="tab">
+                     Appearance
+                 </button>
++                <button class="tab-button" role="tab" data-tab="tabs" id="tab-button-tabs">Tabs &amp; navigation</button>
++                <button class="tab-button" role="tab" data-tab="workspaces" id="tab-button-workspaces">Workspaces</button>
+                 <button id="tab-button-search" class="tab-button" data-tab="search" role="tab">Search</button>
+                 <button id="tab-button-browsing" class="tab-button" data-tab="browsing" role="tab">
+                     Startup and browsing
+@@ -1564,7 +1567,34 @@
+                     </div>
+                 </div>
+             </div>
+-        </main>
++        <div class="tab-panel" id="tab-tabs" data-title="Tabs &amp; navigation"></div>
++<div class="tab-panel" id="tab-workspaces" data-title="Workspaces"></div>
++<template id="tab-controls">
++  <div class="card"><div class="card-body haz-settings" id="layouts"></div></div>
++  <h3 class="card-title">Tab controls</h3><div class="card"><div class="card-body">
++    <div class="card-group inline-container"><label for="always-close">Always show close buttons</label><input type="checkbox" switch id="always-close" checked></div>
++    <div class="card-group inline-container"><label for="wrap-tabs">Wrap horizontal tabs</label><input type="checkbox" switch id="wrap-tabs"></div>
++    <div class="card-group inline-container"><label for="sidebar-width">Sidebar width</label><select id="sidebar-width"><option value="196">Compact · 196 px</option><option value="240">Comfortable · 240 px</option><option value="280">Wide · 280 px</option></select></div>
++  </div></div>
++</template>
++<template id="workspace-controls">
++  <h3 class="card-title">Current workspace</h3>
++  <div class="card"><div class="card-body"><div class="haz-workspace-row card-group">
++    <strong id="current-workspace"></strong><button class="pref-button" id="rename-workspace">Rename workspace</button>
++  </div></div></div>
++  <h3 class="card-title">Switch workspace</h3><div class="card"><div class="card-body" id="workspace-list"></div></div>
++</template>
++<dialog id="workspace-dialog" class="pref-dialog" aria-labelledby="workspace-title">
++  <div class="dialog-header"><h3 id="workspace-title" class="dialog-title">Rename workspace</h3><button class="close-button dialog-button" type="button" aria-label="Close dialog"></button></div>
++  <form id="workspace-form" novalidate>
++    <label for="workspace-name">Workspace name</label>
++    <input id="workspace-name" type="text" maxlength="32" required aria-describedby="workspace-hint">
++    <p class="description" id="workspace-hint">Up to 32 characters.</p>
++    <p class="field-error" id="workspace-error" hidden>Enter a workspace name.</p>
++    <footer><button type="button" class="pref-button ghost" id="workspace-cancel">Cancel</button><button type="submit" class="pref-button primary">Save changes</button></footer>
++  </form>
++</dialog>
++</main>
+ 
+         <dialog id="languages-dialog" closedby="any">
+             <div class="dialog-header">
+diff --git i/Libraries/LibWebView/WebUI/SettingsUI.cpp w/Libraries/LibWebView/WebUI/SettingsUI.cpp
+index 4567001df..56a70590f 100644
+--- i/Libraries/LibWebView/WebUI/SettingsUI.cpp
++++ w/Libraries/LibWebView/WebUI/SettingsUI.cpp
+@@ -20,6 +20,8 @@
+ #include <LibWebView/PermissionManager.h>
+ #include <LibWebView/SearchEngine.h>
+ #include <LibWebView/WebContentClient.h>
++#include <LibWebView/WebContentPage.h>
++#include <LibWebView/ViewImplementation.h>
+ #include <LibWebView/WebUI/SettingsUI.h>
+ 
+ namespace WebView {
+@@ -81,6 +83,20 @@ void SettingsUI::register_interfaces()
+ {
+     m_site_permissions_observer = make<SettingsUISitePermissionsObserver>(*this);
+ 
++    register_interface("derpbird.settings"sv, [this](JsonValue data) {
++        auto* page = client().page(page_id());
++        if (!page || !page->is_open() || page->web_ui().ptr() != this || !page->displays_tab() || &page->view().page() != page
++            || !page->view().on_derpbird_request || page->view().url().serialize(URL::ExcludeFragment::Yes) != "about:settings"sv) return;
++        JsonObject request;
++        request.set("settings"sv, move(data));
++        page->view().on_derpbird_request(JsonValue { move(request) }, [self = NonnullRefPtr { *this }](ErrorOr<JsonValue> result) {
++            if (!self->has_client()) return;
++            auto* page = self->client().page(self->page_id());
++            if (!page || !page->is_open() || page->web_ui().ptr() != self.ptr()) return;
++            if (result.is_error()) self->async_send_message("derpbird.settingsError"sv, MUST(String::formatted("{}", result.error())));
++            else self->async_send_message("derpbird.settings"sv, result.release_value());
++        });
++    });
+     register_interface("loadFeatures"sv, [this](auto const&) {
+         load_features();
+     });
+diff --git i/UI/Qt/ApplicationActions.cpp w/UI/Qt/ApplicationActions.cpp
+index de3cda3ea..2eccf5461 100644
+--- i/UI/Qt/ApplicationActions.cpp
++++ w/UI/Qt/ApplicationActions.cpp
+@@ -11,6 +11,8 @@
+ #include <LibWebView/UserAgent.h>
+ #include <UI/Qt/Application.h>
+ #include <UI/Qt/ApplicationActions.h>
++#include <UI/Qt/BrowserWindow.h>
++#include <UI/Qt/DerpBirdChrome.h>
+ #include <UI/Qt/HubConnection.h>
+ #include <UI/Qt/Tab.h>
+ 
+@@ -139,6 +141,10 @@ ApplicationActions::ApplicationActions(PageOptions const& options)
+         Application::the().activate_or_open_tab_with_url(URL::about_version());
+     });
+     m_open_downloads_page_action = Action::create("Downloads"sv, ActionID::ViewDownloads, [] {
++        if (auto* window = Application::the().active_window_if_any(); window && window->derpbird_chrome()) {
++            window->derpbird_chrome()->show_downloads();
++            return;
++        }
+         Application::the().activate_or_open_tab_with_url(URL::about_downloads());
+     });
+     m_open_settings_page_action = Action::create("Settings"sv, ActionID::OpenSettingsPage, [] {
+diff --git i/UI/Qt/Bookmarks.cpp w/UI/Qt/Bookmarks.cpp
+index 2be647beb..973763a2a 100644
+--- i/UI/Qt/Bookmarks.cpp
++++ w/UI/Qt/Bookmarks.cpp
+@@ -29,8 +29,8 @@ Bookmarks::Bookmarks(BookmarkStore& store)
+     create_menus();
+     create_context_menus();
+ 
+-    Application::web_ui_pages().register_page("bookmarks"_string, "Bookmarks"_string, [](u64 web_ui_id, WebView::IsPrivate) -> NonnullOwnPtr<WebUIPage> {
+-        return make<BookmarksPage>(web_ui_id);
++    Application::web_ui_pages().register_page("bookmarks"_string, "Bookmarks"_string, [](u64 web_ui_id, WebView::IsPrivate is_private) -> NonnullOwnPtr<WebUIPage> {
++        return make<BookmarksPage>(web_ui_id, is_private);
+     });
+ 
+     HashTable<String> favicon_hashes;
+diff --git i/UI/Qt/Bookmarks.h w/UI/Qt/Bookmarks.h
+index 4ca3372d2..a93be66d4 100644
+--- i/UI/Qt/Bookmarks.h
++++ w/UI/Qt/Bookmarks.h
+@@ -39,6 +39,9 @@ public:
+     void set_context_menu_item(Optional<String> item_id, Optional<String> target_folder_id, Optional<String> parent_folder_id);
+     void open_in_new_tab(String const& bookmark_id, Web::HTML::ActivateTab);
+ 
++    void open_url_in_new_window(String const& bookmark_id, WebView::IsPrivate) const;
++    void open_folder_in_new_tabs(String const& folder_id) const;
++
+ private:
+     virtual void bookmarks_changed() override;
+ 
+@@ -64,8 +67,7 @@ private:
+ 
+     void open_url(URL::URL const&) const;
+     void open_url_in_new_tab(URL::URL const&, Web::HTML::ActivateTab) const;
+-    void open_url_in_new_window(String const& bookmark_id, WebView::IsPrivate) const;
+-    void open_folder_in_new_tabs(String const& folder_id) const;
++
+ 
+     void update_autocomplete_bookmarks();
+ 
+diff --git i/UI/Qt/BookmarksPage.cpp w/UI/Qt/BookmarksPage.cpp
+index 89ca4999b..9a8d989d5 100644
+--- i/UI/Qt/BookmarksPage.cpp
++++ w/UI/Qt/BookmarksPage.cpp
+@@ -7,6 +7,9 @@
+ #include <AK/ByteString.h>
+ #include <LibCore/File.h>
+ #include <LibCore/Promise.h>
++#include <LibURL/Parser.h>
++#include <LibWebView/URL.h>
++#include <UI/Qt/Tab.h>
+ #include <UI/Qt/Application.h>
+ #include <UI/Qt/BookmarkStore.h>
+ #include <UI/Qt/Bookmarks.h>
+@@ -19,9 +22,10 @@
+ 
+ namespace Ladybird {
+ 
+-BookmarksPage::BookmarksPage(u64 web_ui_id)
++BookmarksPage::BookmarksPage(u64 web_ui_id, WebView::IsPrivate is_private)
+     : WebUIPage(web_ui_id)
+     , BookmarkStoreObserver(Application::bookmark_store())
++    , m_is_private(is_private)
+ {
+ }
+ 
+@@ -31,6 +35,33 @@ void BookmarksPage::received_message(String const& name, JsonValue const& data)
+         load_bookmarks();
+     else if (name == "moveItem"sv)
+         move_item(data);
++    else if (name == "saveBookmark"sv && data.is_object())
++        save_bookmark(data.as_object());
++    else if (name == "removeBookmark"sv && data.is_object()) {
++        if (auto id = data.as_object().get_string("id"sv); id.has_value())
++            Application::bookmark_store().remove_item(*id);
++    } else if (name == "bookmarkAction"sv && data.is_object()) {
++        auto id = data.as_object().get_string("id"sv);
++        auto action = data.as_object().get_string("action"sv);
++        if (!id.has_value() || !action.has_value() || !consume_user_activation()) return;
++        auto& bookmarks = Application::bookmarks();
++        if (*action == "Open in new tab"sv) bookmarks.open_in_new_tab(*id, Web::HTML::ActivateTab::Yes);
++        else if (*action == "Open in private window"sv) bookmarks.open_url_in_new_window(*id, WebView::IsPrivate::Yes);
++        else if (*action == "Open in new window"sv && m_is_private == WebView::IsPrivate::No) bookmarks.open_url_in_new_window(*id, WebView::IsPrivate::No);
++        else if (*action == "Open all in tabs"sv) bookmarks.open_folder_in_new_tabs(*id);
++        else if (*action == "Copy link"sv) {
++            auto item = Application::bookmark_store().find_item_by_id(*id);
++            if (item.has_value() && item->is_bookmark())
++                Application::the().set_clipboard_text(MUST(String::from_byte_string(WebView::url_text_to_copy(item->bookmark().url))));
++        }
++    } else if (name == "setBookmarkBar"sv && data.is_object()) {
++        auto mode = data.as_object().get_string("mode"sv);
++        if (!mode.has_value() || !mode->is_one_of("Always"sv, "On hover"sv, "Never"sv)) return;
++        auto appearance = Application::settings().appearance();
++        appearance.show_bookmarks_bar = *mode == "Always"sv ? WebView::ShowBookmarksBar::Always : *mode == "On hover"sv ? WebView::ShowBookmarksBar::OnHover : WebView::ShowBookmarksBar::Never;
++        Application::settings().set_appearance(appearance);
++        load_bookmarks();
++    }
+     else if (name == "newFolder"sv)
+         new_folder(data);
+     else if (name == "showContextMenu"sv)
+@@ -50,12 +81,48 @@ void BookmarksPage::bookmarks_changed()
+ 
+ void BookmarksPage::load_bookmarks()
+ {
++    auto bar = Application::settings().appearance().show_bookmarks_bar;
++    auto const& tabs = Application::settings().tab_settings();
++    JsonObject options;
++    options.set("mode"sv, bar == WebView::ShowBookmarksBar::Always ? "Always"sv : bar == WebView::ShowBookmarksBar::OnHover ? "On hover"sv : "Never"sv);
++    options.set("available"sv, !tabs.vertical_tabs_enabled || !tabs.everything_in_sidebar);
++    options.set("private"sv, m_is_private == WebView::IsPrivate::Yes);
++    send_message("bookmarkBar"_string, move(options));
+     auto items = Application::bookmark_store().serialize_items([](String const& favicon_hash) {
+         return Application::bookmark_store().favicon_png(favicon_hash);
+     });
+     send_message("loadBookmarks"_string, move(items));
+ }
+ 
++void BookmarksPage::save_bookmark(JsonObject const& values)
++{
++    auto& store = Application::bookmark_store();
++    auto id = values.get_string("id"sv);
++    auto title = values.get_string("title"sv);
++    auto type = values.get_string("type"sv);
++    auto parent = values.get_string("targetFolderId"sv);
++    if (!title.has_value() || title->is_empty() || !type.has_value() || !type->is_one_of("bookmark"sv, "folder"sv)) return;
++    if (parent.has_value()) {
++        auto folder = store.find_item_by_id(*parent);
++        if (!folder.has_value() || !folder->is_folder()) return;
++    }
++    if (id.has_value()) {
++        auto item = store.find_item_by_id(*id);
++        if (!item.has_value() || item->is_folder() != (*type == "folder"sv)) return;
++    }
++    if (*type == "folder"sv) {
++        if (id.has_value()) store.edit_folder(*id, *title);
++        else store.add_folder(*title, parent);
++    } else {
++        auto url = URL::Parser::basic_parse(values.get_string("url"sv).value_or(String {}));
++        if (!url.has_value()) return;
++        if (id.has_value()) store.edit_bookmark(*id, *url, *title);
++        else store.add_bookmark(*url, *title, {}, parent);
++    }
++    if (id.has_value() && values.get_bool("move"sv).value_or(false))
++        store.move_item(*id, parent, NumericLimits<size_t>::max());
++}
++
+ void BookmarksPage::move_item(JsonValue const& data)
+ {
+     if (!data.is_object())
+diff --git i/UI/Qt/BookmarksPage.h w/UI/Qt/BookmarksPage.h
+index 64e9a398b..c64b3d1c6 100644
+--- i/UI/Qt/BookmarksPage.h
++++ w/UI/Qt/BookmarksPage.h
+@@ -15,13 +15,15 @@ class BookmarksPage final
+     : public WebUIPage
+     , public BookmarkStoreObserver {
+ public:
+-    explicit BookmarksPage(u64 web_ui_id);
++    BookmarksPage(u64 web_ui_id, WebView::IsPrivate);
+ 
+     virtual void received_message(String const& name, JsonValue const& data) override;
+ 
+ private:
+     virtual void bookmarks_changed() override;
+ 
++    WebView::IsPrivate m_is_private;
++    void save_bookmark(JsonObject const&);
+     void load_bookmarks();
+     void move_item(JsonValue const&);
+     void new_folder(JsonValue const&);
+diff --git i/UI/Qt/WindowToolbar.cpp w/UI/Qt/WindowToolbar.cpp
+index 5495afbf2..1e7573080 100644
+--- i/UI/Qt/WindowToolbar.cpp
++++ w/UI/Qt/WindowToolbar.cpp
+@@ -15,6 +15,7 @@
+ #include <UI/Qt/Application.h>
+ #include <UI/Qt/ApplicationActions.h>
+ #include <UI/Qt/BrowserWindow.h>
++#include <UI/Qt/DerpBirdChrome.h>
+ #include <UI/Qt/ChromeLayout.h>
+ #include <UI/Qt/ChromeStyle.h>
+ #include <UI/Qt/DownloadPresentation.h>
+@@ -2091,6 +2092,7 @@ void WindowToolbar::show_feedback_popover()
+ // The downloads hang from the downloads button. Without any, the downloads page opens instead.
+ void WindowToolbar::show_downloads_popover()
+ {
++    if (auto* chrome = browser_window().derpbird_chrome()) { chrome->show_downloads(); return; }
+     auto downloads = RemoteDownloads::the().downloads_of_session(m_is_private);
+     if (!downloads_button_state(downloads).has_downloads) {
+         m_open_downloads_page_action->trigger();

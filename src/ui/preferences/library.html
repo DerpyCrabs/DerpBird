@@ -1,0 +1,61 @@
+<header class="tool-head">
+  <button class="tool-back pref-icon-button" hidden></button>
+  <h1 id="tool-heading"></h1>
+  <div class="tool-actions" data-view="library"><button data-do="new" class="pref-button primary"></button><button data-do="install" class="pref-button">Install…</button></div>
+  <button class="tool-close pref-icon-button" aria-label="Close library">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+  </button>
+</header>
+<div class="pref-scroll-body">
+<section data-view="library">
+  <h2>Installed</h2>
+  <div class="tool-items"></div>
+  <div class="tool-links"><button data-do="folders">Source folders</button><button data-do="matching">Page matching</button></div>
+</section>
+<section data-view="folders" hidden>
+  <ul class="tool-dirs"></ul><p class="no-folders">No folders connected.</p>
+  <footer><button data-do="refresh" class="pref-button">Refresh</button><button data-do="add" class="pref-button primary">Add folder</button></footer>
+</section>
+<section data-view="matching" hidden>
+  <p class="tool-match" role="status"></p><footer><button data-do="status" class="pref-button">Refresh status</button></footer>
+</section>
+<section data-view="install" hidden>
+  <form class="tool-import">
+    <label for="source-url">Source URL</label>
+    <input id="source-url" name="url" class="pref-input" type="url" required placeholder="https://">
+    <button class="pref-button primary">Review source</button>
+  </form>
+  <label class="tool-file">Local file<input type="file"></label>
+</section>
+<section data-view="edit" hidden>
+  <div class="tool-editor-title">
+    <label for="item-name">Name</label>
+    <input id="item-name" class="pref-input" name="name" required>
+    <label class="check"><input type="checkbox" role="switch" name="enabled">Enabled</label>
+  </div>
+  <label class="tool-code"><span></span><textarea class="pref-input" name="source" spellcheck="false" wrap="off"></textarea></label>
+  <details class="tool-options">
+    <summary>Options and updates</summary>
+    <div class="options-body">
+      <label class="check"><input type="checkbox" role="switch" name="daily">Check for updates daily</label>
+      <label class="check"><input type="checkbox" role="switch" name="local">Allow on local files</label>
+      <button class="pref-button" data-do="configure">Style options</button><p class="tool-var-info"></p><div class="tool-vars"></div><button class="pref-button" data-do="reset-vars">Reset options</button>
+      <p class="origin"></p><div class="tool-actions"><button class="pref-button" data-do="update">Check for updates</button><button class="pref-button" data-do="review">Review update</button></div>
+      <p class="review-note"></p>
+    </div>
+  </details>
+  <p class="editor-notice"></p>
+
+  <div class="tool-remove" role="group" aria-labelledby="remove-heading" hidden><strong id="remove-heading">Delete this item?</strong><button class="pref-button" data-do="keep">Keep item</button><button class="pref-button" data-do="remove">Delete permanently</button></div>
+  <div class="tool-conflict" role="alert" hidden><strong>Source changed on disk.</strong><button class="pref-button" data-do="latest">Load current version</button><button class="pref-button" data-do="continue">Keep my changes</button></div>
+  <button class="pref-button" data-do="stop-compile">Cancel compilation</button>
+</section>
+<button data-do="stop-download" class="pref-button">Cancel download</button>
+<p class="tool-error" role="alert"></p><button data-do="reload" class="pref-button" hidden>Reload</button>
+</div>
+<footer class="tool-editor-actions">
+    <button class="pref-button ghost" data-do="export">Export</button><button class="pref-button ghost" data-do="delete">Delete…</button>
+    <span class="tool-state" role="status"></span>
+    <button class="pref-button" data-do="discard">Discard changes</button><button class="pref-button primary" data-do="save">Save</button>
+  </footer>
+<dialog class="pref-dialog leave-confirm" aria-labelledby="discard-title" hidden><strong id="discard-title">Discard unsaved changes?</strong><footer><button class="pref-button" data-do="stay">Keep editing</button><button class="pref-button" data-do="leave">Discard changes</button></footer></dialog>

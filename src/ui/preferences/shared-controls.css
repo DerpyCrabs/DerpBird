@@ -1,0 +1,59 @@
+/* Inputs retain their native semantics. Both documents use the browser chrome's palette. */
+.preferences-theme:is(.unified,.tool-library) {
+  --text: var(--pref-text);
+  --body: var(--pref-text);
+  --muted: var(--pref-muted);
+  --surface: var(--pref-panel);
+  --page: var(--pref-panel);
+  --tile: var(--pref-bg);
+  --separator: var(--pref-line);
+  --separator-soft: var(--pref-line);
+  --control: var(--pref-raised);
+  --control-hover: var(--pref-hover);
+  --control-pressed: var(--pref-raised);
+  --checkbox-edge: var(--pref-control-edge);
+  --focus-edge: var(--pref-focus);
+  background-color: var(--pref-panel);
+  color: var(--pref-text);
+}
+.preferences-theme :is(button,input,textarea,select,summary):focus-visible {
+  outline: 2px solid var(--pref-focus);
+  outline-offset: 2px;
+}
+.preferences-theme:is(.unified,.tool-library) input[type=checkbox]:is([switch],[role=switch]) {
+  appearance: none; position: relative; box-sizing: border-box; display: inline-block;
+  flex: 0 0 32px; width: 32px; height: 20px; margin: 0; padding: 0; border: none;
+  vertical-align: middle; border-radius: 10px; outline: none;
+  box-shadow: inset 0 0 0 1px var(--pref-control-edge); background: #343438;
+}
+.preferences-theme:is(.unified,.tool-library) input[type=checkbox]:is([switch],[role=switch])::before {
+  content: ''; position: absolute; box-sizing: border-box; inset: 3px auto auto 3px;
+  margin: 0; width: 14px; height: 14px; transform: none; border: none; border-radius: 50%;
+  background: #dedee3; box-shadow: 0 1px 2px #0004; transition: transform 180ms cubic-bezier(.2,.8,.2,1);
+}
+.preferences-theme:is(.unified,.tool-library) input[type=checkbox]:is([switch],[role=switch]):checked { background: #48484f; }
+.preferences-theme:is(.unified,.tool-library) input[type=checkbox]:is([switch],[role=switch]):checked::before {
+  transform: translateX(12px); background: #fafafa;
+}
+.preferences-theme:is(.unified,.tool-library) input[type=checkbox]:is([switch],[role=switch]):focus-visible {
+  outline: 2px solid var(--pref-focus); outline-offset: 2px;
+}
+.preferences-theme[data-theme=light] input[type=checkbox]:is([switch],[role=switch]):not(:checked) { background: #eeeef1; }
+.preferences-theme[data-theme=light] input[type=checkbox]:is([switch],[role=switch]):not(:checked)::before { background: #63636b; }
+@media (prefers-reduced-motion:reduce) {
+  .preferences-theme input[type=checkbox]::before { transition: none !important; }
+}
+/* Keep the title and close action visible when a form exceeds the viewport. */
+dialog.pref-dialog[open]:has(> .pref-scroll-body) {
+  display: flex; flex-direction: column; max-height: calc(100vh - 32px); overflow: hidden;
+}
+.pref-dialog > :is(.tool-head,.dialog-header,.dialog-footer) { flex: none; }
+.pref-dialog > .pref-scroll-body {
+  min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+  margin: -4px; padding: 4px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  dialog.pref-dialog[open], .tool-library [data-view]:not([hidden]) { animation: preference-appear 120ms ease-out; }
+  @keyframes preference-appear { from { opacity: 0; } to { opacity: 1; } }
+}

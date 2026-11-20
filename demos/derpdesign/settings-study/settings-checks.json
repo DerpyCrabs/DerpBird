@@ -1,0 +1,124 @@
+{
+  "steps": [
+    {
+      "action": "click",
+      "selector": "button[aria-label=Menu]"
+    },
+    {
+      "action": "click",
+      "selector": "[role=menuitem][aria-label=Settings]"
+    },
+    {
+      "action": "assert",
+      "selector": "#tab-appearance.active",
+      "framePath": [
+        "iframe"
+      ]
+    },
+    {
+      "action": "assert",
+      "selector": "body[data-theme=dark] .theme-choices .haz-theme-preview",
+      "framePath": [
+        "iframe"
+      ]
+    },
+    {
+      "action": "click",
+      "selector": "#interface-theme label:has([value=light])",
+      "framePath": [
+        "iframe"
+      ]
+    },
+    {
+      "action": "assert",
+      "selector": "body[data-theme=light]"
+    },
+    {
+      "action": "assert",
+      "selector": "body[data-theme=light]",
+      "framePath": [
+        "iframe"
+      ]
+    },
+    {
+      "action": "click",
+      "selector": "#tab-button-tabs",
+      "framePath": [
+        "iframe"
+      ]
+    },
+    {
+      "action": "click",
+      "selector": "label[for=wrap-tabs]",
+      "framePath": [
+        "iframe"
+      ]
+    },
+    {
+      "action": "assert",
+      "selector": "#wrap-tabs:checked",
+      "framePath": [
+        "iframe"
+      ]
+    },
+    {
+      "action": "assert",
+      "selector": ".shell.wrap-tabs"
+    },
+    {
+      "action": "click",
+      "selector": "#tab-button-appearance",
+      "framePath": [
+        "iframe"
+      ]
+    },
+    {
+      "action": "click",
+      "selector": "#interface-theme label:has([value=dark])",
+      "framePath": [
+        "iframe"
+      ]
+    },
+    {
+      "action": "assert",
+      "selector": "body[data-theme=dark]"
+    },
+    {
+      "action": "capture",
+      "label": "one-settings-page"
+    },
+    {
+      "action": "click",
+      "selector": "button[aria-label=\"Styles on this page\"]"
+    },
+    {
+      "action": "click",
+      "selector": ".page-sources-popup footer button"
+    },
+    {
+      "action": "assert",
+      "selector": "dialog.tool-library:modal[data-screen=library]"
+    },
+    {
+      "action": "capture",
+      "label": "tool-over-settings"
+    },
+    {
+      "action": "key",
+      "key": "Escape",
+      "modifiers": []
+    },
+    {
+      "action": "assert",
+      "selector": "dialog:modal",
+      "exists": false
+    },
+    {
+      "action": "assert",
+      "selector": "#tab-appearance.active",
+      "framePath": [
+        "iframe"
+      ]
+    }
+  ]
+}

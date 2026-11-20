@@ -273,7 +273,7 @@ for (const isPrivate of [false, true]) {
   assert.equal(document.querySelector('.browser-menu'), null);
 }
 for (const [label, page] of [['History', 'history'], ['Downloads', 'downloads'], ['Bookmarks', 'bookmarks'], ['Settings', 'settings']]) {
-  button('Menu').click(); await settle(); button(label!).click(); await settle();
+  button('Menu').click(); await settle(); (document.querySelector('.browser-menu [aria-label="' + label + '"]') as HTMLButtonElement).click(); await settle();
   assert.deepEqual(lastCommand(), { type: 'browser.open-page', page });
   assert.equal(document.querySelector('.browser-menu'), null);
 }
@@ -362,37 +362,37 @@ assert.equal(document.querySelector('.split-divider'), null);
 button('Styles on this page').click(); await settle();
 const manageStyles = Array.from(document.querySelectorAll('.page-sources-popup button')).find(node => node.textContent === 'Manage styles') as unknown as HTMLButtonElement;
 assert(manageStyles && !manageStyles.disabled); manageStyles.click(); await settle();
-assert(document.querySelector('[role=dialog]'), 'style manager must open');
+assert(document.querySelector('dialog.tool-library[open]'), 'style manager must open');
 const styleButton = (label: string) => {
-  const node = Array.from(document.querySelectorAll('.style-manager button')).find(node => node.textContent === label);
+  const node = Array.from(document.querySelectorAll('.style-manager button, dialog.tool-library button')).find(node => node.textContent === label && !node.closest('[hidden]'));
   assert(node, 'missing style action ' + label);
   return node as unknown as HTMLButtonElement;
 };
 styleButton('New style').click(); await settle();
-const cssInput = document.querySelector('[aria-label="CSS style"]') as unknown as HTMLTextAreaElement;
+const cssInput = document.querySelector('.tool-library textarea[name=source]') as unknown as HTMLTextAreaElement;
 assert(cssInput, 'style editor textarea missing');
 cssInput.value = '@-moz-document domain("example.com") { body { color: red } }';
 cssInput.dispatchEvent(new window.Event('input', { bubbles: true })); await settle();
-(document.querySelector('[aria-label="Close styles"]') as unknown as HTMLButtonElement).click(); await settle();
-assert(document.querySelector('[role=dialog]'), 'close must preserve a dirty draft');
-assert(document.querySelector('[role=alert]')?.textContent?.includes('Discard unsaved changes'));
+(document.querySelector('.tool-close') as unknown as HTMLButtonElement).click(); await settle();
+assert(document.querySelector('dialog.tool-library[open]'), 'close must preserve a dirty draft');
+assert(document.querySelector('.leave-confirm[open]')?.textContent?.includes('Discard unsaved changes'));
 styleButton('Keep editing').click(); await settle();
 styleButton('Save').click();
 for (let attempt = 0; attempt < 100; attempt++) {
   await settle();
-  if (styleButton('Discard changes').disabled && !cssInput.disabled) break;
+  if ((document.querySelector('[data-do=discard]') as HTMLButtonElement).disabled && !cssInput.disabled) break;
 }
-assert(styleButton('Discard changes').disabled, 'successful save must clear dirty state');
-assert(document.querySelector('.style-manager aside')?.textContent?.includes('New style'));
-styleButton('Delete').click(); await settle();
-assert(document.querySelector('[aria-label="Delete style confirmation"]'));
-styleButton('Keep style').click(); await settle();
+assert((document.querySelector('[data-do=discard]') as HTMLButtonElement).disabled, 'successful save must clear dirty state');
+assert(document.querySelector('.tool-items')?.textContent?.includes('New style'));
+styleButton('Delete…').click(); await settle();
+assert(document.querySelector('.tool-remove:not([hidden])'));
+styleButton('Keep item').click(); await settle();
 assert(cssInput.isConnected, 'cancelling deletion must retain the editor');
-styleButton('Delete').click(); await settle();
+styleButton('Delete…').click(); await settle();
 styleButton('Delete permanently').click(); await settle();
-assert.equal(document.querySelector('[aria-label="CSS style"]'), null, 'deleted style must leave the editor');
-(document.querySelector('[aria-label="Close styles"]') as unknown as HTMLButtonElement).click(); await settle();
-assert.equal(document.querySelector('[role=dialog]'), null);
+assert.equal(document.querySelector('.tool-library')?.getAttribute('data-screen'), 'library', 'deleted style must leave the editor');
+(document.querySelector('.tool-close') as unknown as HTMLButtonElement).click(); await settle();
+assert.equal(document.querySelector('dialog.tool-library[open]'), null);
 button('Menu').click(); await settle(); button('Passwords').click(); await settle();
 assert(document.querySelector('[aria-label="Passwords"][role=dialog]'));
 styleButton('Show saved password').click(); await settle();

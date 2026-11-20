@@ -1,3 +1,4 @@
+import { createDownloadMenu, downloadEntry } from './ui/collections/download-menu';
 import { focusAddress } from './browser/address-focus';
 import { observeSplitInteractions } from './browser/splits';
 import { observeShellDismissal } from './browser/shell-interaction';
@@ -170,6 +171,14 @@ const stopSplitInteractions = observeSplitInteractions(document, controller);
 const stopSidebarResize = observeSidebarResize(document, controller.previewSidebarWidth, controller.setSidebarWidth);
 document.body.classList.add('native-shell');
 const stopChrome=mountBrowserChrome(controller);
+const downloads = createDownloadMenu([], (action, id) => controller.send({type:'download.action', action, id}));
+function updateDownloads() {
+  downloads.update((controller.state().browser.downloads ?? []).map(downloadEntry));
+}
+updateDownloads();
+const stopDownloads = controller.source.subscribe(updateDownloads);
+window.addEventListener('derpbird-open-downloads', downloads.open);
+window.addEventListener('derpbird-shell-deactivate', downloads.close);
 const stopPages=mountInternalPages(controller);
 const stopViewport = observeViewport(document, command => controller.send(command), () => controller.state().connected);
 const onKey = (event: KeyboardEvent) => {
@@ -196,6 +205,10 @@ window.addEventListener('pagehide', () => {
   window.removeEventListener('derpbird-focus-address', onFocusAddress);
   document.removeEventListener('keydown', onKey);
   stopShellDismissal();
+  window.removeEventListener('derpbird-open-downloads', downloads.open);
+  window.removeEventListener('derpbird-shell-deactivate', downloads.close);
+  stopDownloads();
+  downloads.dispose();
   stopViewport();
   stopPages();stopChrome();
   stopSplitInteractions(); stopSidebarResize();

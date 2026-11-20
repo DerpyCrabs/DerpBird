@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import signal
 import subprocess
+import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
@@ -62,7 +63,7 @@ def main():
             time.sleep(.1)
     def request(payload, expected_error=False):
         evaluate('''if(!window.splitTestListener){window.splitTestListener=true;document.addEventListener('WebUIMessage',e=>{if(e.detail.name==='derpbird.response'&&e.detail.data.requestId===window.splitTestId)window.splitTestResponse=e.detail.data})}window.splitTestResponse=null;window.ladybird.sendMessage('derpbird.request',{requestId:window.splitTestId=(window.splitTestId??1000000)+1,payload:'''+json.dumps(payload)+'});true')
-        response = json.loads(until('window.splitTestResponse&&JSON.stringify(window.splitTestResponse)'))
+        response = json.loads(until('window.splitTestResponse ? JSON.stringify(window.splitTestResponse) : false'))
         assert response['ok'] != expected_error, response
         return response.get('value')
     def command(value): return request({'type': 'command', 'command': value})
@@ -268,17 +269,30 @@ def main():
         state=snapshot();research=state['workspaces']['active'];assert research!='default'
         assert len(state['tabs'])==1 and all(t['url'] not in original for t in state['tabs']),state
         command({'type':'workspace.update','id':research,'name':'Project','icon':'code','color':'lilac'})
+        command({'type':'shell.set-chrome-layout','layout':{'preset':'sidebar','side':'left','address':'top'}})
         command({'type':'shell.set-sidebar-width','width':240})
+        until('document.querySelector(".shell.vertical") !== null')
         for i in range(9):
             command({'type':'tab.create','private':False,'url':urls['Notes']+'?pin='+str(i)})
             command({'type':'tab.pin','tabId':snapshot()['activeTabId'],'value':True})
         until('document.querySelectorAll(".pinned-tab-unit").length===9')
         rects=json.loads(evaluate('JSON.stringify([...document.querySelectorAll(".pinned-tab-unit")].map(e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}}))'))
-        assert len({r['y'] for r in rects})==2 and all(r['w']==32 and r['h']==32 for r in rects),rects
-        assert rects[5]['y']==rects[0]['y'] and rects[6]['y']>rects[0]['y'],rects
-        for _ in range(12):
-            subprocess.run(['wtype','-M','ctrl','-k','Tab','-m','ctrl'],env=env,check=True)
-        assert snapshot()['workspaces']['active']==research
+        rows = [[r for r in rects if r['y'] == y] for y in sorted({r['y'] for r in rects})]
+        assert [len(row) for row in rows] == [5, 4], rects
+        for row in rows:
+            assert all(r['h'] == 34 and r['w'] >= 32 for r in row), row
+            assert all(a['x'] + a['w'] <= b['x'] for a, b in zip(row, row[1:])), row
+        state = snapshot()
+        workspace_tabs = {tab['id'] for tab in state['tabs']}
+        start_tab = state['activeTabId']
+        for keys in (['-k','Tab'], ['-M','shift','-k','Tab','-m','shift']):
+            visited = set()
+            for _ in workspace_tabs:
+                subprocess.run(['wtype','-M','ctrl',*keys,'-m','ctrl'],env=env,check=True)
+                state = snapshot()
+                assert state['workspaces']['active'] == research, state
+                visited.add(state['activeTabId'])
+            assert visited == workspace_tabs and state['activeTabId'] == start_tab, visited
         # Closing the sole tab of a fresh workspace keeps its page selection local.
         command({'type':'workspace.create','name':'Temporary','icon':'leaf','color':'blue'})
         temporary=snapshot()['workspaces']['active']
@@ -325,7 +339,7 @@ def main():
         except (subprocess.CalledProcessError,AssertionError):pass
         assert browser.wait(timeout=15)==0
         assert (profile/'config/DerpBirdChrome.ini').read_bytes()==persisted,'Private workspaces were persisted'
-        (args.output/'report.json').write_text(json.dumps({'passed':True,'checks':['real form keyboard creation','hidden Default controls','workspace switch isolation','rename and icon/color','9 pins 6+3 at fixed size','bulk close isolation','restart persistence of workspaces and pins','Ctrl+Tab isolation','last tab close stays in workspace','private workspace isolation and no persistence']},indent=2))
+        (args.output/'report.json').write_text(json.dumps({'passed':True,'checks':['real form keyboard creation','hidden Default controls','workspace switch isolation','rename and icon/color','9 pins in balanced sidebar rows','bulk close isolation','restart persistence of workspaces and pins','Ctrl+Tab isolation','last tab close stays in workspace','private workspace isolation and no persistence']},indent=2))
         print('Native workspace checks passed:',args.output,flush=True)
 
     try:
@@ -460,4 +474,7 @@ def main():
             except subprocess.TimeoutExpired: os.killpg(browser.pid, signal.SIGKILL)
         pointer.close(); server.shutdown()
 
-if __name__ == '__main__': main()
+if __name__ == '__main__':
+    if len(sys.argv) == 1:
+        os.execl(sys.executable, sys.executable, str(Path(__file__).with_name('test-browser-layouts.py')), '--splits')
+    main()

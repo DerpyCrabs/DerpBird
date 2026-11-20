@@ -1,0 +1,79 @@
+@import '../preferences-primitives.css';
+@import './shared-controls.css';
+
+.tool-library { box-sizing: border-box; scrollbar-width: thin; }
+.tool-library *, .tool-library *::before { box-sizing: border-box; }
+.tool-library [hidden] { display: none !important; }
+.tool-library[data-screen="library"] { width: 440px; }
+.tool-library[data-screen="edit"] { width: 700px; }
+.tool-library.pref-dialog { padding:12px; }
+.tool-library .tool-head { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
+.tool-library .tool-head h1 { flex:1; margin:0; font:600 16px/22px Inter,system-ui,sans-serif; }
+.tool-library[data-screen=library] .tool-head h1 { padding-inline-start:8px; }
+.tool-head :is(.tool-close,.tool-back) { width:var(--tab-row-height); height:var(--tab-row-height); padding:0; margin:0; }
+.tool-library .tool-head .pref-button, .tool-library .pref-input:not(textarea), .tool-library footer .pref-button { box-sizing:border-box; height:var(--tab-row-height); min-height:var(--tab-row-height); }
+.tool-back::before, .tool-links button::after, .tool-options summary::before {
+  content: ''; display: inline-block; width: 7px; height: 7px; border: solid currentColor;
+  border-width: 1.5px 1.5px 0 0; transform: rotate(45deg); flex-shrink: 0;
+}
+.tool-back::before { transform: rotate(-135deg); }
+.tool-library [data-view=library] h2 { margin: 0 8px 4px; font-size: 13px; }
+.tool-actions, .tool-editor-actions, .tool-dirs li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.tool-library :is(p,ul,.tool-vars):empty, .options-body .tool-actions:has(> :first-child[hidden]):has(> :last-child[hidden]) { display: none; }
+.tool-library :is(p,ul) { margin: 0; }
+.tool-library .tool-items { padding: 0; }
+.tool-item { display: flex; align-items: center; gap: 8px; padding-inline: 8px; border-radius: 5px; }
+.tool-item:has(.tool-edit:hover), .tool-item:focus-within { background: var(--pref-hover); }
+.tool-item .tool-edit { flex: 1; min-width: 0; text-align: start; display: grid; gap: 2px; padding: 8px 0; border: 0; background: transparent; color: inherit; font: inherit; }
+.tool-edit strong { font-weight: 550; }
+.tool-edit small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--pref-muted); }
+.tool-links { display: grid; margin-top: 8px; }
+.tool-links button, .tool-options summary { display: flex; align-items: center; gap: 10px; padding: 8px; border: 0; background: transparent; border-radius: 6px; color: inherit; font: inherit; text-align: start; }
+.tool-links button { justify-content: space-between; }
+.tool-links button:hover, .tool-options summary:hover { background: var(--pref-hover); }
+.tool-links button::after { margin-inline-end: 10px; color: var(--pref-muted); }
+.tool-dirs { padding: 0; list-style: none; }
+.tool-dirs li { justify-content: space-between; padding-block: 6px; overflow-wrap: anywhere; }
+.tool-library .pref-button:disabled { box-shadow: none; }
+.tool-library :is(.tool-back, .tool-close, .pref-button):active:not(:disabled) { filter: brightness(.88); }
+.tool-library .check { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; }
+.tool-editor-title { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 5px 16px; }
+.tool-editor-title > label:first-child { grid-column: 1/-1; }
+.tool-library :is(.tool-editor-title > label:first-child,.tool-code,.tool-import > label,.tool-file,.tool-vars label) { font-size: 13px; font-weight: 550; }
+.tool-code, .tool-file, .tool-vars label { display: grid; gap: 5px; }
+.tool-code { margin-top: 16px; }
+.tool-library .tool-code textarea { width: 100%; min-height: 100px; height: clamp(130px,28vh,340px); resize: vertical; padding: 10px; font: 13px/1.6 ui-monospace, monospace; color: var(--pref-text); background: var(--pref-bg); }
+.tool-options { margin: 12px 0 0; border-block: 1px solid var(--pref-line); padding-block: 4px; }
+.tool-options summary { width: 100%; cursor: default; list-style: none; }
+.tool-options summary::before { margin: 0 2px; color: var(--pref-muted); }
+.tool-options[open] summary::before { transform: rotate(135deg); }
+.options-body { display: grid; justify-items: start; gap: 10px; padding: 12px; }
+.tool-library :is(.origin,.tool-match,.review-note) { overflow-wrap: anywhere; }
+.tool-library .tool-editor-actions { flex: none; justify-content: flex-start; flex-wrap: wrap; }
+.tool-state { flex: 1; color: var(--pref-muted); font-size: 12px; }
+.tool-import { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 8px; align-items: center; }
+.tool-import label { grid-column: 1/-1; }
+.tool-file { margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--pref-line); }
+.tool-file input { max-width: 100%; font: inherit; font-weight: 400; }
+.tool-library :is(.tool-remove,.tool-conflict,.leave-confirm) { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; padding: 12px; border: 1px solid var(--pref-control-edge); border-radius: 8px; }
+.tool-library :is(.tool-remove,.tool-conflict,.leave-confirm) strong { flex-basis: 100%; }
+.tool-library .tool-error:not(:empty) { margin-top: 8px; color: var(--pref-error); }
+@media (max-width: 480px) {
+  .tool-library .tool-editor-actions { gap: 6px; }
+  .tool-state { text-align: end; }
+  .tool-editor-actions [data-do=discard] { margin-inline-start: auto; }
+  .tool-import { grid-template-columns: 1fr; justify-items: start; }
+}
+.tool-library dialog.leave-confirm { width: 350px; display: block; margin: auto; padding: 16px; border-color: var(--pref-line); color: inherit; }
+.tool-library .editor-notice:not(:empty) { margin: 8px 0; }
+.tool-library .tool-vars { display: grid; gap: 12px; }
+.tool-library .tool-vars input:not([type=checkbox]), .tool-library .tool-vars select { min-height: 32px; padding: 4px 8px; border: 1px solid var(--pref-control-edge); border-radius: 6px; background: var(--pref-raised); color: inherit; }
+.tool-library [data-view=folders] footer, .tool-library [data-view=matching] footer { margin-top: 16px; }
+.tool-editor-actions .tool-state { text-align: end; }
+.tool-library[data-theme=light] .pref-button.primary:hover:not(:disabled) { background: #414147; border-color: #414147; color: white; }
+
+@media (max-width:420px) {
+  .tool-library[data-screen=library] .tool-head { display:grid; grid-template-columns:1fr auto; }
+  .tool-head .tool-close {grid-column:2;grid-row:1;}
+  .tool-head .tool-actions {grid-column:1/-1;padding-inline:8px;}
+}

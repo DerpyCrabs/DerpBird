@@ -13,10 +13,16 @@ import {createProxyFixture} from './proxy-fixture';
 import '@bird/style.css';
 import {runScenario} from '@derpdesign/harness';
 runScenario(async ({conditions})=>{
+ if(typeof conditions.collection==='string')return (await import('./collections/pages')).mountCollection(document.querySelector('#app')!,conditions.collection);
+ if(typeof conditions.settingsStudy==='string')return (await import('./settings-study/study')).mountStudy(document.querySelector('#app')!,conditions.settingsStudy);
  if(conditions.hazPinExamples)return (await import('./haz-tabs/pin-examples')).mountPinExamples(document.querySelector('#app')!);
  if(conditions.hazReference)return (await import('./haz-tabs/reference')).mountReference(document.querySelector('#app')!);
  if(conditions.devtools){const [{mountDevTools},{devToolsTransport},{connectDevTools}]=await Promise.all([import('@bird/devtools/DevTools'),import('./devtools-fixture'),import('@bird/devtools/native-port')]);const port=(await connectDevTools(devToolsTransport(conditions.large===true)))!;const demo=mountDevTools(document.querySelector('#app')!,port,conditions.panel as any);return()=>{demo.dispose();port.dispose();};}
  const fixture=createBirdFixture(conditions.layout==='horizontal'?'horizontal':'vertical',canDropTab);
+ if(conditions.downloadMenu && conditions.layout==='compact'){
+  await fixture.port.request({type:'shell.set-chrome-layout',layout:{preset:'compact',side:'left',address:'top'}});
+  await fixture.port.request({type:'shell.set-sidebar-width',width:290});
+ }
  if(conditions.splitDemo){await fixture.port.request({type:'tab.split',tabId:'accessibility',targetId:'research',edge:conditions.axis==='vertical'?'bottom':'right'});await fixture.port.request({type:'tab.activate',tabId:'research'});}
  let tools: {dispose():void}|undefined;
  const openTools=async()=>{
@@ -38,7 +44,8 @@ runScenario(async ({conditions})=>{
   const ui=mountDevTools(host,port,'Elements');tools={dispose(){ui.dispose();port.dispose();container.remove();}};
  };
  const proxyFixture=conditions.proxyDemo?createProxyFixture(conditions):undefined;
- const port={...fixture.port,request:async(command:any)=>{if(command.type==='tab.inspect'){await openTools();return;}if(command.type==='tab.reload')proxyFixture?.reload();const result=await fixture.port.request(command);if(command.type==='tab.create'&&!command.url)focusAddress(document,controller);return result;}};
+ let downloads: Awaited<ReturnType<typeof import('./collections/download-menu').mountDownloads>> | undefined;
+ const port={...fixture.port,request:async(command:any)=>{if(command.type==='browser.open-page' && command.page==='downloads' && downloads){downloads.open();return;}if(command.type==='tab.inspect'){await openTools();return;}if(command.type==='tab.reload')proxyFixture?.reload();const result=await fixture.port.request(command);if(command.type==='tab.create'&&!command.url)focusAddress(document,controller);return result;}};
  let proxy:any={revision:1,active:'system',options:{schemaVersion:2,'+Office':{name:'Office',profileType:'FixedProfile',color:'#6b94c4',fallbackProxy:{scheme:'http',host:'proxy.example.test',port:8080},bypassList:[]}}};
  let manager:any;
  const show=()=>{if(manager){manager.toggle();return;}manager=openProxyManager(document.querySelector('#style-manager-host')!,proxyFixture?.port??{get:async()=>structuredClone(proxy),replace:async(s:any)=>{proxy={...structuredClone(s),revision:proxy.revision+1};return structuredClone(proxy)}},()=>{manager=undefined},'https://example.test/0')};
@@ -52,7 +59,8 @@ runScenario(async ({conditions})=>{
   await fixture.port.request({type:'tab.activate',tabId:conditions.hazChildren&&!conditions.hazSplit?'reading-2':'research'});
  }
  const controller=createController(port);
- const sources=conditions.hazProposal?createDemoPageSources(controller):undefined;
+ const toolStudy=conditions.toolStudy?(await import('./settings-study/sources')).createSourceLibraries(controller):undefined;
+ const sources=toolStudy??(conditions.hazProposal?createDemoPageSources(controller):undefined);
  const mounted=mount(document.querySelector('#app')!,shellView(controller,sources?()=>sources.manage('styles'):undefined,sources?()=>sources.manage('scripts'):undefined,undefined,undefined,undefined,show,sources?.open),controller.source);
  await controller.ready;
  sources?.refresh();
@@ -67,8 +75,11 @@ runScenario(async ({conditions})=>{
  if(conditions.workspaceEdit)controller.openWorkspaceEditor(controller.state().browser.workspaces?.active);
  if(conditions.workspaceCreate)controller.openWorkspaceEditor();
  const activityDemo = conditions.aiActivity ? await (async()=>{await import('./ai-activity/demo.css');const {mountActivityDemo}=await import('./ai-activity/demo');return mountActivityDemo(document.querySelector<HTMLElement>('#content-surface')!,{time:typeof conditions.aiTime==='number'?conditions.aiTime:undefined});})() : undefined;
- const splitDemo = conditions.splitDemo ? (await import('./split-demo')).mountSplitDemo(controller,conditions,fixture) : undefined;
+ const splitDemo = conditions.splitDemo || toolStudy || conditions.downloadMenu ? (await import('./split-demo')).mountSplitDemo(controller,conditions,fixture) : undefined;
+ if(conditions.downloadMenu)downloads=(await import('./collections/download-menu')).mountDownloads(conditions.showDownloads===true, conditions.emptyDownloads===true);
+ const stopSettingsTab=toolStudy?(await import('./settings-study/study')).connectSettingsTab(controller):undefined;
+ if(toolStudy && conditions.toolStudy!=='toolbar')toolStudy.manage(conditions.toolStudy==='styles'?'styles':'scripts',String(conditions.toolStudy));
  if(conditions.proxyDemo)show();
  if(conditions.manager)show();
- return()=>{sources?.dispose();browserUI();stopInteractions();stopResize();stopDismissal();document.removeEventListener('keydown',focusKey);layoutDemo?.();activityDemo?.();tools?.dispose();splitDemo?.();manager?.dispose();mounted.dispose();void controller.close();fixture.dispose()};
+ return()=>{downloads?.dispose();stopSettingsTab?.();sources?.dispose();browserUI();stopInteractions();stopResize();stopDismissal();document.removeEventListener('keydown',focusKey);layoutDemo?.();activityDemo?.();tools?.dispose();splitDemo?.();manager?.dispose();mounted.dispose();void controller.close();fixture.dispose()};
 });

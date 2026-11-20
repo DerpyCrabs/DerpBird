@@ -1,0 +1,119 @@
+{
+  "steps": [
+    {
+      "action": "click",
+      "selector": "#languages-settings",
+      "framePath": [
+        "iframe"
+      ]
+    },
+    {
+      "action": "click",
+      "selector": "#languages-select",
+      "framePath": [
+        "iframe"
+      ]
+    },
+    {
+      "action": "key",
+      "key": "End",
+      "modifiers": []
+    },
+    {
+      "action": "key",
+      "key": "Enter",
+      "modifiers": []
+    },
+    {
+      "action": "assert",
+      "selector": "#languages-add:enabled",
+      "framePath": [
+        "iframe"
+      ]
+    },
+    {
+      "action": "click",
+      "selector": "#languages-add",
+      "framePath": [
+        "iframe"
+      ]
+    },
+    {
+      "action": "assert",
+      "selector": "#languages-list > :nth-child(2)",
+      "framePath": [
+        "iframe"
+      ]
+    },
+    {
+      "action": "click",
+      "selector": "#languages-list > :nth-child(2) [title=\"Move up\"]",
+      "framePath": [
+        "iframe"
+      ]
+    },
+    {
+      "action": "assert",
+      "selector": "#languages-list > :first-child",
+      "contains": "Zulu",
+      "framePath": [
+        "iframe"
+      ]
+    },
+    {
+      "action": "assert",
+      "selector": "#languages-list > :first-child [title=\"Move down\"]:focus",
+      "framePath": [
+        "iframe"
+      ]
+    },
+    {
+      "action": "capture",
+      "label": "moved"
+    },
+    {
+      "action": "click",
+      "selector": "#languages-list > :first-child [title=Remove]",
+      "framePath": [
+        "iframe"
+      ]
+    },
+    {
+      "action": "assert",
+      "selector": "#languages-list > :first-child",
+      "contains": "English",
+      "framePath": [
+        "iframe"
+      ]
+    },
+    {
+      "action": "assert",
+      "selector": "#languages-list > :nth-child(2)",
+      "exists": false,
+      "framePath": [
+        "iframe"
+      ]
+    },
+    {
+      "action": "assert",
+      "selector": "#languages-select:focus",
+      "framePath": [
+        "iframe"
+      ]
+    },
+    {
+      "action": "click",
+      "selector": "#languages-close",
+      "framePath": [
+        "iframe"
+      ]
+    },
+    {
+      "action": "assert",
+      "selector": "#languages-settings:focus",
+      "framePath": [
+        "iframe"
+      ]
+    }
+  ]
+}

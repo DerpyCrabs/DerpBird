@@ -1,0 +1,388 @@
+{
+  "config": [
+    {
+      "name": "debug.process.show_web_content_process_id",
+      "title": "Show WebContent process ID in tab titles",
+      "description": "Append the active WebContent process ID to each tab title and tooltip.",
+      "type": "boolean",
+      "defaultValue": false
+    },
+    {
+      "name": "debug.ui.show_advanced_debug_menu",
+      "title": "Show Debug menu",
+      "description": "Show the Debug menu, with tools for inspecting Ladybird itself.",
+      "type": "boolean",
+      "defaultValue": false
+    },
+    {
+      "name": "ui.toolbar.show_feedback_button",
+      "title": "Show feedback button",
+      "description": "Show the button for sending feedback at the end of the toolbar.",
+      "type": "boolean",
+      "defaultValue": true
+    },
+    {
+      "name": "ui.window.use_client_side_decorations",
+      "title": "Use client-side window decorations",
+      "description": "Use custom title bar and window controls instead of the system window frame.",
+      "type": "boolean",
+      "defaultValue": true
+    },
+    {
+      "name": "ui.tabs.vertical_tabs_hover_expand_delay_ms",
+      "title": "Vertical tab hover expansion delay",
+      "description": "Delay in milliseconds before collapsed vertical tabs begin expanding on hover. Set to 0 to expand immediately.",
+      "type": "number",
+      "defaultValue": 100
+    },
+    {
+      "name": "ui.tabs.vertical_tabs_hover_expand_animation_duration_ms",
+      "title": "Vertical tab hover expansion animation duration",
+      "description": "Duration in milliseconds of the vertical tab hover expansion animation. Set to 0 to disable the animation.",
+      "type": "number",
+      "defaultValue": 100
+    },
+    {
+      "name": "network.http_cache.maximum_size_mb",
+      "title": "Maximum disk cache size",
+      "description": "Limit the space used for the HTTP disk cache, in MiB.",
+      "type": "number",
+      "defaultValue": 5120
+    },
+    {
+      "name": "downloads.maximum_connections_per_download",
+      "title": "Maximum connections per download",
+      "description": "Download a file over up to this many parallel connections when the server supports byte ranges. Set to 1 to always download over a single connection.",
+      "type": "number",
+      "defaultValue": 4
+    },
+    {
+      "name": "downloads.split_without_validators",
+      "title": "Split downloads without server validators",
+      "description": "Allow multi-connection downloads even when the server sends no ETag or Last-Modified header, without which the browser cannot verify that every connection is being served the same file.",
+      "type": "boolean",
+      "defaultValue": false
+    },
+    {
+      "name": "downloads.restart_stalled_connections",
+      "title": "Restart stalled download connections",
+      "description": "When one connection of a multi-connection download stops receiving data, drop it and request the rest of its byte range over a new connection.",
+      "type": "boolean",
+      "defaultValue": true
+    },
+    {
+      "name": "debug.compositor.disable_high_dynamic_range_surfaces",
+      "title": "Disable HDR surfaces",
+      "description": "Draw HDR content into the page tone-mapped to SDR, instead of letting the window server show it in high dynamic range.",
+      "type": "boolean",
+      "defaultValue": false
+    },
+    {
+      "name": "updates.check_interval_minutes",
+      "title": "Update check interval",
+      "description": "How many minutes Ladybird waits after one check for a newer release before it checks again, while it checks for updates by itself. At least 5.",
+      "type": "number",
+      "defaultValue": 240
+    }
+  ],
+  "lists": [
+    {
+      "name": "EasyList",
+      "description": "Blocks advertising on English-language websites.",
+      "identifier": "easyList",
+      "languageSpecific": false,
+      "builtIn": true,
+      "url": "https://easylist.to/easylist/easylist.txt"
+    },
+    {
+      "name": "EasyPrivacy",
+      "description": "Blocks tracking scripts, pixels, and other tracking requests.",
+      "identifier": "easyPrivacy",
+      "languageSpecific": false,
+      "builtIn": true,
+      "url": "https://easylist.to/easylist/easyprivacy.txt"
+    },
+    {
+      "name": "EasyList Cookie List",
+      "description": "Blocks cookie banners and other cookie notices.",
+      "identifier": "easyListCookie",
+      "languageSpecific": false,
+      "builtIn": true,
+      "url": "https://secure.fanboy.co.nz/fanboy-cookiemonster.txt"
+    },
+    {
+      "name": "Fanboy's Annoyance List",
+      "description": "Blocks pop-ups, social widgets, newsletters, and other annoyances.",
+      "identifier": "fanboyAnnoyances",
+      "languageSpecific": false,
+      "builtIn": true,
+      "url": "https://secure.fanboy.co.nz/fanboy-annoyance.txt"
+    },
+    {
+      "name": "Fanboy's Social Blocking List",
+      "description": "Blocks social media widgets and other social content.",
+      "identifier": "fanboySocial",
+      "languageSpecific": false,
+      "builtIn": true,
+      "url": "https://easylist.to/easylist/fanboy-social.txt"
+    },
+    {
+      "name": "Adblock Warning Removal List",
+      "description": "Blocks warnings aimed at people who use a content blocker.",
+      "identifier": "adblockWarningRemoval",
+      "languageSpecific": false,
+      "builtIn": true,
+      "url": "https://easylist-downloads.adblockplus.org/antiadblockfilters.txt"
+    },
+    {
+      "name": "uBlock filters – Ads",
+      "description": "Advertising and anti-adblock filters.",
+      "identifier": "ublock-filters",
+      "languageSpecific": false,
+      "builtIn": true,
+      "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/filters.txt"
+    },
+    {
+      "name": "uBlock filters – Privacy",
+      "description": "Additional tracking protection.",
+      "identifier": "ublock-privacy",
+      "languageSpecific": false,
+      "builtIn": true,
+      "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/privacy.txt"
+    },
+    {
+      "name": "uBlock filters – Badware risks",
+      "description": "Known malicious and deceptive sites.",
+      "identifier": "ublock-badware",
+      "languageSpecific": false,
+      "builtIn": true,
+      "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/badware.txt"
+    },
+    {
+      "name": "uBlock filters – Unbreak",
+      "description": "Compatibility fixes for filtered sites.",
+      "identifier": "ublock-unbreak",
+      "languageSpecific": false,
+      "builtIn": true,
+      "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/unbreak.txt"
+    },
+    {
+      "name": "uBlock filters – Quick fixes",
+      "description": "Rapid fixes for advertising and site breakage.",
+      "identifier": "ublock-quick-fixes",
+      "languageSpecific": false,
+      "builtIn": true,
+      "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/quick-fixes.txt"
+    },
+    {
+      "name": "ABPindo",
+      "description": "Blocks advertising on Indonesian and Malaysian websites.",
+      "identifier": "abpindo",
+      "languageSpecific": true,
+      "builtIn": true,
+      "url": "https://raw.githubusercontent.com/heradhis/indonesianadblockrules/master/subscriptions/abpindo.txt"
+    },
+    {
+      "name": "ABPVN List",
+      "description": "Blocks advertising on Vietnamese websites.",
+      "identifier": "abpvn",
+      "languageSpecific": true,
+      "builtIn": true,
+      "url": "https://abpvn.com/filter/abpvn-IPl6HE.txt"
+    },
+    {
+      "name": "Bulgarian list",
+      "description": "Blocks advertising on Bulgarian websites.",
+      "identifier": "bulgarianList",
+      "languageSpecific": true,
+      "builtIn": true,
+      "url": "https://stanev.org/abp/adblock_bg.txt"
+    },
+    {
+      "name": "Dandelion Sprout's Nordic Filters",
+      "description": "Blocks advertising on Nordic-language websites.",
+      "identifier": "nordicFilters",
+      "languageSpecific": true,
+      "builtIn": true,
+      "url": "https://raw.githubusercontent.com/DandelionSprout/adfilt/master/NorwegianExperimentalList%20alternate%20versions/NordicFiltersABP-Inclusion.txt"
+    },
+    {
+      "name": "EasyList China",
+      "description": "Blocks advertising on Chinese websites.",
+      "identifier": "easyListChina",
+      "languageSpecific": true,
+      "builtIn": true,
+      "url": "https://easylist-downloads.adblockplus.org/easylistchina.txt"
+    },
+    {
+      "name": "EasyList Czech and Slovak",
+      "description": "Blocks advertising on Czech and Slovak websites.",
+      "identifier": "easyListCzechAndSlovak",
+      "languageSpecific": true,
+      "builtIn": true,
+      "url": "https://raw.githubusercontent.com/tomasko126/easylistczechandslovak/master/filters.txt"
+    },
+    {
+      "name": "EasyList Dutch",
+      "description": "Blocks advertising on Dutch websites.",
+      "identifier": "easyListDutch",
+      "languageSpecific": true,
+      "builtIn": true,
+      "url": "https://easylist-downloads.adblockplus.org/easylistdutch.txt"
+    },
+    {
+      "name": "EasyList Germany",
+      "description": "Blocks advertising on German websites.",
+      "identifier": "easyListGermany",
+      "languageSpecific": true,
+      "builtIn": true,
+      "url": "https://easylist.to/easylistgermany/easylistgermany.txt"
+    },
+    {
+      "name": "EasyList Hebrew",
+      "description": "Blocks advertising on Hebrew-language websites.",
+      "identifier": "easyListHebrew",
+      "languageSpecific": true,
+      "builtIn": true,
+      "url": "https://raw.githubusercontent.com/easylist/EasyListHebrew/master/EasyListHebrew.txt"
+    },
+    {
+      "name": "EasyList Italy",
+      "description": "Blocks advertising on Italian websites.",
+      "identifier": "easyListItaly",
+      "languageSpecific": true,
+      "builtIn": true,
+      "url": "https://easylist-downloads.adblockplus.org/easylistitaly.txt"
+    },
+    {
+      "name": "EasyList Lithuania",
+      "description": "Blocks advertising on Lithuanian websites.",
+      "identifier": "easyListLithuania",
+      "languageSpecific": true,
+      "builtIn": true,
+      "url": "https://raw.githubusercontent.com/EasyList-Lithuania/easylist_lithuania/master/easylistlithuania.txt"
+    },
+    {
+      "name": "EasyList Polish",
+      "description": "Blocks advertising on Polish websites.",
+      "identifier": "easyListPolish",
+      "languageSpecific": true,
+      "builtIn": true,
+      "url": "https://easylist-downloads.adblockplus.org/easylistpolish.txt"
+    },
+    {
+      "name": "EasyList Portuguese",
+      "description": "Blocks advertising on Portuguese-language websites.",
+      "identifier": "easyListPortuguese",
+      "languageSpecific": true,
+      "builtIn": true,
+      "url": "https://easylist-downloads.adblockplus.org/easylistportuguese.txt"
+    },
+    {
+      "name": "EasyList Spanish",
+      "description": "Blocks advertising on Spanish-language websites.",
+      "identifier": "easyListSpanish",
+      "languageSpecific": true,
+      "builtIn": true,
+      "url": "https://easylist-downloads.adblockplus.org/easylistspanish.txt"
+    },
+    {
+      "name": "IndianList",
+      "description": "Blocks advertising on websites in languages of India and Sri Lanka.",
+      "identifier": "indianList",
+      "languageSpecific": true,
+      "builtIn": true,
+      "url": "https://easylist-downloads.adblockplus.org/indianlist.txt"
+    },
+    {
+      "name": "KoreanList",
+      "description": "Blocks advertising on Korean websites.",
+      "identifier": "koreanList",
+      "languageSpecific": true,
+      "builtIn": true,
+      "url": "https://easylist-downloads.adblockplus.org/koreanlist.txt"
+    },
+    {
+      "name": "Latvian List",
+      "description": "Blocks advertising on Latvian websites.",
+      "identifier": "latvianList",
+      "languageSpecific": true,
+      "builtIn": true,
+      "url": "https://raw.githubusercontent.com/Latvian-List/adblock-latvian/master/lists/latvian-list.txt"
+    },
+    {
+      "name": "Liste AR",
+      "description": "Blocks advertising on Arabic websites.",
+      "identifier": "listeAR",
+      "languageSpecific": true,
+      "builtIn": true,
+      "url": "https://easylist-downloads.adblockplus.org/liste_ar.txt"
+    },
+    {
+      "name": "Liste FR",
+      "description": "Blocks advertising on French websites.",
+      "identifier": "listeFR",
+      "languageSpecific": true,
+      "builtIn": true,
+      "url": "https://easylist-downloads.adblockplus.org/liste_fr.txt"
+    },
+    {
+      "name": "ROList",
+      "description": "Blocks advertising on Romanian websites.",
+      "identifier": "roList",
+      "languageSpecific": true,
+      "builtIn": true,
+      "url": "https://zoso.ro/pages/rolist.txt"
+    },
+    {
+      "name": "RU AdList",
+      "description": "Blocks advertising on Russian and Ukrainian websites.",
+      "identifier": "ruAdList",
+      "languageSpecific": true,
+      "builtIn": true,
+      "url": "https://easylist-downloads.adblockplus.org/ruadlist.txt"
+    }
+  ],
+  "engines": [
+    {
+      "name": "Bing",
+      "supportsSuggestions": true
+    },
+    {
+      "name": "Brave",
+      "supportsSuggestions": true
+    },
+    {
+      "name": "DuckDuckGo",
+      "supportsSuggestions": true
+    },
+    {
+      "name": "Ecosia",
+      "supportsSuggestions": true
+    },
+    {
+      "name": "Google",
+      "supportsSuggestions": true
+    },
+    {
+      "name": "Kagi",
+      "supportsSuggestions": true
+    },
+    {
+      "name": "Mojeek",
+      "supportsSuggestions": false
+    },
+    {
+      "name": "Startpage",
+      "supportsSuggestions": true
+    },
+    {
+      "name": "Yahoo",
+      "supportsSuggestions": true
+    },
+    {
+      "name": "Yandex",
+      "supportsSuggestions": true
+    }
+  ]
+}

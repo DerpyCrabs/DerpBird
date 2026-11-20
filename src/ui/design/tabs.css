@@ -1,3 +1,5 @@
+@import './tab-row.css';
+@import './tree-branches.css';
 /* Shared reference behavior. Borders never participate in the scroll mask. */
 .haz-overflow-host {
   position: relative;
@@ -132,24 +134,7 @@ body.haz-proposal {
   overflow: hidden;
 }
 .haz-proposal .tab-list {
-  gap: 3px;
-}
-.haz-proposal .tab {
-  min-height: 34px;
-  border-radius: 7px;
-  color: var(--pref-muted);
-  border: 1px solid transparent;
-  box-shadow: none;
-}
-.haz-proposal .tab.active {
-  background: var(--pref-raised);
-  border-color: var(--pref-line);
-  color: var(--pref-text);
-  box-shadow: 0 1px 2px #0002;
-}
-.haz-proposal .tab:hover:not(.active) {
-  background: #ffffff09;
-  color: var(--pref-text);
+  gap: var(--tab-row-gap);
 }
 .haz-proposal .tab > button:first-child {
   padding: 5px 12px;
@@ -201,8 +186,8 @@ body.haz-proposal {
   margin-top: 6px;
 }
 .haz-proposal .shell.vertical .tab-list > .tab-unit {
-  margin-left: 6px;
-  margin-right: 6px;
+  margin-left: var(--tab-rail-inset);
+  margin-right: var(--tab-rail-inset);
 }
 .haz-proposal .shell.vertical .pinned-tabs {
   display: flex;
@@ -670,7 +655,7 @@ body.haz-proposal {
   width: 200px;
 }
 .haz-proposal .shell.vertical .tab > button:first-child {
-  padding-left: 8px;
+  padding-left: var(--tab-content-inset);
   padding-right: 4px;
 }
 /* Group structure is visible without spending a second title column on it. */
@@ -679,37 +664,10 @@ body.haz-proposal {
 }
 .haz-proposal .shell.vertical .tree-child {
   position: relative;
-  margin-left: 18px;
+  margin-left: var(--tab-child-indent);
 }
 .haz-proposal .shell.vertical .tree-child > button:first-child {
-  padding-left: 8px;
-}
-.haz-proposal .shell.vertical .tree-child:before {
-  content: '';
-  position: absolute;
-  left: -7px;
-  top: -4px;
-  bottom: -4px;
-  width: 7px;
-  border-left: 1px solid #45454c;
-  pointer-events: none;
-}
-.haz-proposal .shell.vertical .tree-child:after {
-  content: '';
-  position: absolute;
-  left: -7px;
-  top: 50%;
-  width: 7px;
-  border-top: 1px solid #45454c;
-  pointer-events: none;
-}
-.haz-proposal .shell.vertical .tree-child[data-group-end='true']:before {
-  bottom: 50%;
-  border-bottom: 1px solid #45454c;
-  border-bottom-left-radius: 5px;
-}
-.haz-proposal .shell.vertical .tree-child[data-group-end='true']:after {
-  display: none;
+  padding-left: var(--tab-content-inset);
 }
 .haz-proposal .shell.horizontal .tab[data-group]:before {
   display: none;

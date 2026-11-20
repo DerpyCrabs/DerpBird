@@ -1,0 +1,27 @@
+:is(.haz-proposal .shell.vertical .tree-child, .bookmarks .folder-link[data-branch]):before {
+  content: '';
+  position: absolute;
+  left: -7px;
+  top: -4px;
+  bottom: -4px;
+  width: 7px;
+  border-left: 1px solid #45454c;
+  pointer-events: none;
+}
+:is(.haz-proposal .shell.vertical .tree-child, .bookmarks .folder-link[data-branch]):after {
+  content: '';
+  position: absolute;
+  left: -7px;
+  top: 50%;
+  width: 7px;
+  border-top: 1px solid #45454c;
+  pointer-events: none;
+}
+:is(.haz-proposal .shell.vertical .tree-child, .bookmarks .folder-link[data-branch])[data-group-end='true']:before {
+  bottom: 50%;
+  border-bottom: 1px solid #45454c;
+  border-bottom-left-radius: 5px;
+}
+:is(.haz-proposal .shell.vertical .tree-child, .bookmarks .folder-link[data-branch])[data-group-end='true']:after {
+  display: none;
+}

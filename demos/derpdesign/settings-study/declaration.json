@@ -1,0 +1,173 @@
+{
+  "id": "derpbird-settings-study",
+  "projectId": "derpbird",
+  "name": "Settings \u00b7 unified preferences",
+  "description": "Unified browser preferences and modal style and script managers opened from the toolbar.",
+  "panes": [
+    {
+      "id": "prefs-appearance",
+      "name": "Appearance",
+      "engine": "ladybird",
+      "route": "/",
+      "viewport": {
+        "width": 990,
+        "height": 730,
+        "deviceScaleFactor": "display"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "conditions": {
+        "settingsStudy": "appearance"
+      }
+    },
+    {
+      "id": "prefs-styles",
+      "name": "Style library",
+      "engine": "ladybird",
+      "route": "/",
+      "viewport": {
+        "width": 850,
+        "height": 660,
+        "deviceScaleFactor": "display"
+      },
+      "position": {
+        "x": 1020,
+        "y": 0
+      },
+      "conditions": {
+        "toolStudy": "styles",
+        "layout": "horizontal"
+      }
+    },
+    {
+      "id": "prefs-editor",
+      "name": "Script editor",
+      "engine": "ladybird",
+      "route": "/",
+      "viewport": {
+        "width": 900,
+        "height": 760,
+        "deviceScaleFactor": "display"
+      },
+      "position": {
+        "x": 0,
+        "y": 800
+      },
+      "conditions": {
+        "toolStudy": "editor",
+        "layout": "horizontal"
+      }
+    },
+    {
+      "id": "prefs-startup",
+      "name": "Startup",
+      "engine": "ladybird",
+      "route": "/",
+      "viewport": {
+        "width": 390,
+        "height": 670,
+        "deviceScaleFactor": "display"
+      },
+      "position": {
+        "x": 1020,
+        "y": 800
+      },
+      "conditions": {
+        "settingsStudy": "startup"
+      }
+    },
+    {
+      "id": "prefs-permissions",
+      "name": "Permissions",
+      "engine": "ladybird",
+      "route": "/",
+      "viewport": {
+        "width": 940,
+        "height": 730,
+        "deviceScaleFactor": "display"
+      },
+      "position": {
+        "x": 0,
+        "y": 1600
+      },
+      "conditions": {
+        "settingsStudy": "permissions"
+      }
+    },
+    {
+      "id": "prefs-tabs",
+      "name": "Tabs & navigation \u00b7 layout",
+      "engine": "ladybird",
+      "route": "/",
+      "viewport": {
+        "width": 960,
+        "height": 760,
+        "deviceScaleFactor": "display"
+      },
+      "position": {
+        "x": 1020,
+        "y": 1600
+      },
+      "conditions": {
+        "settingsStudy": "tabs"
+      }
+    },
+    {
+      "id": "prefs-blocking",
+      "name": "Content blocking",
+      "engine": "ladybird",
+      "route": "/",
+      "viewport": {
+        "width": 960,
+        "height": 780,
+        "deviceScaleFactor": "display"
+      },
+      "position": {
+        "x": 0,
+        "y": 2400
+      },
+      "conditions": {
+        "settingsStudy": "blocking"
+      }
+    },
+    {
+      "id": "prefs-advanced",
+      "name": "Advanced",
+      "engine": "ladybird",
+      "route": "/",
+      "viewport": {
+        "width": 960,
+        "height": 780,
+        "deviceScaleFactor": "display"
+      },
+      "position": {
+        "x": 1020,
+        "y": 2400
+      },
+      "conditions": {
+        "settingsStudy": "advanced"
+      }
+    },
+    {
+      "id": "prefs-toolbar",
+      "name": "Browser toolbar",
+      "engine": "ladybird",
+      "viewport": {
+        "width": 960,
+        "height": 680,
+        "deviceScaleFactor": "display"
+      },
+      "position": {
+        "x": 0,
+        "y": 3200
+      },
+      "route": "/",
+      "conditions": {
+        "toolStudy": "toolbar",
+        "layout": "horizontal"
+      }
+    }
+  ]
+}

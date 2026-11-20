@@ -1,0 +1,146 @@
+{
+  "steps": [
+    {
+      "action": "click",
+      "selector": "button[aria-label=\"Scripts on this page\"]"
+    },
+    {
+      "action": "click",
+      "selector": ".page-sources-popup footer button"
+    },
+    {
+      "action": "assert",
+      "selector": "dialog.tool-library:modal"
+    },
+    {
+      "action": "click",
+      "selector": ".tool-item:first-child .tool-edit"
+    },
+    {
+      "action": "assert",
+      "selector": "dialog:modal [name=name]:focus"
+    },
+    {
+      "action": "key",
+      "key": "Tab"
+    },
+    {
+      "action": "assert",
+      "selector": "dialog:modal [name=enabled]:focus"
+    },
+    {
+      "action": "type",
+      "selector": "[name=name]",
+      "text": " updated"
+    },
+    {
+      "action": "assert",
+      "selector": ".tool-state",
+      "contains": "Unsaved changes"
+    },
+    {
+      "action": "key",
+      "key": "Escape"
+    },
+    {
+      "action": "assert",
+      "selector": "dialog.leave-confirm:modal"
+    },
+    {
+      "action": "assert",
+      "selector": "[data-do=stay]:focus"
+    },
+    {
+      "action": "click",
+      "selector": "[data-do=stay]"
+    },
+    {
+      "action": "key",
+      "key": "Escape"
+    },
+    {
+      "action": "click",
+      "selector": "[data-do=leave]"
+    },
+    {
+      "action": "assert",
+      "selector": "dialog:modal",
+      "exists": false
+    },
+    {
+      "action": "assert",
+      "selector": "button[aria-label=\"Scripts on this page\"]:focus"
+    },
+    {
+      "action": "click",
+      "selector": "button[aria-label=\"Styles on this page\"]"
+    },
+    {
+      "action": "click",
+      "selector": ".page-sources-popup footer button"
+    },
+    {
+      "action": "assert",
+      "selector": "dialog.tool-library:modal"
+    },
+    {
+      "action": "click",
+      "selector": ".tool-item:first-child .tool-edit"
+    },
+    {
+      "action": "assert",
+      "selector": "dialog:modal [name=name]:focus"
+    },
+    {
+      "action": "key",
+      "key": "Tab"
+    },
+    {
+      "action": "assert",
+      "selector": "dialog:modal [name=enabled]:focus"
+    },
+    {
+      "action": "type",
+      "selector": "[name=name]",
+      "text": " updated"
+    },
+    {
+      "action": "assert",
+      "selector": ".tool-state",
+      "contains": "Unsaved changes"
+    },
+    {
+      "action": "key",
+      "key": "Escape"
+    },
+    {
+      "action": "assert",
+      "selector": "dialog.leave-confirm:modal"
+    },
+    {
+      "action": "assert",
+      "selector": "[data-do=stay]:focus"
+    },
+    {
+      "action": "click",
+      "selector": "[data-do=stay]"
+    },
+    {
+      "action": "key",
+      "key": "Escape"
+    },
+    {
+      "action": "click",
+      "selector": "[data-do=leave]"
+    },
+    {
+      "action": "assert",
+      "selector": "dialog:modal",
+      "exists": false
+    },
+    {
+      "action": "assert",
+      "selector": "button[aria-label=\"Styles on this page\"]:focus"
+    }
+  ]
+}

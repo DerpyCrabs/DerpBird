@@ -80,6 +80,7 @@ export function createBirdFixture(layout:'horizontal'|'vertical',canDrop:CanDrop
    case 'shell.set-chrome-layout':preferences.chromeLayout=layoutFromSettings(layoutToSettings(c.layout));preferences.layout=['sidebar','compact'].includes(c.layout.preset)?'vertical':'horizontal';break;
    case 'shell.set-layout':preferences.layout=c.layout;preferences.chromeLayout={...preferences.chromeLayout,preset:c.layout==='vertical'?'sidebar':'classic',address:'top'};break;
    case 'shell.set-sidebar-width':preferences.sidebarWidth=c.width;break;
+   case 'shell.set-always-close':preferences.alwaysClose=c.alwaysClose;break;
    case 'shell.set-appearance':preferences.theme=c.theme;preferences.alwaysClose=c.alwaysClose;break;
    case 'shell.set-wrap-tabs':preferences.wrapTabs=c.value;break;
    case 'tab.activate':get(c.tabId);activeTabId=c.tabId;break;

@@ -35,3 +35,33 @@ if (document.querySelector('#tab-layout-group')) {
   const ui = mountSettingsLayout(document, (name,value) => window.ladybird!.sendMessage(name,value));
   window.addEventListener('pagehide',()=>ui.dispose(),{once:true});
 }
+
+import { bindShellSettings, mountSettingsPage, type SettingsShell } from './ui/preferences/settings-page';
+
+if (document.body.classList.contains('unified')) {
+  mountSettingsPage();
+  if (location.protocol === 'about:') {
+    let current: ReturnType<SettingsShell['state']>;
+    const listeners = new Set<() => void>();
+    const send = (command: object) => window.ladybird!.sendMessage('derpbird.settings', command);
+    const shell: SettingsShell = {
+      state: () => current,
+      source: { subscribe(callback) { listeners.add(callback); return () => listeners.delete(callback); } },
+      send,
+      switchWorkspace: id => send({type:'workspace.switch', id}),
+      setWrapTabs: value => send({type:'shell.set-wrap-tabs', value}),
+      setSidebarWidth: width => send({type:'shell.set-sidebar-width', width}),
+    };
+    document.addEventListener('WebUIMessage', event => {
+      const {name, data} = (event as CustomEvent).detail;
+      if (name === 'derpbird.settingsError') { window.alert(String(data)); return; }
+      if (name !== 'derpbird.settings') return;
+      const first = !current;
+      current = { browser: data, wrapTabs: data.preferences.wrapTabs, sidebarWidth: data.preferences.sidebarWidth };
+      if (first) bindShellSettings(shell);
+      else for (const notify of listeners) notify();
+    });
+    document.addEventListener('WebUILoaded', () => send({type:'read'}));
+    window.addEventListener('focus', () => send({type:'read'}));
+  }
+}

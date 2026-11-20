@@ -71,6 +71,14 @@ export function createStyleController(port: UserStylePort, compiler: StyleCompil
       if (!canLeaveDraft()) return;
       run(async () => accept(await port.list(), state.draft?.id));
     },
+    setEnabled(id: string, enabled: boolean) {
+      const snapshot = state.snapshot;
+      if (!canLeaveDraft() || !snapshot || !snapshot.items.some(item => item.id === id)) return;
+      run(async () => {
+        const items = snapshot.items.map(item => item.id === id ? { ...item, enabled } : item);
+        accept(await port.replace({ revision: snapshot.revision, items }), state.draft?.id);
+      });
+    },
     select(id: string) {
       if (!canLeaveDraft()) return;
       const item = state.snapshot?.items.find(item => item.id === id);

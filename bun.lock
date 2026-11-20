@@ -5,13 +5,13 @@
     "": {
       "name": "derpbird",
       "dependencies": {
-        "@effectweb/base-ui": "0.16.0",
-        "@effectweb/lucide": "0.16.0",
-        "@effectweb/shadcn": "0.16.0",
+        "@effectweb/base-ui": "0.16.1",
+        "@effectweb/lucide": "0.16.1",
+        "@effectweb/shadcn": "0.16.1",
         "@modelcontextprotocol/server": "^2.4.0",
         "colorjs.io": "0.7.1",
         "effect": "4.1.0",
-        "effectweb": "0.16.0",
+        "effectweb": "0.16.1",
         "less": "4.9.1",
         "postcss": "8.5.32",
         "stylus-lang-bundle": "github:openstyles/stylus-lang-bundle#ad941359ffd800eb6a16fa8459902573e7d5e240",
@@ -20,7 +20,7 @@
       },
       "devDependencies": {
         "@derpdesign/harness": "file:../DerpDesign/packages/harness",
-        "@effectweb/compiler": "0.16.0",
+        "@effectweb/compiler": "0.16.1",
         "@modelcontextprotocol/client": "^2.4.0",
         "@tailwindcss/vite": "4.3.3",
         "@types/bun": "1.4.4",
@@ -37,23 +37,23 @@
   "packages": {
     "@derpdesign/harness": ["@derpdesign/harness@file:../DerpDesign/packages/harness", {}],
 
-    "@effectweb/base-ui": ["@effectweb/base-ui@0.16.0", "", { "peerDependencies": { "effect": "^4.0.0", "effectweb": "0.16.0" } }, "sha512-Yvdp3mm1z+zvMtI2Z2xrUk1wwwU54xi3eMR9EAf63V6NzaGGcW1XtOSQR1226QSlv6EA++7b1irwylCLLwahAg=="],
+    "@effectweb/base-ui": ["@effectweb/base-ui@0.16.1", "", { "peerDependencies": { "effect": "^4.0.0", "effectweb": "0.16.1" } }, "sha512-s4G34P27mNUV18lyo1x4jvmgrPtfHVsGX+S2dCN0NFVBcCBBjCLifAR6mhq90VG6jydYDEATqYIOVK3sL7YlIQ=="],
 
-    "@effectweb/compiler": ["@effectweb/compiler@0.16.0", "", { "optionalDependencies": { "@effectweb/compiler-darwin-arm64": "0.16.0", "@effectweb/compiler-darwin-x64": "0.16.0", "@effectweb/compiler-linux-arm64-gnu": "0.16.0", "@effectweb/compiler-linux-x64-gnu": "0.16.0", "@effectweb/compiler-win32-x64-msvc": "0.16.0" }, "peerDependencies": { "typescript": ">=5.4", "vite": "*" }, "optionalPeers": ["typescript", "vite"] }, "sha512-wgnKizUGkvpCZk0qwE0khnQB4DeoEJZNrfyBirn+zK0UYC/bmBGXdD8MXpfF9OZ9+o8tYw0sgpXaPKKgZ70V0w=="],
+    "@effectweb/compiler": ["@effectweb/compiler@0.16.1", "", { "optionalDependencies": { "@effectweb/compiler-darwin-arm64": "0.16.1", "@effectweb/compiler-darwin-x64": "0.16.1", "@effectweb/compiler-linux-arm64-gnu": "0.16.1", "@effectweb/compiler-linux-x64-gnu": "0.16.1", "@effectweb/compiler-win32-x64-msvc": "0.16.1" }, "peerDependencies": { "typescript": ">=5.4", "vite": "*" }, "optionalPeers": ["typescript", "vite"] }, "sha512-av6P8CcgAG9Bh9Lp/JphAOslq56LlAeeOELvi7lilxKcf+vTJj4lNoWpxmKNiq3zHGlOTyssP5/kkBBrLjEc/g=="],
 
-    "@effectweb/compiler-darwin-arm64": ["@effectweb/compiler-darwin-arm64@0.16.0", "", { "os": "darwin", "cpu": "arm64" }, "sha512-K4ZStnT8bW7oN76C7/VKNfM/9Q5yLpthzABDh0GiTwtAcaHpaIEXhDN8zPNQqVoTT4zxveUzWiLAv/pBVrFGCw=="],
+    "@effectweb/compiler-darwin-arm64": ["@effectweb/compiler-darwin-arm64@0.16.1", "", { "os": "darwin", "cpu": "arm64" }, "sha512-MlqANpgo2E4rwlKx1ZN9P6woLygTZ5U28ThtQgcwErh+PbHals8TZpiQefo7QCphkLCSWO7+MGZ5V0+qpN+aHg=="],
 
-    "@effectweb/compiler-darwin-x64": ["@effectweb/compiler-darwin-x64@0.16.0", "", { "os": "darwin", "cpu": "x64" }, "sha512-HR/zLTsCTalJx7VhHA5AY52e9r+5koDnI6l6NyKKfESo/sY8MrAgruR9uuZtrgvlFlOJb1LyXuMhsKTLuqOX0A=="],
+    "@effectweb/compiler-darwin-x64": ["@effectweb/compiler-darwin-x64@0.16.1", "", { "os": "darwin", "cpu": "x64" }, "sha512-5SzTQIzoz2WvoLagL3XMxLAGs61il7dO4elMgSixJ5fQo5ei0oCmGzhoR1jmd/ClBIkU7GeO2FBqCOQcM8Qggw=="],
 
-    "@effectweb/compiler-linux-arm64-gnu": ["@effectweb/compiler-linux-arm64-gnu@0.16.0", "", { "os": "linux", "cpu": "arm64", "libc": "glibc" }, "sha512-xmi5D58iJrteJdt8N7iFNur2POe39Opow/+D3Ar6BKag6kxfLGlkdRNXhf24DIeVLtMY1foh3Ul1DVK0da8A5Q=="],
+    "@effectweb/compiler-linux-arm64-gnu": ["@effectweb/compiler-linux-arm64-gnu@0.16.1", "", { "os": "linux", "cpu": "arm64", "libc": "glibc" }, "sha512-tsV7KyyBWwiSK4Sb/hLEfpiCl/OyZLVzbiEERzlNBbWwtTu+N6Uh3DrTvn4sANSdq2DCLRJbmQOmhkKgMqBG/g=="],
 
-    "@effectweb/compiler-linux-x64-gnu": ["@effectweb/compiler-linux-x64-gnu@0.16.0", "", { "os": "linux", "cpu": "x64", "libc": "glibc" }, "sha512-DfSSKP+jFSxgHalY+Db++0gguzaqdPFYhqyXwcJt+09UnNhMHIKdt2AVtMWKLzoROjeWqkVzXLllDYV188p70w=="],
+    "@effectweb/compiler-linux-x64-gnu": ["@effectweb/compiler-linux-x64-gnu@0.16.1", "", { "os": "linux", "cpu": "x64", "libc": "glibc" }, "sha512-R7EpDV9iHpzA2d44RUcnNikPPRByLavYcFyBGH0usnETd3AwvDBIrjwE8zbeoM3JoRNK4fSDxI5iFNgD96KAkg=="],
 
-    "@effectweb/compiler-win32-x64-msvc": ["@effectweb/compiler-win32-x64-msvc@0.16.0", "", { "os": "win32", "cpu": "x64" }, "sha512-I0SR99Z3L9rKWlZ8VrjuJT3pxBhgttfUU6P0fX1SxSVm91B0v66QhHCBtqZhea2n2DWkpEG4VNGfTgfQbTDF7g=="],
+    "@effectweb/compiler-win32-x64-msvc": ["@effectweb/compiler-win32-x64-msvc@0.16.1", "", { "os": "win32", "cpu": "x64" }, "sha512-GNSiaYsgE/47vMEqCmJAzZmGMt2Rss9wZnoSN1BMyyOPvFgpezfYKvorbhTi2z17yguVPj25F7hc5/JePJGEUw=="],
 
-    "@effectweb/lucide": ["@effectweb/lucide@0.16.0", "", { "dependencies": { "@lucide/icons": "1.65.0" }, "peerDependencies": { "effect": "^4.0.0", "effectweb": "0.16.0" } }, "sha512-BHbohPwErmqWjB2DmOJj6Bp2A+wlZn5NkyeeaQp8P8JDaunswnc6M42usN9HrTiFYI6kdDPZ3X7aTfKSQK7NnQ=="],
+    "@effectweb/lucide": ["@effectweb/lucide@0.16.1", "", { "dependencies": { "@lucide/icons": "1.65.0" }, "peerDependencies": { "effect": "^4.0.0", "effectweb": "0.16.1" } }, "sha512-QGyHzdugJuFHd6PCdRzIiG4J396I5vOisyWM4VVwcS/kneKUn4A+kIady2j0s/rRgLnCCWlhOuhsppCdiaWxVg=="],
 
-    "@effectweb/shadcn": ["@effectweb/shadcn@0.16.0", "", { "dependencies": { "@effectweb/base-ui": "0.16.0", "@effectweb/lucide": "0.16.0", "class-variance-authority": "0.7.1", "cn": "0.5.1", "tw-animate-css": "1.4.0" }, "peerDependencies": { "effect": "^4.0.0", "effectweb": "0.16.0", "tailwindcss": "^4.0.0" } }, "sha512-kFC7zIjtVcJzmIY4DCmTDGqrCHFbOCa+UVWMYykz11Fs/xUkGexCsQJHJlGz13QeXSlGtuxgJV66D+SeBRXdYg=="],
+    "@effectweb/shadcn": ["@effectweb/shadcn@0.16.1", "", { "dependencies": { "@effectweb/base-ui": "0.16.1", "@effectweb/lucide": "0.16.1", "class-variance-authority": "0.7.1", "cn": "0.5.1", "tw-animate-css": "1.4.0" }, "peerDependencies": { "effect": "^4.0.0", "effectweb": "0.16.1", "tailwindcss": "^4.0.0" } }, "sha512-h5344wuWvLFJl6KmOwfX+p0dZX9kCIpPpe1kBo8lJoMgBY1hXor8FFh8ts7qcycM+Z2mPdNy8xVWfGYCaJOSHw=="],
 
     "@jridgewell/gen-mapping": ["@jridgewell/gen-mapping@0.3.13", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.0", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA=="],
 
@@ -207,7 +207,7 @@
 
     "effect": ["effect@4.1.0", "", {}, "sha512-lGx2MJJyrXA8RZb2UpQ/0Nkb5Utaimby7oD92+18noBxLPE85IFOvptdzau8dvcxAOwfwHo9iqapbKeFzqQM/Q=="],
 
-    "effectweb": ["effectweb@0.16.0", "", { "peerDependencies": { "effect": "^4.0.0", "typescript": ">=5.4" }, "optionalPeers": ["typescript"] }, "sha512-KRX+OfLIQ5ERneue8NafjhZi8DAXkj1PhoK/rQayDh2P63H7lEWL6DRaJn8YyP4JGUppkXhhYGLDqD915Tr8CA=="],
+    "effectweb": ["effectweb@0.16.1", "", { "peerDependencies": { "effect": "^4.0.0", "typescript": ">=5.4" }, "optionalPeers": ["typescript"] }, "sha512-0tLmBMhAutka14fsKrGmzI20QnAlBj+yvXhZeHpfo18z9Yj5Dn3uvsHajgVIti5rSXkDO0TdZgb32iVn2opNUQ=="],
 
     "enhanced-resolve": ["enhanced-resolve@5.26.1", "", { "dependencies": { "graceful-fs": "^4.2.4", "tapable": "^2.3.3" } }, "sha512-PPnnSJq3azKOIewXR/uppBV/6h98dprBJ/WaQ9Qgj10xX1lJLNfg+XShpbsrSqcDSy2yYYyhfXM1wWhftqgyzw=="],
 

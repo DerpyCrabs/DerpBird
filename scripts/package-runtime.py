@@ -35,6 +35,7 @@ for directory in ('bin', 'lib', 'libexec'):
 licenses = Path(sys.argv[1]) / 'usr/share/licenses/derpbird'
 licenses.mkdir(parents=True)
 shutil.copy2(ROOT / 'LICENSE', licenses / 'DerpBird')
+shutil.copy2(ROOT / 'src/ui/fonts/Inter-LICENSE.txt', licenses / 'Inter')
 shutil.copy2(ROOT / 'THIRD_PARTY_NOTICES.md', licenses / 'THIRD_PARTY_NOTICES.md')
 shutil.copy2(ROOT / 'vendor/ladybird/LICENSE', licenses / 'Ladybird')
 for path in (triplet / 'share').glob('*/copyright'):

@@ -9,8 +9,8 @@ export function surfaceRect(rect: Pick<DOMRect, 'left' | 'top' | 'right' | 'bott
 }
 
 const overlaySelector = '.address-suggestions, .browser-menu, .tab-menu, .error, .style-manager, .blocking-log, .credential-autofill, .workspace-popover, .haz-workspace-menu, .split-divider';
-const captureSelector = 'dialog[open], .shell-overlay-exit, [data-internal-page], .split-drag-surface:not([hidden])';
-const surfaceSelector = `${overlaySelector}, dialog, .shell-overlay-exit, #content-surface, .split-drag-surface`;
+const captureSelector = '#downloads-popover:not([hidden]), dialog[open], .shell-overlay-exit, [data-internal-page], .split-drag-surface:not([hidden])';
+const surfaceSelector = `#downloads-popover, ${overlaySelector}, dialog, .shell-overlay-exit, #content-surface, .split-drag-surface`;
 
 /** Coalesce geometry changes into one update per frame; no idle polling. */
 export function observeViewport(document: Document, send: (command: Command) => void, connected: () => boolean) {

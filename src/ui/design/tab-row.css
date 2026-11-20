@@ -1,0 +1,23 @@
+.haz-proposal .tab,
+.bookmarks .folder-link,
+.unified .tab-button {
+  min-height: var(--tab-row-height);
+  border-radius: 7px;
+  color: var(--pref-muted);
+  border: 1px solid transparent;
+  box-shadow: none;
+}
+.haz-proposal .tab.active,
+.bookmarks .folder-link[aria-current],
+.unified .tab-button.active {
+  background: var(--pref-raised);
+  border-color: var(--pref-line);
+  color: var(--pref-text);
+  box-shadow: 0 1px 2px #0002;
+}
+.haz-proposal .tab:hover:not(.active),
+.bookmarks .folder-link:hover:not([aria-current]),
+.unified .tab-button:hover:not(.active) {
+  background: #ffffff09;
+  color: var(--pref-text);
+}

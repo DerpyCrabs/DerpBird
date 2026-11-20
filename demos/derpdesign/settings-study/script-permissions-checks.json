@@ -1,0 +1,93 @@
+{
+  "steps": [
+    {
+      "action": "click",
+      "selector": ".tool-options summary"
+    },
+    {
+      "action": "click",
+      "selector": "[name=local]"
+    },
+    {
+      "action": "assert",
+      "selector": "[name=local]:checked"
+    },
+    {
+      "action": "assert",
+      "selector": ".tool-state",
+      "text": "Saved"
+    },
+    {
+      "action": "click",
+      "selector": "[name=daily]"
+    },
+    {
+      "action": "assert",
+      "selector": ".tool-state",
+      "text": "Unsaved changes"
+    },
+    {
+      "action": "click",
+      "selector": "[data-do=save]"
+    },
+    {
+      "action": "assert",
+      "selector": ".tool-state",
+      "text": "Saved"
+    },
+    {
+      "action": "assert",
+      "selector": "[name=daily]:checked"
+    },
+    {
+      "action": "click",
+      "selector": ".tool-back"
+    },
+    {
+      "action": "click",
+      "selector": ".tool-item:first-child .tool-edit"
+    },
+    {
+      "action": "click",
+      "selector": ".tool-options summary"
+    },
+    {
+      "action": "assert",
+      "selector": "[name=local]:checked"
+    },
+    {
+      "action": "assert",
+      "selector": "[name=daily]:checked"
+    },
+    {
+      "action": "capture",
+      "label": "retained"
+    },
+    {
+      "action": "click",
+      "selector": ".tool-options summary"
+    },
+    {
+      "action": "type",
+      "selector": "[name=source]",
+      "text": " "
+    },
+    {
+      "action": "click",
+      "selector": "[data-do=save]"
+    },
+    {
+      "action": "assert",
+      "selector": ".tool-state",
+      "text": "Saved"
+    },
+    {
+      "action": "click",
+      "selector": ".tool-options summary"
+    },
+    {
+      "action": "assert",
+      "selector": "[name=local]:not(:checked)"
+    }
+  ]
+}

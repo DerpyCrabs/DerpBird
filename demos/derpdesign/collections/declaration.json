@@ -1,0 +1,141 @@
+{
+  "id": "derpbird-collections",
+  "name": "History \u00b7 Bookmarks \u00b7 Downloads",
+  "projectId": "derpbird",
+  "description": "History, bookmark folders and the downloads toolbar menu.",
+  "panes": [
+    {
+      "id": "history-desktop",
+      "name": "History",
+      "route": "/",
+      "engine": "ladybird",
+      "conditions": {
+        "collection": "history"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "viewport": {
+        "width": 980,
+        "height": 680,
+        "deviceScaleFactor": "display"
+      }
+    },
+    {
+      "id": "bookmarks-desktop",
+      "name": "Bookmarks",
+      "route": "/",
+      "engine": "ladybird",
+      "conditions": {
+        "collection": "bookmarks"
+      },
+      "position": {
+        "x": 1020,
+        "y": 0
+      },
+      "viewport": {
+        "width": 980,
+        "height": 680,
+        "deviceScaleFactor": "display"
+      }
+    },
+    {
+      "id": "downloads-desktop",
+      "name": "Downloads \u00b7 toolbar indicator",
+      "route": "/",
+      "engine": "ladybird",
+      "conditions": {
+        "downloadMenu": true,
+        "layout": "horizontal",
+        "showDownloads": false
+      },
+      "position": {
+        "x": 2040,
+        "y": 0
+      },
+      "viewport": {
+        "width": 980,
+        "height": 680,
+        "deviceScaleFactor": "display"
+      }
+    },
+    {
+      "id": "history-compact",
+      "name": "History \u00b7 compact",
+      "route": "/",
+      "engine": "ladybird",
+      "conditions": {
+        "collection": "history"
+      },
+      "position": {
+        "x": 0,
+        "y": 780
+      },
+      "viewport": {
+        "width": 390,
+        "height": 680,
+        "deviceScaleFactor": "display"
+      }
+    },
+    {
+      "id": "bookmarks-compact",
+      "name": "Bookmarks \u00b7 compact",
+      "route": "/",
+      "engine": "ladybird",
+      "conditions": {
+        "collection": "bookmarks"
+      },
+      "position": {
+        "x": 1020,
+        "y": 780
+      },
+      "viewport": {
+        "width": 390,
+        "height": 680,
+        "deviceScaleFactor": "display"
+      }
+    },
+    {
+      "id": "downloads-compact",
+      "name": "Downloads \u00b7 menu",
+      "route": "/",
+      "engine": "ladybird",
+      "conditions": {
+        "downloadMenu": true,
+        "layout": "horizontal",
+        "showDownloads": true
+      },
+      "position": {
+        "x": 2040,
+        "y": 780
+      },
+      "viewport": {
+        "width": 390,
+        "height": 680,
+        "deviceScaleFactor": "display"
+      }
+    },
+    {
+      "id": "downloads-empty",
+      "name": "Downloads \u00b7 empty",
+      "route": "/",
+      "engine": "ladybird",
+      "conditions": {
+        "downloadMenu": true,
+        "layout": "compact",
+        "showDownloads": true,
+        "emptyDownloads": true
+      },
+      "position": {
+        "x": 2490,
+        "y": 780
+      },
+      "viewport": {
+        "width": 960,
+        "height": 680,
+        "deviceScaleFactor": "display"
+      }
+    }
+  ]
+}

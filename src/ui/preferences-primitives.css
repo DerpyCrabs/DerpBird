@@ -1,3 +1,8 @@
+@font-face { font-family: Inter; font-weight: 400; font-style: normal; src: url('./fonts/Inter-Regular.woff2?inline') format('woff2'); }
+@font-face { font-family: Inter; font-weight: 500; font-style: normal; src: url('./fonts/Inter-Medium.woff2?inline') format('woff2'); }
+@font-face { font-family: Inter; font-weight: 600; font-style: normal; src: url('./fonts/Inter-SemiBold.woff2?inline') format('woff2'); }
+@font-face { font-family: Inter; font-weight: 700; font-style: normal; src: url('./fonts/Inter-Bold.woff2?inline') format('woff2'); }
+.preferences-theme { --tab-rail-inset: 6px; --tab-content-inset: 8px; --tab-child-indent: 18px; --tab-row-gap: 3px; --tab-row-height: 34px; }
 .preferences-theme{--pref-bg:#171719;--pref-panel:#202023;--pref-raised:#29292d;--pref-hover:#323237;--pref-text:#ededf0;--pref-muted:#a5a5ad;--pref-line:#3b3b41;--pref-control-edge:#777780;--pref-focus:#68b9ff;--pref-error:#ff9999;color:var(--pref-text);font:14px/1.5 Inter,ui-sans-serif,system-ui,sans-serif;color-scheme:dark}
 .preferences-theme[data-theme=light],.preferences-theme.pref-light{--pref-bg:#fafafa;--pref-panel:#fff;--pref-raised:#f2f2f4;--pref-hover:#e7e7eb;--pref-text:#202024;--pref-muted:#606069;--pref-line:#d6d6dc;--pref-control-edge:#777780;--pref-focus:#0069b5;--pref-error:#b42323;color-scheme:light}
 .preferences-theme h2{font-size:15px;font-weight:600;letter-spacing:0;margin:0}

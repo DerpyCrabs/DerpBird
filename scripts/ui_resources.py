@@ -9,7 +9,9 @@ def ui_resource_files(directory: Path) -> dict[str, bytes]:
     assets = directory / 'derpbird-assets'
     if not page.is_file() or not assets.is_dir():
         raise RuntimeError(f'DerpBird UI resources missing: {directory}')
-    return {'derpbird.html': page.read_bytes(), **{
+    return {**{name: (directory / name).read_bytes()
+               for name in ('derpbird.html', 'settings.html', 'bookmarks.html', 'history.html')
+               if (directory / name).is_file()}, **{
         f'derpbird-assets/{file.name}': file.read_bytes()
         for file in assets.iterdir() if file.is_file()
     }}

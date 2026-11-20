@@ -29,7 +29,12 @@ export interface ScriptCommandEvent { readonly keyboard: boolean; readonly key: 
 export interface BlockingLog { readonly tabId: string; readonly entries: readonly { readonly id: number; readonly url: string; readonly kind: string; readonly rule?: string }[] }
 export interface CredentialAutofill { readonly token: string; readonly origin: string; readonly x: number; readonly y: number; readonly items: readonly Credential[] }
 export interface SplitView { readonly id: string; readonly firstTabId: string; readonly secondTabId: string; readonly axis: 'horizontal' | 'vertical'; readonly ratio: number }
+export interface BrowserDownload {
+  id: string; name: string; path: string; received: number; total?: number; resumable: boolean;
+  status: 'Downloading' | 'Paused' | 'Finished' | 'Canceled' | 'Failed';
+}
 export interface BrowserSnapshot {
+  readonly downloads?: readonly BrowserDownload[];
   readonly automation?: { readonly enabled: boolean; readonly clients: number; readonly endpoint: string };
   readonly workspaces?: Workspaces;
   readonly splits?: readonly SplitView[];
@@ -50,6 +55,7 @@ export interface BrowserSnapshot {
 export type BrowserPage = 'history' | 'downloads' | 'bookmarks' | 'settings';
 export interface SurfaceRect { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
 export type Command =
+  | { readonly type: 'download.action'; readonly action: 'clear' | 'cancel' | 'pause' | 'resume' | 'open' | 'reveal'; readonly id?: string }
   | { readonly type: 'automation.set-enabled'; readonly enabled: boolean }
   | { readonly type: 'workspace.switch'; readonly id: string }
   | ({ readonly type: 'workspace.create' | 'workspace.update' } & WorkspaceDraft)
@@ -60,6 +66,7 @@ export type Command =
   | { readonly type: 'blocking.log'; readonly visible: boolean }
   | { readonly type: 'blocking.refresh' | 'blocking.clear'; readonly tabId: string }
   | { readonly type: 'script.command'; readonly tabId: string; readonly id: string; readonly event: ScriptCommandEvent }
+  | { readonly type: 'shell.set-always-close'; readonly alwaysClose: boolean }
   | { readonly type: 'shell.set-appearance'; readonly theme: 'dark' | 'light'; readonly alwaysClose: boolean }
   | { readonly type: 'shell.set-chrome-layout'; readonly layout: ChromeLayout }
   | { readonly type: 'shell.set-layout'; readonly layout: ShellPreferences['layout'] }
@@ -204,7 +211,12 @@ export function decodeSnapshot(value: unknown): BrowserSnapshot {
       throw new Error('Invalid automation state');
     automation = Object.freeze({ enabled: a.enabled, endpoint: a.endpoint, clients: a.clients! });
   }
-  return Object.freeze({ ...(automation ? { automation } : {}), workspaces: decodeWorkspaces(s.workspaces), splits: Object.freeze(splits), ...(s.proxyProfile === undefined ? {} : { proxyProfile: s.proxyProfile as string }), credentialAutofill, addressSuggestions, dynamicRules: s.dynamicRules as string | undefined, filterProposal, blockingLog, scriptCommands: Object.freeze(scriptCommands), credentialProposal, version: protocolVersion, revision: s.revision as number, preferences, tabs: Object.freeze(tabs), activeTabId: s.activeTabId as string | null });
+  const downloads = s.downloads ?? [];
+  if (!Array.isArray(downloads) || downloads.some(file => !file || typeof file.id !== 'string' || typeof file.name !== 'string'
+    || typeof file.path !== 'string' || !Number.isFinite(file.received) || (file.total !== undefined && !Number.isFinite(file.total))
+    || typeof file.resumable !== 'boolean' || !['Downloading','Paused','Finished','Canceled','Failed'].includes(file.status)))
+    throw new Error('Invalid download snapshot');
+  return Object.freeze({ downloads: Object.freeze(downloads), ...(automation ? { automation } : {}), workspaces: decodeWorkspaces(s.workspaces), splits: Object.freeze(splits), ...(s.proxyProfile === undefined ? {} : { proxyProfile: s.proxyProfile as string }), credentialAutofill, addressSuggestions, dynamicRules: s.dynamicRules as string | undefined, filterProposal, blockingLog, scriptCommands: Object.freeze(scriptCommands), credentialProposal, version: protocolVersion, revision: s.revision as number, preferences, tabs: Object.freeze(tabs), activeTabId: s.activeTabId as string | null });
 }
 
 export function navigationTarget(input: string): string {

@@ -245,18 +245,26 @@ try {
   await sessions.browser.select((await sessions.browser.tabs()).findIndex(tab => tab.context === originalContext));
   const originalWindow = sessions.browser.windowId;
   await sessions.browser.currentShell({ type: 'command', command: { type: 'window.new', url: fixture, private: false } });
+  await attached.attach(first.socket);
   const windowDeadline = Date.now() + 10000;
-  while ((await sessions.browser.windows()).length < 2) {
+  while (!(await attached.browser.tabs()).some(tab => tab.windowId !== originalWindow && tab.context)) {
     assert(Date.now() < windowDeadline, 'Second window did not open');
     await new Promise(resolve => setTimeout(resolve, 50));
   }
-  await attached.attach(first.socket);
+  assert.deepEqual((await sessions.browser.windows()).map(window => window.windowId), [originalWindow]);
   await assert.rejects(attached.browser.target(), /Several browser windows/);
   const other = (await attached.browser.tabs()).findIndex(tab => tab.windowId !== originalWindow);
   await attached.browser.select(other);
   await attached.browser.evaluate('() => { window.agentSelected = true; }');
   assert.equal(await sessions.browser.evaluate('() => window.agentSelected'), undefined);
-  await attached.browser.closeTab(other);
+  // Closing the last ordinary window also closes every agent window. Keep it
+  // alive while checking that detaching the second client preserves the session.
+  const ordinaryWindow = attached.browser.windowId!;
+  const ordinaryContext = await attached.browser.target();
+  await attached.browser.newTab();
+  const originalIndex = (await attached.browser.tabs()).findIndex(tab => tab.context === ordinaryContext);
+  await attached.browser.closeTab(originalIndex);
+  assert.equal((await attached.browser.tabs()).some(tab => tab.context === ordinaryContext), false);
   await attached.close();
   console.log('Tab lifecycle and explicit multi-window selection passed');
 
@@ -271,7 +279,14 @@ try {
   await attached.close();
   assert.equal((await sessions.browser.currentShell({ type: 'snapshot' })).automation.enabled, true);
   console.log('Local automation remains available after attached client disconnect');
+
+  await attached.attach(first.socket);
+  await sessions.close(first.id);
+  const remaining = (await attached.browser.tabs()).findIndex(tab => tab.windowId === ordinaryWindow);
+  await attached.browser.select(remaining);
+  await attached.browser.currentShell({ type: 'command', command: { type: 'window.close' } });
 } catch (error) {
+  console.error(error);
   console.error(JSON.stringify(sessions.diagnostics(), null, 2));
   throw error;
 } finally {

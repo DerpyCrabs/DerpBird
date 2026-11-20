@@ -1,0 +1,49 @@
+#downloads-indicator, #downloads-popover button {
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.navigation > #downloads-indicator { position: relative; flex: 0 0 28px; height: 28px; padding: 6px; }
+#downloads-indicator svg, #downloads-popover svg { width: 16px; height: 16px; }
+#downloads-indicator[data-active]::after { content: ''; position: absolute; right: 3px; top: 2px; width: 5px; height: 5px; border-radius: 50%; background: #a8ccef; }
+#downloads-indicator:hover, #downloads-indicator[aria-expanded=true], #downloads-popover button:hover { background: var(--pref-hover); }
+#downloads-popover { position: fixed; z-index: 1000; box-sizing: border-box; width: min(320px, calc(100vw - 12px)); max-height: calc(100dvh - 72px); overflow: auto; padding: var(--tab-rail-inset); border: 1px solid var(--pref-line); border-radius: 10px; box-shadow: 0 8px 24px #0005; background: var(--pref-panel); color: var(--pref-text); font: 13px/18px Inter, system-ui, sans-serif; }
+#downloads-popover[data-empty] {
+  width: max-content;
+  max-width: calc(100vw - 12px);
+  /* Inter's line box includes leading above and below the visible label. */
+  padding: 3px 9px 4.5px 8px;
+  line-height: 20px;
+}
+#downloads-popover[hidden] { display:none; }
+#downloads-popover:focus {outline:none;}
+#downloads-popover :focus-visible, #downloads-indicator:focus-visible {outline:2px solid var(--pref-focus);}
+#downloads-popover header, #downloads-popover .transfer-row {display:flex; align-items:center; gap:4px; padding:var(--tab-rail-inset); padding-inline-end:0;}
+#downloads-popover header {min-height:30px;padding-block-start:0;}
+#downloads-popover header button {min-height:24px;padding-block:0;}
+
+#downloads-popover header strong, #downloads-popover .transfer-row div {flex:1;min-width:0;}
+#downloads-popover .transfer-row b, #downloads-popover .transfer-row small {display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#downloads-popover .transfer-row b {font-weight:500;}
+#downloads-popover small, #downloads-popover header button {color:var(--pref-muted);font-size:12px;}
+#downloads-popover small {line-height:16px;}
+#downloads-popover button {min-height:28px;padding:var(--tab-rail-inset);}
+#downloads-popover button[aria-label] {width:28px;padding:0;}
+
+
+#downloads-popover .file-format { flex:0 0 20px; width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; color:var(--pref-muted); }
+#downloads-popover .transfer-row {gap:var(--tab-rail-inset);}
+#downloads-popover:not([data-empty]) {padding-block-end:3.5px;}
+#download-actions {position:fixed; z-index:1; display:grid; padding:var(--tab-rail-inset); padding-inline-end:5px; border:1px solid var(--pref-line); border-radius:9px; background:var(--pref-panel); box-shadow:0 4px 12px #0005;}
+#downloads-popover #download-actions button {justify-content:start; min-height:0; padding:1px var(--tab-rail-inset) 6px; line-height:18px; text-align:start;}
+#download-actions button:focus-visible {background:var(--pref-hover);outline-offset:-2px;}
+
+@media (prefers-reduced-motion: no-preference) {
+  #downloads-popover:not([hidden]), #download-actions { animation: download-menu-appear 120ms ease-out; }
+  @keyframes download-menu-appear { from { opacity: 0; } to { opacity: 1; } }
+}

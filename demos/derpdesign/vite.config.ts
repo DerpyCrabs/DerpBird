@@ -1,3 +1,4 @@
+import {studyDocument} from './settings-study/document';
 import {readFile} from 'node:fs/promises';
 import {createRequire} from 'node:module';
 import {resolve} from 'node:path';
@@ -5,7 +6,7 @@ const source=resolve(import.meta.dirname,'../..');
 const require=createRequire(resolve(source,'package.json'));
 const {effectweb}=await import(resolve(source,'node_modules/@effectweb/compiler/dist/vite.js'));
 const {default:tailwindcss}=await import(require.resolve('@tailwindcss/vite'));
-export default {root:import.meta.dirname,plugins:[{name:'derpdesign-project-document',transformIndexHtml:{order:'pre',async handler(){
+export default {root:import.meta.dirname,plugins:[studyDocument(source),{name:'derpdesign-project-document',transformIndexHtml:{order:'pre',async handler(){
 // Use the real document shell, including theme classes and data attributes.
 const html=await readFile(resolve(source,'index.html'),'utf8');
 if(!html.includes('src="/src/main.tsx"'))throw Error('DerpBird entry changed; update the external harness document adapter');
