@@ -1,0 +1,820 @@
+diff --git i/Libraries/LibWeb/DOM/Document.cpp w/Libraries/LibWeb/DOM/Document.cpp
+--- i/Libraries/LibWeb/DOM/Document.cpp
++++ w/Libraries/LibWeb/DOM/Document.cpp
+@@ -188,6 +188,7 @@
+ #include <LibWeb/HTML/History.h>
+ #include <LibWeb/HTML/ListOfAvailableImages.h>
+ #include <LibWeb/HTML/LocalNavigable.h>
++#include <LibWeb/HTML/CheckUnloadingCanceledState.h>
+ #include <LibWeb/HTML/LocalTraversableNavigable.h>
+ #include <LibWeb/HTML/Location.h>
+ #include <LibWeb/HTML/MessageEvent.h>
+@@ -11545,7 +11546,7 @@
+     // FIXME: Revisit this approximation of "unlikely to be annoying, deceptive, or pointless".
+     return is_active()
+         && is_fully_active()
+-        && visibility_state() == HTML::VisibilityState::Visible;
++        && (visibility_state() == HTML::VisibilityState::Visible || HTML::CheckUnloadingCanceledState::can_present_background_close_prompt(page()));
+ }
+ 
+ // https://html.spec.whatwg.org/multipage/browsing-the-web.html#steps-to-fire-beforeunload
+diff --git i/Libraries/LibWeb/HTML/CheckUnloadingCanceledState.cpp w/Libraries/LibWeb/HTML/CheckUnloadingCanceledState.cpp
+--- i/Libraries/LibWeb/HTML/CheckUnloadingCanceledState.cpp
++++ w/Libraries/LibWeb/HTML/CheckUnloadingCanceledState.cpp
+@@ -68,8 +68,18 @@
+     ++m_phase2_generation;
+ }
+ 
+-void CheckUnloadingCanceledState::start(Vector<GC::Root<LocalNavigable>> const& navigables_that_need_before_unload, RefPtr<SessionHistoryEntry> target_entry)
+-{
++bool CheckUnloadingCanceledState::can_present_background_close_prompt(Page const& page)
++{
++    auto* traversable = as_if<LocalTraversableNavigable>(page.top_level_traversable().ptr());
++    if (!traversable)
++        return false;
++    auto check = traversable->active_beforeunload_check({});
++    return check && check->m_window_close == WindowClose::Yes;
++}
++
++void CheckUnloadingCanceledState::start(Vector<GC::Root<LocalNavigable>> const& navigables_that_need_before_unload, RefPtr<SessionHistoryEntry> target_entry, WindowClose window_close)
++{
++    m_window_close = window_close;
+     // 1. Let documentsToFireBeforeunload be the active document of each item in navigablesThatNeedBeforeUnload.
+     for (auto& navigable : navigables_that_need_before_unload)
+         m_phase2_documents.append(*navigable->active_document());
+diff --git i/Libraries/LibWeb/HTML/CheckUnloadingCanceledState.h w/Libraries/LibWeb/HTML/CheckUnloadingCanceledState.h
+--- i/Libraries/LibWeb/HTML/CheckUnloadingCanceledState.h
++++ w/Libraries/LibWeb/HTML/CheckUnloadingCanceledState.h
+@@ -37,7 +37,9 @@
+     virtual void visit_edges(Visitor&) override;
+ 
+     void adopt_for_close(GC::Ref<GC::Function<void(bool)>> callback);
+-    void start(Vector<GC::Root<LocalNavigable>> const& navigables_that_need_before_unload, RefPtr<SessionHistoryEntry> target_entry);
++    enum class WindowClose { No, Yes };
++    static bool can_present_background_close_prompt(Page const&);
++    void start(Vector<GC::Root<LocalNavigable>> const& navigables_that_need_before_unload, RefPtr<SessionHistoryEntry> target_entry, WindowClose = WindowClose::No);
+ 
+ private:
+     bool document_was_already_fired(DOM::Document const&) const;
+@@ -52,6 +54,7 @@
+ 
+     Result m_final_status { Result::Continue };
+     UnloadPromptShown m_unload_prompt_shown { UnloadPromptShown::No };
++    WindowClose m_window_close { WindowClose::No };
+     bool m_completed { false };
+     GC::Ref<Page> m_page;
+     GC::Ptr<LocalTraversableNavigable> m_owner;
+diff --git i/Libraries/LibWeb/HTML/LocalNavigable.cpp w/Libraries/LibWeb/HTML/LocalNavigable.cpp
+--- i/Libraries/LibWeb/HTML/LocalNavigable.cpp
++++ w/Libraries/LibWeb/HTML/LocalNavigable.cpp
+@@ -4607,7 +4607,7 @@
+         if (auto* local_navigable = as_if<LocalNavigable>(navigable.ptr()))
+             local_navigables.append(*local_navigable);
+     }
+-    state->start(local_navigables, {});
++    state->start(local_navigables, {}, CheckUnloadingCanceledState::WindowClose::Yes);
+ }
+ 
+ // https://html.spec.whatwg.org/multipage/browsing-the-web.html#finalize-a-cross-document-navigation
+diff --git i/UI/Qt/Application.cpp w/UI/Qt/Application.cpp
+--- i/UI/Qt/Application.cpp
++++ w/UI/Qt/Application.cpp
+@@ -5,6 +5,8 @@
+  */
+ 
+ #include <UI/Qt/DerpBirdChrome.h>
++#include <UI/Qt/DerpBirdBookmarkDialog.h>
++#include <QEventLoop>
+ #include <UI/Qt/DerpBirdCredentialManager.h>
+ #include <UI/Qt/DerpBirdStyleStore.h>
+ #include <LibWebView/Profile.h>
+@@ -1117,8 +1119,78 @@
+     m_picture_in_picture_windows.clear();
+ }
+ 
++// Menu actions and download completions can arrive while no browser window has focus.
++BrowserWindow* Application::shell_dialog_window()
++{
++    if (!qEnvironmentVariableIsSet("DERPBIRD_UI"))
++        return nullptr;
++    auto& app = Application::the();
++    if (auto* active = app.active_window_if_any(); active && active->derpbird_chrome())
++        return active;
++    for (auto* widget : QApplication::topLevelWidgets()) {
++        if (auto* window = as_if<BrowserWindow>(widget); window && window->isVisible() && window->derpbird_chrome())
++            return window;
++    }
++    return &app.new_window({ Application::settings().new_tab_page_url() }, app.configuration_for_new_window());
++}
++
+ void Application::show_process_manager()
+ {
++    if (auto* active = shell_dialog_window()) {
++        auto* chrome = active->derpbird_chrome();
++        auto& dialog = chrome->window_dialog();
++        if (dialog.is_open()) return;
++        auto* timer = new QTimer(chrome);
++        dialog.show("processes", "Task manager", {}, {}, "Done", [timer](bool, auto const&) { timer->stop(); timer->deleteLater(); });
++        auto snapshots = [this] {
++#ifdef LADYBIRD_HUB_IN_OWN_PROCESS
++            return process_snapshots();
++#else
++            return WebView::process_snapshots(WebView::Application::process_manager());
++#endif
++        };
++        auto terminable = [](auto type) { return !first_is_one_of(type, WebView::ProcessType::Browser, WebView::ProcessType::UI, WebView::ProcessType::Hub); };
++        auto refresh = [chrome, snapshots, terminable] {
++            JsonArray rows;
++            for (auto const& process : snapshots()) {
++                JsonObject row;
++                row.set("id"sv, process.child_id);
++                row.set("pid"sv, process.pid);
++                row.set("name"sv, WebView::process_name_from_type(process.type));
++                row.set("cpu"sv, static_cast<double>(process.cpu_percent));
++                row.set("bytes"sv, process.memory_usage_bytes);
++                row.set("canEnd"sv, terminable(process.type));
++                JsonArray pages;
++                if (process.site_url.has_value()) pages.must_append(process.site_url->serialize());
++                for (auto const& tab : process.tabs) pages.must_append(tab.title.is_empty() ? tab.page.url.serialize() : tab.title.to_utf8());
++                for (auto const& frame : process.frames) pages.must_append(frame.url.serialize());
++                row.set("pages"sv, move(pages));
++                rows.must_append(move(row));
++            }
++            chrome->window_dialog().configure("processes"sv, move(rows));
++            chrome->queue_snapshot();
++        };
++        dialog.on_edit = [chrome, snapshots, terminable, refresh](QString const& text) {
++            bool ok = false;
++            auto id = text.toULongLong(&ok);
++            if (!ok) return;
++            for (auto const& process : snapshots()) {
++                if (process.child_id != id || !terminable(process.type)) continue;
++#ifdef LADYBIRD_HUB_IN_OWN_PROCESS
++                bool ended = HubConnection::the().terminate_process(id);
++#else
++                bool ended = WebView::end_process(WebView::Application::process_manager(), id);
++#endif
++                if (!ended) chrome->window_dialog().configure("message"sv, "Could not end the selected process."sv);
++                break;
++            }
++            refresh();
++        };
++        QObject::connect(timer, &QTimer::timeout, chrome, refresh);
++        timer->start(1000);
++        refresh();
++        return;
++    }
+     if (!m_process_manager_window) {
+         m_process_manager_window = make<ProcessManagerWindow>(ProcessManagerWindow::Source {
+ #ifdef LADYBIRD_HUB_IN_OWN_PROCESS
+@@ -1931,6 +2003,7 @@
+ void Application::open_file()
+ {
+     if (!m_active_window) {
++        if (auto* window = shell_dialog_window()) { window->open_file(); return; }
+         auto filename = QFileDialog::getOpenFileUrl(nullptr, "Open file", QDir::homePath(), "All Files (*.*)");
+         if (filename.isValid())
+             new_window({ ak_url_from_qurl(filename) });
+@@ -2067,6 +2140,23 @@
+     auto& downloader = RemoteDownloads::the();
+ 
+     if (downloader.has_unresumable_downloads()) {
++        auto* window = parent ? as_if<BrowserWindow>(parent) : shell_dialog_window();
++        if (window && window->derpbird_chrome()) {
++            auto& prompt = window->derpbird_chrome()->window_dialog();
++            if (prompt.is_open()) return false;
++            QEventLoop wait;
++            bool confirmed = false;
++            QObject::connect(window, &QObject::destroyed, &wait, &QEventLoop::quit);
++            prompt.show("downloads", "Cancel active downloads?", "Closing will cancel downloads that cannot be resumed.", {}, "Cancel downloads", [&](bool accepted, auto const&) {
++                confirmed = accepted;
++                wait.quit();
++            });
++            wait.exec();
++            if (!confirmed) return false;
++            downloader.cancel_unresumable_downloads();
++            downloader.pause_active_downloads();
++            return true;
++        }
+         QMessageBox dialog(parent ? parent : active_window_if_any());
+         dialog.setWindowTitle("Ladybird");
+         dialog.setIcon(QMessageBox::Warning);
+@@ -2411,6 +2501,12 @@
+ {
+     auto message = MUST(String::formatted("{} saved to: {}", download_name, path));
+ 
++    if (auto* window = shell_dialog_window()) {
++        window->derpbird_chrome()->window_dialog().show("download", "Download complete", qstring_from_ak_string(message), {}, "Open folder", [path](bool open, auto const&) {
++            if (open) QDesktopServices::openUrl(QUrl::fromLocalFile(qstring_from_ak_string(LexicalPath { path }.dirname())));
++        });
++        return;
++    }
+     auto* dialog = create_message_box(QMessageBox::Information, message, active_window_if_any());
+ 
+     auto* open_folder_button = dialog->addButton(QMessageBox::Open);
+@@ -2424,6 +2520,10 @@
+ 
+ void Application::display_error_dialog(StringView error_message) const
+ {
++    if (auto* window = shell_dialog_window()) {
++        window->derpbird_chrome()->window_dialog().show("alert", "DerpBird", qstring_from_ak_string(error_message), {}, {}, [](bool, auto const&) {});
++        return;
++    }
+     create_message_box(QMessageBox::Warning, error_message, active_window_if_any())->open();
+ }
+ 
+@@ -2431,6 +2531,13 @@
+ {
+     static constexpr auto current_version = BROWSER_VERSION ""sv;
+ 
++    if (qEnvironmentVariableIsSet("DERPBIRD_UI") && (kind == WebView::UpdateCheckResult::Kind::UpToDate || kind == WebView::UpdateCheckResult::Kind::DevelopmentBuild)) {
++        auto* window = shell_dialog_window();
++        auto message = kind == WebView::UpdateCheckResult::Kind::UpToDate
++            ? QStringLiteral("You are running the latest version.") : QStringLiteral("Development builds do not check for updates.");
++        window->derpbird_chrome()->window_dialog().show("alert", "DerpBird updates", message, {}, {}, [](bool, auto const&) {});
++        return;
++    }
+     switch (kind) {
+     case WebView::UpdateCheckResult::Kind::UpToDate:
+         create_message_box(QMessageBox::Information, MUST(String::formatted("Ladybird {} is the newest version.", current_version)), active_window_if_any())->open();
+@@ -2729,6 +2836,36 @@
+     }
+ }
+ 
++static NonnullRefPtr<Application::BookmarkPromise> web_bookmark_dialog(DerpBirdChrome& chrome, BookmarkDialog::Type type, Optional<String const&> name, Optional<URL::URL const&> url, Optional<String> favicon, Optional<String const&> folder, Optional<String const&> excluded = {})
++{
++    auto promise = Application::BookmarkPromise::construct();
++    bool is_folder = type == BookmarkDialog::Type::AddFolder || type == BookmarkDialog::Type::EditFolder;
++    QString title;
++    switch (type) {
++    case BookmarkDialog::Type::AddBookmark: title = "Add bookmark"; break;
++    case BookmarkDialog::Type::EditBookmark: title = "Edit bookmark"; break;
++    case BookmarkDialog::Type::AddFolder: title = "Add folder"; break;
++    case BookmarkDialog::Type::EditFolder: title = "Edit folder"; break;
++    }
++    show_web_bookmark_dialog(chrome.window_dialog(), title, is_folder, qstring_from_ak_string(name.value_or(String {})), url.has_value() ? qstring_from_ak_string(url->serialize()) : QString {}, Application::bookmark_store().root_items(), folder, excluded, {},
++        [promise, is_folder, favicon = move(favicon)](bool accepted, QString const& text) mutable {
++            if (!accepted) { promise->reject(Error::from_errno(ECANCELED)); return; }
++            auto fields = QJsonDocument::fromJson(text.toUtf8()).object();
++            Optional<String> name;
++            Optional<String> folder;
++            if (auto value = fields.value("name").toString(); !value.isEmpty()) name = ak_string_from_qstring(value);
++            if (auto value = fields.value("folder").toString(); !value.isEmpty()) folder = ak_string_from_qstring(value);
++            if (is_folder) {
++                promise->resolve(Application::BookmarkDialogResult { .data = BookmarkItem::Folder { move(name), {} }, .target_folder_id = move(folder) });
++            } else if (auto url = WebView::sanitize_url(ak_string_from_qstring(fields.value("url").toString())); url.has_value()) {
++                promise->resolve(Application::BookmarkDialogResult { .data = BookmarkItem::Bookmark { url.release_value(), move(name), move(favicon) }, .target_folder_id = move(folder) });
++            } else {
++                promise->reject(Error::from_errno(EINVAL));
++            }
++        });
++    return promise;
++}
++
+ static NonnullRefPtr<Application::BookmarkPromise> display_add_or_edit_bookmark_dialog(
+     QWidget* parent,
+     BookmarkDialog::Type dialog_type,
+@@ -2737,6 +2874,8 @@
+     Optional<String> current_favicon_hash,
+     Optional<String const&> selected_folder_id = {})
+ {
++    if (auto* window = Application::shell_dialog_window())
++        return web_bookmark_dialog(*window->derpbird_chrome(), dialog_type, current_title, current_url, move(current_favicon_hash), selected_folder_id);
+     auto const& folders = Application::bookmark_store().root_items();
+ 
+     auto* dialog = new BookmarkDialog(parent, dialog_type, current_url, current_title, selected_folder_id, folders);
+@@ -2804,6 +2943,8 @@
+     Optional<String const&> selected_folder_id,
+     Optional<String const&> excluded_folder_id = {})
+ {
++    if (auto* window = Application::shell_dialog_window())
++        return web_bookmark_dialog(*window->derpbird_chrome(), dialog_type, current_title, {}, {}, selected_folder_id, excluded_folder_id);
+     auto* dialog = new BookmarkDialog(parent, dialog_type, {}, current_title, selected_folder_id, Application::bookmark_store().root_items(), excluded_folder_id);
+     auto promise = Application::BookmarkPromise::construct();
+ 
+diff --git i/UI/Qt/Application.h w/UI/Qt/Application.h
+--- i/UI/Qt/Application.h
++++ w/UI/Qt/Application.h
+@@ -160,6 +160,7 @@
+     void reset_private_browsing_session();
+     void focus_location_editor();
+     void show_process_manager();
++    static BrowserWindow* shell_dialog_window();
+     // Asks every window's pages if they may unload, one window at a time. Once all of them agree, it confirms stopping
+     // the downloads and quits; if a page refuses or the downloads are kept, the quit is canceled and no window closes.
+     void quit();
+diff --git i/UI/Qt/BrowserWindow.cpp w/UI/Qt/BrowserWindow.cpp
+--- i/UI/Qt/BrowserWindow.cpp
++++ w/UI/Qt/BrowserWindow.cpp
+@@ -2303,15 +2303,15 @@
+     begin_window_close_preflight(AK::move(on_complete));
+ }
+ 
+-void BrowserWindow::raise_for_close_prompt()
+-{
+-    // Only an application-wide check carries a completion; a close the user started on this window is already in front.
+-    if (!m_window_close_coordinator.is_running() || !m_window_close_preflight_on_complete)
+-        return;
+-
+-    // A page's beforeunload prompt shows inside this window, which may sit behind other windows or in the Dock while a
+-    // close check asks it, so the window comes to the front first, where the user can see the prompt.
+-    bring_to_front();
++bool BrowserWindow::raise_for_close_prompt(Tab& tab)
++{
++    if (!m_window_close_coordinator.is_running() || m_window_close_current_preflight_tab != &tab)
++        return false;
++    if (m_current_tab != &tab)
++        activate_tab(tab_index(&tab));
++    if (m_window_close_preflight_on_complete)
++        bring_to_front();
++    return true;
+ }
+ 
+ void BrowserWindow::bring_to_front()
+@@ -2361,6 +2361,41 @@
+     session().window_geometry_changed(*m_session_window_id, window_geometry);
+ }
+ 
++WindowCloseCoordinator::Preflight BrowserWindow::close_check_for_tab(QPointer<Tab> tab)
++{
++    return [this, tab](Function<void(bool)> on_complete) mutable {
++        if (!tab) {
++            on_complete(true);
++            return;
++        }
++
++        auto index = tab_index(tab);
++        if (index < 0) {
++            on_complete(true);
++            return;
++        }
++
++        m_window_close_current_document_changed = false;
++        m_window_close_current_preflight_tab = tab;
++        auto weak_this = QPointer<BrowserWindow>(this);
++        auto request = ++m_window_close_check_id;
++        tab->request_window_close_preflight([weak_this, tab, request, on_complete = AK::move(on_complete)](bool approved) mutable {
++            // NB: The coordinator that would take this answer went away with the window.
++            if (!weak_this || weak_this->m_window_close_check_id != request || !weak_this->m_window_close_coordinator.is_running())
++                return;
++            if (weak_this->m_window_close_current_preflight_tab == tab)
++                weak_this->m_window_close_current_preflight_tab = nullptr;
++            if (weak_this->m_window_close_current_document_changed) {
++                on_complete(true); // The replacement document has its own check in the queue.
++                return;
++            }
++            if (approved && tab && !weak_this->m_window_close_approved_tabs.contains([&](auto const& approved_tab) { return approved_tab == tab; }))
++                weak_this->m_window_close_approved_tabs.append(tab);
++            on_complete(approved);
++        });
++    };
++}
++
+ void BrowserWindow::begin_window_close_preflight(Function<void(bool approved)> on_complete)
+ {
+     m_window_close_active_tab_index = static_cast<i64>(max(m_tabs_container->current_index(), 0));
+@@ -2378,34 +2413,8 @@
+ 
+     Vector<WindowCloseCoordinator::Preflight> preflights;
+     preflights.ensure_capacity(tabs.size());
+-    for (auto tab : tabs) {
+-        preflights.append([this, tab](Function<void(bool)> on_complete) mutable {
+-            if (!tab) {
+-                on_complete(true);
+-                return;
+-            }
+-
+-            auto index = tab_index(tab);
+-            if (index < 0) {
+-                on_complete(true);
+-                return;
+-            }
+-
+-            activate_tab(index);
+-            m_window_close_current_preflight_tab = tab;
+-            auto weak_this = QPointer<BrowserWindow>(this);
+-            tab->request_window_close_preflight([weak_this, tab, on_complete = AK::move(on_complete)](bool approved) mutable {
+-                // NB: The coordinator that would take this answer went away with the window.
+-                if (!weak_this)
+-                    return;
+-                if (weak_this->m_window_close_current_preflight_tab == tab)
+-                    weak_this->m_window_close_current_preflight_tab = nullptr;
+-                if (approved && tab && !weak_this->m_window_close_approved_tabs.contains([&](auto const& approved_tab) { return approved_tab == tab; }))
+-                    weak_this->m_window_close_approved_tabs.append(tab);
+-                on_complete(approved);
+-            });
+-        });
+-    }
++    for (auto tab : tabs)
++        preflights.append(close_check_for_tab(tab));
+ 
+     // With a completion, approval only marks the window as approved (so that a later close() goes straight through),
+     // and the caller decides when to close it.
+@@ -2437,11 +2446,6 @@
+         [weak_this] {
+             if (!weak_this)
+                 return;
+-            if (auto* original_tab = weak_this->m_window_close_original_active_tab.data()) {
+-                auto index = weak_this->tab_index(original_tab);
+-                if (index >= 0)
+-                    weak_this->activate_tab(index);
+-            }
+             weak_this->m_window_close_active_tab_index.clear();
+             weak_this->m_window_close_original_active_tab = nullptr;
+             weak_this->m_window_close_current_preflight_tab = nullptr;
+@@ -2491,6 +2495,16 @@
+     if (!m_window_close_coordinator.is_running() && !m_window_close_approved)
+         return;
+ 
++    if (m_window_close_coordinator.is_running()) {
++        if (m_window_close_current_preflight_tab == &tab) {
++            if (m_window_close_current_document_changed) return;
++            m_window_close_current_document_changed = true;
++        } else if (!m_window_close_approved_tabs.remove_first_matching([&](auto const& approved) { return approved == &tab; })) {
++            return;
++        }
++        m_window_close_coordinator.recheck(close_check_for_tab(&tab));
++        return;
++    }
+     if (m_window_close_current_preflight_tab == &tab || m_window_close_approved_tabs.contains([&](auto const& approved_tab) { return approved_tab == &tab; }))
+         cancel_window_close_preflight();
+ }
+diff --git i/UI/Qt/BrowserWindow.h w/UI/Qt/BrowserWindow.h
+--- i/UI/Qt/BrowserWindow.h
++++ w/UI/Qt/BrowserWindow.h
+@@ -201,7 +201,7 @@
+     // a close() goes straight through.
+     void request_close_preflight(Function<void(bool approved)> on_complete);
+     // Brings the window forward for a page's beforeunload prompt during an application-wide close check.
+-    void raise_for_close_prompt();
++    bool raise_for_close_prompt(Tab&);
+     // Unminimizes, raises and activates the window, so the user sees it in front.
+     void bring_to_front();
+     // The tab showing this view, if it's one of this window's.
+@@ -297,6 +297,7 @@
+     void update_window_title(QString const&);
+     void register_window_with_session_store();
+     void sync_session_tab_order();
++    WindowCloseCoordinator::Preflight close_check_for_tab(QPointer<Tab>);
+     void begin_window_close_preflight(Function<void(bool approved)> on_complete = {});
+ 
+     void set_current_tab(Tab* tab);
+@@ -377,6 +378,8 @@
+     Vector<QPointer<Tab>> m_window_close_approved_tabs;
+     WindowCloseCoordinator m_window_close_coordinator;
+     Function<void(bool approved)> m_window_close_preflight_on_complete;
++    u64 m_window_close_check_id { 0 };
++    bool m_window_close_current_document_changed { false };
+     bool m_window_close_approved { false };
+     bool m_window_close_accepted { false };
+ 
+diff --git i/UI/Qt/PermissionPromptPopover.cpp w/UI/Qt/PermissionPromptPopover.cpp
+--- i/UI/Qt/PermissionPromptPopover.cpp
++++ w/UI/Qt/PermissionPromptPopover.cpp
+@@ -233,7 +233,7 @@
+ void PermissionPromptQueue::enqueue(WebView::PermissionPromptRequest request, WebView::PermissionPromptCallback on_outcome)
+ {
+     m_pending.append({ move(request), move(on_outcome) });
+-    if (!m_current)
++    if (!m_current && !m_web_request.has_value())
+         show_next();
+ }
+ 
+@@ -241,6 +241,13 @@
+ {
+     m_pending.remove_all_matching([&](auto const& pending) { return pending.request.is_same_request_as(request); });
+ 
++    if (m_web_request.has_value() && m_web_request->is_same_request_as(request)) {
++        hide_web();
++        m_web_request.clear();
++        m_current_callback = {};
++        show_next();
++        return;
++    }
+     if (!m_current || !m_current->request().is_same_request_as(request))
+         return;
+     auto* popover = exchange(m_current, nullptr);
+@@ -254,6 +261,12 @@
+ void PermissionPromptQueue::ignore_all()
+ {
+     auto pending = move(m_pending);
++    if (m_web_request.has_value()) {
++        hide_web();
++        m_web_request.clear();
++        auto callback = move(m_current_callback);
++        callback(Web::Permissions::PromptOutcome::Ignored);
++    }
+     if (m_current)
+         m_current->ignore();
+     for (auto& entry : pending)
+@@ -262,6 +275,7 @@
+ 
+ void PermissionPromptQueue::suspend()
+ {
++    if (!m_suspended && m_web_request.has_value()) hide_web();
+     m_suspended = true;
+     if (m_current)
+         m_current->suspend();
+@@ -269,17 +283,34 @@
+ 
+ void PermissionPromptQueue::resume()
+ {
+-    m_suspended = false;
++    bool was_suspended = exchange(m_suspended, false);
++    if (was_suspended && m_web_request.has_value()) present_web();
+     if (m_current)
+         m_current->resume();
+ }
+ 
++void PermissionPromptQueue::present_web()
++{
++    show_web(*m_web_request, [this](auto outcome) {
++        m_web_request.clear();
++        auto callback = move(m_current_callback);
++        callback(outcome);
++        show_next();
++    });
++}
++
+ void PermissionPromptQueue::show_next()
+ {
+-    if (m_pending.is_empty() || !create_popover)
++    if (m_pending.is_empty() || (!create_popover && !show_web))
+         return;
+ 
+     auto next = m_pending.take_first();
++    if (show_web) {
++        m_web_request = move(next.request);
++        m_current_callback = move(next.on_outcome);
++        if (!m_suspended) present_web();
++        return;
++    }
+     m_current = create_popover(next.request);
+     m_current_callback = move(next.on_outcome);
+     m_current->on_outcome = [this](Web::Permissions::PromptOutcome outcome) {
+diff --git i/UI/Qt/PermissionPromptPopover.h w/UI/Qt/PermissionPromptPopover.h
+--- i/UI/Qt/PermissionPromptPopover.h
++++ w/UI/Qt/PermissionPromptPopover.h
+@@ -71,6 +71,8 @@
+ 
+     Function<PermissionPromptPopover*(WebView::PermissionPromptRequest const&)> create_popover;
+ 
++    Function<void(WebView::PermissionPromptRequest const&, WebView::PermissionPromptCallback)> show_web;
++    Function<void()> hide_web;
+     void enqueue(WebView::PermissionPromptRequest, WebView::PermissionPromptCallback);
+     void cancel(WebView::PermissionPromptRequest const&);
+     void ignore_all();
+@@ -89,6 +91,8 @@
+     void show_next();
+ 
+     Vector<Pending> m_pending;
++    Optional<WebView::PermissionPromptRequest> m_web_request;
++    void present_web();
+     PermissionPromptPopover* m_current { nullptr };
+     WebView::PermissionPromptCallback m_current_callback;
+     bool m_suspended { false };
+diff --git i/UI/Qt/Tab.cpp w/UI/Qt/Tab.cpp
+--- i/UI/Qt/Tab.cpp
++++ w/UI/Qt/Tab.cpp
+@@ -24,6 +24,9 @@
+ #include <UI/Qt/BookmarkPopover.h>
+ #include <UI/Qt/BrowserWindow.h>
+ #include <UI/Qt/DerpBirdChrome.h>
++#include <UI/Qt/DerpBirdBookmarkDialog.h>
++#include <LibWebView/URL.h>
++#include <UI/Qt/DerpBirdDialog.h>
+ #include <UI/Qt/ChromeStyle.h>
+ #include <UI/Qt/HubConnection.h>
+ #include <UI/Qt/Icon.h>
+@@ -222,8 +225,20 @@
+     // where the window stands now.
+     m_view->set_window_position({ m_window->x(), m_window->y() });
+     m_view->set_window_size({ m_window->width(), m_window->height() });
+-    m_javascript_dialog = new JavaScriptDialog(m_view);
+-    m_javascript_dialog->on_page_dim_change = [this](qreal dim) { m_view->set_page_dim(dim); };
++    m_javascript_dialog = make<DerpBirdDialog>();
++    if (qEnvironmentVariableIsSet("DERPBIRD_UI")) {
++        m_javascript_dialog->changed = [this] {
++            update_permission_prompts();
++            if (auto* chrome = m_window->derpbird_chrome()) chrome->queue_snapshot();
++        };
++    } else {
++        auto* dialog = new JavaScriptDialog(m_view);
++        m_javascript_dialog->legacy = dialog;
++        dialog->on_complete = [this](auto type, bool accepted, auto const& text) {
++            m_javascript_dialog->on_complete(type, accepted, text);
++        };
++        dialog->on_page_dim_change = [this](qreal dim) { m_view->set_page_dim(dim); };
++    }
+     m_find_in_page = new FindInPageWidget(this, m_view);
+     m_view->add_floating_surface(*m_find_in_page);
+     m_find_in_page->setVisible(false);
+@@ -430,9 +445,9 @@
+     view().on_request_before_unload = [this](auto const& source, auto on_complete) {
+         hide_hover_label();
+         m_before_unload_completion = AK::move(on_complete);
+-        m_window->raise_for_close_prompt();
++        bool closing_window = m_window->raise_for_close_prompt(*this);
+         m_javascript_dialog->set_title_icon(tab_icon());
+-        m_javascript_dialog->show_before_unload(qstring_from_ak_string(source));
++        m_javascript_dialog->show_before_unload(qstring_from_ak_string(source), closing_window);
+     };
+ 
+     view().on_request_confirm = [this, javascript_dialog_title, offer_to_block_further_dialogs](auto const& message) {
+@@ -540,6 +555,11 @@
+         auto details = MUST(String::formatted("URL: '{}'", url));
+         auto open_button_text = handler_name.is_empty() ? "Open"_string : MUST(String::formatted("Open {}", application_name));
+ 
++        if (m_window->derpbird_chrome()) {
++            m_javascript_dialog->show("external", qstring_from_ak_string(title), qstring_from_ak_string(message) + "\n" + qstring_from_ak_string(details), {}, qstring_from_ak_string(open_button_text),
++                [done = AK::move(on_complete)](bool accepted, auto const&) mutable { done(accepted); });
++            return;
++        }
+         auto* dialog = new QMessageBox(&view());
+         m_external_url_confirmation_dialog = dialog;
+         dialog->setAttribute(Qt::WA_DeleteOnClose);
+@@ -562,6 +582,33 @@
+         dialog->open();
+     };
+ 
++    if (qEnvironmentVariableIsSet("DERPBIRD_UI")) {
++        m_permission_dialog = make<DerpBirdDialog>();
++        m_permission_dialog->changed = [this] { if (auto* chrome = m_window->derpbird_chrome()) chrome->queue_snapshot(); };
++        m_permission_prompts.hide_web = [this] { m_permission_dialog->reset(); };
++        m_permission_prompts.show_web = [this](auto const& request, auto done) {
++            using Outcome = Web::Permissions::PromptOutcome;
++            using Name = Web::Permissions::PermissionName;
++            auto feature = request.name == Name::Geolocation ? "use your location" : request.name == Name::Microphone ? "use your microphone" : "send notifications";
++            auto origin = request.is_file ? QStringLiteral("This file") : request.top_level_origin.is_opaque() ? QStringLiteral("This page") : qstring_from_ak_string(request.top_level_origin.serialize());
++            bool notice = request.kind == WebView::PermissionPromptKind::SystemDeniedNotice;
++            bool once = request.name != Name::Notifications;
++            auto title = notice ? QStringLiteral("System permission required") : QStringLiteral("Allow %1 to %2?").arg(origin, feature);
++            QString message;
++            if (notice) message = QStringLiteral("System privacy settings prevent DerpBird from using this feature.");
++            else if (request.show_os_hint) message = QStringLiteral("Your system will also ask for permission.");
++            m_permission_dialog->show(notice ? "permission-notice" : "permission", title, message, {}, notice ? "Open settings" : once ? "Allow while visiting" : "Allow",
++                [notice, once, done = AK::move(done)](bool accepted, QString const& choice) mutable {
++                    if (notice && accepted) {
++                        if (auto* authorizer = Application::the().microphone_authorizer()) authorizer->open_system_settings();
++                    }
++                    auto outcome = !accepted || notice ? Outcome::Dismissed : choice == "block" ? Outcome::Block : choice == "once" && once ? Outcome::AllowOnce : Outcome::AllowAlways;
++                    done(outcome);
++                });
++            m_permission_dialog->configure("once"sv, once);
++            view().did_show_permission_prompt(request);
++        };
++    }
+     m_permission_prompts.create_popover = [this](WebView::PermissionPromptRequest const& request) {
+         auto* popover = new PermissionPromptPopover(this, request);
+         popover->update_chrome_style(palette());
+@@ -612,14 +659,25 @@
+     };
+ 
+     view().on_request_accept_dialog = [this]() {
+-        m_javascript_dialog->accept();
++        if (m_javascript_dialog->type().has_value()) m_javascript_dialog->accept();
+     };
+ 
+     view().on_request_dismiss_dialog = [this]() {
+-        m_javascript_dialog->dismiss();
++        if (m_javascript_dialog->type().has_value()) m_javascript_dialog->dismiss();
+     };
+ 
+     view().on_request_color_picker = [this](Color current_color) {
++        if (m_window->derpbird_chrome()) {
++            if (m_javascript_dialog->is_open()) { view().color_picker_update({}, Web::HTML::ColorPickerUpdateState::Closed); return; }
++            m_javascript_dialog->show("color", "Choose a color", {}, qstring_from_ak_string(current_color.to_string_without_alpha()), "Apply", [this](bool accepted, auto const& value) {
++                view().color_picker_update(accepted ? Color::from_string(ak_string_from_qstring(value)) : Optional<Color> {}, Web::HTML::ColorPickerUpdateState::Closed);
++            });
++            m_javascript_dialog->on_edit = [this](QString const& text) {
++                if (auto color = Color::from_string(ak_string_from_qstring(text)); color.has_value())
++                    view().color_picker_update(color, Web::HTML::ColorPickerUpdateState::Update);
++            };
++            return;
++        }
+         m_color_picker_dialog = new QColorDialog(QColor(current_color.red(), current_color.green(), current_color.blue()), &view());
+ 
+         auto& dialog = *m_color_picker_dialog;
+@@ -644,6 +702,18 @@
+     };
+ 
+     view().on_request_date_picker = [this](Utf16String const& input_type, Utf16String const& value, Utf16String const& minimum, Utf16String const& maximum) {
++        if (m_window->derpbird_chrome()) {
++            auto& dialog = *m_javascript_dialog;
++            if (dialog.is_open()) { view().date_picker_closed({}); return; }
++            auto kind = qstring_from_utf16_string(input_type);
++            dialog.show(kind, kind == "time" ? "Choose a time" : "Choose a date", {}, qstring_from_utf16_string(value), "Apply", [this](bool accepted, QString const& text) {
++                if (accepted) view().date_picker_closed(utf16_string_from_qstring(text));
++                else view().date_picker_closed({});
++            });
++            dialog.configure("minimum"sv, minimum.to_utf8());
++            dialog.configure("maximum"sv, maximum.to_utf8());
++            return;
++        }
+         if (m_date_picker_dialog) {
+             view().date_picker_closed({});
+             return;
+@@ -877,6 +947,12 @@
+     };
+ }
+ 
++DerpBirdDialog* Tab::shell_dialog() const
++{
++    if (m_javascript_dialog && m_javascript_dialog->is_open()) return m_javascript_dialog.ptr();
++    return m_permission_dialog.ptr();
++}
++
+ ErrorOr<void> Tab::complete_file_picker(QStringList const& paths)
+ {
+     if (!m_file_picker_dialog) return Error::from_string_literal("No file chooser is open for this tab");
+@@ -1333,7 +1409,7 @@
+ // comes up over an inactive window is closed by the next click or activation anywhere else.
+ void Tab::update_permission_prompts()
+ {
+-    if (isVisible() && isActiveWindow())
++    if (isVisible() && isActiveWindow() && !(m_javascript_dialog && m_javascript_dialog->is_open()))
+         m_permission_prompts.resume();
+     else
+         m_permission_prompts.suspend();
+@@ -1545,6 +1621,29 @@
+     if (!bookmark.has_value())
+         return;
+ 
++    if (m_window->derpbird_chrome()) {
++        auto id = bookmark->id;
++        auto url = bookmark->bookmark().url;
++        show_web_bookmark_dialog(*m_javascript_dialog, just_added == BookmarkPopover::JustAdded::Yes ? "Bookmark added" : "Edit bookmark", false,
++            qstring_from_ak_string(bookmark->bookmark().title.value_or(String {})), qstring_from_ak_string(url.serialize()), store.root_items(), {}, {}, id,
++            [id](bool accepted, QString const& text) {
++                if (!accepted) return;
++                auto& store = Application::bookmark_store();
++                if (!store.find_item_by_id(id).has_value()) return;
++                auto fields = QJsonDocument::fromJson(text.toUtf8()).object();
++                if (fields.value("remove").toBool()) { store.remove_item(id); return; }
++                auto url = WebView::sanitize_url(ak_string_from_qstring(fields.value("url").toString()));
++                if (!url.has_value()) return;
++                auto name = ak_string_from_qstring(fields.value("name").toString());
++                store.edit_bookmark(id, url.release_value(), name.is_empty() ? Optional<String> {} : Optional<String> { name });
++                if (fields.value("moved").toBool()) {
++                    Optional<String> target;
++                    if (auto folder = fields.value("folder").toString(); !folder.isEmpty()) target = ak_string_from_qstring(folder);
++                    store.move_item(id, target, NumericLimits<size_t>::max());
++                }
++            });
++        return;
++    }
+     if (!m_bookmark_popover) {
+         m_bookmark_popover = new BookmarkPopover(this);
+         m_bookmark_popover->on_remove = [this](Function<void()> const& remove) {
+@@ -1755,7 +1854,9 @@
+ 
+     m_suppress_javascript_dialogs_until_navigation = true;
+ 
+-    if (m_javascript_dialog->type() != JavaScriptDialog::Type::BeforeUnload)
++    if (m_javascript_dialog->type() == JavaScriptDialog::Type::BeforeUnload)
++        m_window->raise_for_close_prompt(*this);
++    else
+         m_javascript_dialog->dismiss();
+ 
+     if (!view().needs_beforeunload_check()) {
+diff --git i/UI/Qt/Tab.h w/UI/Qt/Tab.h
+--- i/UI/Qt/Tab.h
++++ w/UI/Qt/Tab.h
+@@ -46,7 +46,7 @@
+ class BookmarkPopover;
+ class BrowserWindow;
+ enum class ChromeIcon;
+-class JavaScriptDialog;
++class DerpBirdDialog;
+ class MessagePopover;
+ 
+ class HyperlinkLabel final : public QLabel {
+@@ -81,6 +81,7 @@
+     Tab(BrowserWindow* window, Optional<u64> hub_view_id = {});
+     Tab(BrowserWindow* window, DeferredTab);
+     virtual ~Tab() override;
++    DerpBirdDialog* shell_dialog() const;
+     bool has_file_picker() const { return !m_file_picker_dialog.isNull(); }
+     ErrorOr<void> complete_file_picker(QStringList const& paths);
+ 
+@@ -258,7 +259,8 @@
+     QAction* m_pin_tab_action { nullptr };
+     WebView::TabPerformanceStats m_performance_stats;
+ 
+-    JavaScriptDialog* m_javascript_dialog { nullptr };
++    OwnPtr<DerpBirdDialog> m_javascript_dialog;
++    OwnPtr<DerpBirdDialog> m_permission_dialog;
+     Function<void(bool)> m_before_unload_completion;
+     QPointer<QColorDialog> m_color_picker_dialog;
+     QPointer<QDialog> m_date_picker_dialog;
+diff --git i/UI/Qt/WindowCloseCoordinator.h w/UI/Qt/WindowCloseCoordinator.h
+--- i/UI/Qt/WindowCloseCoordinator.h
++++ w/UI/Qt/WindowCloseCoordinator.h
+@@ -17,6 +17,7 @@
+ 
+     bool start(Vector<Preflight>, Function<void()> on_approved, Function<void()> on_canceled);
+     void cancel();
++    void recheck(Preflight preflight) { VERIFY(m_is_running); m_preflights.append(move(preflight)); }
+ 
+     bool is_running() const { return m_is_running; }
+ 

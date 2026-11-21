@@ -80,6 +80,7 @@ runScenario(async ({conditions})=>{
  const stopSettingsTab=toolStudy?(await import('./settings-study/study')).connectSettingsTab(controller):undefined;
  if(toolStudy && conditions.toolStudy!=='toolbar')toolStudy.manage(conditions.toolStudy==='styles'?'styles':'scripts',String(conditions.toolStudy));
  if(conditions.proxyDemo)show();
+ const stopGallery=typeof conditions.dialogGroup==='string'?(await import('./dialogs/gallery')).mountGallery(conditions.dialogGroup,controller,fixture.setDialog):undefined;
  if(conditions.manager)show();
- return()=>{downloads?.dispose();stopSettingsTab?.();sources?.dispose();browserUI();stopInteractions();stopResize();stopDismissal();document.removeEventListener('keydown',focusKey);layoutDemo?.();activityDemo?.();tools?.dispose();splitDemo?.();manager?.dispose();mounted.dispose();void controller.close();fixture.dispose()};
+ return()=>{stopGallery?.();downloads?.dispose();stopSettingsTab?.();sources?.dispose();browserUI();stopInteractions();stopResize();stopDismissal();document.removeEventListener('keydown',focusKey);layoutDemo?.();activityDemo?.();tools?.dispose();splitDemo?.();manager?.dispose();mounted.dispose();void controller.close();fixture.dispose()};
 });

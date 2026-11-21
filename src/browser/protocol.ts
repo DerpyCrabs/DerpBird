@@ -33,7 +33,14 @@ export interface BrowserDownload {
   id: string; name: string; path: string; received: number; total?: number; resumable: boolean;
   status: 'Downloading' | 'Paused' | 'Finished' | 'Canceled' | 'Failed';
 }
+export interface ShellDialog {
+  id: string; kind: string; title: string; message: string; value: string; action: string; offerBlock?: boolean;
+  folders?: readonly { name: string; id: string }[]; folder?: string; url?: string; removable?: boolean; once?: boolean;
+  processes?: readonly {id:number; pid:number; name:string; cpu:number; bytes:number; canEnd:boolean; pages:readonly string[]}[];
+  minimum?: string; maximum?: string;
+}
 export interface BrowserSnapshot {
+  readonly dialog?: ShellDialog;
   readonly downloads?: readonly BrowserDownload[];
   readonly automation?: { readonly enabled: boolean; readonly clients: number; readonly endpoint: string };
   readonly workspaces?: Workspaces;
@@ -55,6 +62,8 @@ export interface BrowserSnapshot {
 export type BrowserPage = 'history' | 'downloads' | 'bookmarks' | 'settings';
 export interface SurfaceRect { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
 export type Command =
+  | { readonly type: 'dialog.edit'; readonly id: string; readonly value: string }
+  | { readonly type: 'dialog.answer'; readonly id: string; readonly accepted: boolean; readonly value: string; readonly block: boolean }
   | { readonly type: 'download.action'; readonly action: 'clear' | 'cancel' | 'pause' | 'resume' | 'open' | 'reveal'; readonly id?: string }
   | { readonly type: 'automation.set-enabled'; readonly enabled: boolean }
   | { readonly type: 'workspace.switch'; readonly id: string }
@@ -183,6 +192,13 @@ export function decodeSnapshot(value: unknown): BrowserSnapshot {
     if (!Number.isSafeInteger(suggestions.query) || !Array.isArray(suggestions.items) || suggestions.items.length > 8 || suggestions.items.some(item => !item || typeof item.text !== 'string' || typeof item.title !== 'string' || item.text.length > 8192 || item.title.length > 8192 || (item.source !== undefined && !['search', 'history', 'bookmark', 'page', 'settings'].includes(item.source)) || (item.subtitle !== undefined && (typeof item.subtitle !== 'string' || item.subtitle.length > 8192)) || (item.favicon !== undefined && (typeof item.favicon !== 'string' || item.favicon.length > 16384 || !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(item.favicon))))) throw new Error('Invalid address suggestions');
     addressSuggestions = suggestions;
   }
+  let dialog: ShellDialog | undefined;
+  if (s.dialog != null) {
+    const d = s.dialog as ShellDialog;
+    if (![d.id, d.kind, d.title, d.message, d.value, d.action].every(v => typeof v === 'string'))
+      throw new Error('Invalid shell dialog');
+    dialog = { ...d, id: d.id, kind: d.kind, title: d.title, message: d.message, value: d.value, action: d.action, offerBlock: d.offerBlock === true };
+  }
   let filterProposal: BrowserSnapshot['filterProposal'];
   if (s.filterProposal != null) {
     const p = s.filterProposal as Record<string, unknown>;
@@ -216,7 +232,7 @@ export function decodeSnapshot(value: unknown): BrowserSnapshot {
     || typeof file.path !== 'string' || !Number.isFinite(file.received) || (file.total !== undefined && !Number.isFinite(file.total))
     || typeof file.resumable !== 'boolean' || !['Downloading','Paused','Finished','Canceled','Failed'].includes(file.status)))
     throw new Error('Invalid download snapshot');
-  return Object.freeze({ downloads: Object.freeze(downloads), ...(automation ? { automation } : {}), workspaces: decodeWorkspaces(s.workspaces), splits: Object.freeze(splits), ...(s.proxyProfile === undefined ? {} : { proxyProfile: s.proxyProfile as string }), credentialAutofill, addressSuggestions, dynamicRules: s.dynamicRules as string | undefined, filterProposal, blockingLog, scriptCommands: Object.freeze(scriptCommands), credentialProposal, version: protocolVersion, revision: s.revision as number, preferences, tabs: Object.freeze(tabs), activeTabId: s.activeTabId as string | null });
+  return Object.freeze({ dialog, downloads: Object.freeze(downloads), ...(automation ? { automation } : {}), workspaces: decodeWorkspaces(s.workspaces), splits: Object.freeze(splits), ...(s.proxyProfile === undefined ? {} : { proxyProfile: s.proxyProfile as string }), credentialAutofill, addressSuggestions, dynamicRules: s.dynamicRules as string | undefined, filterProposal, blockingLog, scriptCommands: Object.freeze(scriptCommands), credentialProposal, version: protocolVersion, revision: s.revision as number, preferences, tabs: Object.freeze(tabs), activeTabId: s.activeTabId as string | null });
 }
 
 export function navigationTarget(input: string): string {

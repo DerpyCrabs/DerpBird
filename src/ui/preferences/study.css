@@ -145,7 +145,12 @@ body.unified {
 .unified #config-list > .config-row > :first-child { grid-column:1; text-align:start; justify-self:start; }
 .unified #config-list > .config-row > .aligned-help { grid-column:1; grid-row:2; }
 .unified #config-list > .config-row > input { grid-column:2; grid-row:1; }
-.unified .segmented { min-height:var(--tab-row-height); box-sizing:border-box; align-items:stretch; }
+.unified .segmented {
+  display:inline-grid; grid-auto-flow:column; grid-auto-columns:1fr;
+  min-height:var(--tab-row-height); padding:2px; box-sizing:border-box; align-items:stretch;
+}
+.unified .segmented > label { height:auto; justify-content:center; }
+.unified .segmented > label:has(:checked):not(:has(:focus-visible)) { box-shadow:none; }
 .unified .setting-controls > :is(button,select), .unified .dialog-controls > button { min-height:var(--tab-row-height); box-sizing:border-box; }
 .unified label:has(> #config-filter) { box-sizing:border-box; min-height:var(--tab-row-height); margin:0 0 8px; }
 @media(max-width:720px){

@@ -1,0 +1,101 @@
+diff --git i/Base/res/ladybird/about-pages/settings.html w/Base/res/ladybird/about-pages/settings.html
+index 680fe2679..2c39a3799 100644
+--- i/Base/res/ladybird/about-pages/settings.html
++++ w/Base/res/ladybird/about-pages/settings.html
+@@ -1042,14 +1042,16 @@
+         <main class="settings-content">
+             <p id="search-empty" class="search-empty" hidden>No settings match this search.</p>
+             <div class="tab-panel active" id="tab-appearance" data-title="Appearance">
++                <h2 class="panel-heading">Appearance</h2>
++                <h3 class="card-title">Browser</h3>
+                 <div class="card">
+                     <div class="card-body">
+                         <div class="card-group inline-container">
+-                            <span>Appearance</span>
+-                            <div id="interface-theme" class="segmented" role="radiogroup" aria-label="Appearance">
+-                                <label><input type="radio" name="interface-theme" value="system" />System</label>
+-                                <label><input type="radio" name="interface-theme" value="light" />Light</label>
+-                                <label><input type="radio" name="interface-theme" value="dark" />Dark</label>
++                            <span>Browser theme</span>
++                            <div id="interface-theme" class="theme-choices" role="radiogroup" aria-label="Browser theme">
++                                <label><span class="haz-theme-preview theme-system" aria-hidden="true"><i></i><i></i><i></i></span><input type="radio" name="interface-theme" value="system" />System</label>
++                                <label><span class="haz-theme-preview theme-light" aria-hidden="true"><i></i><i></i><i></i></span><input type="radio" name="interface-theme" value="light" />Light</label>
++                                <label><span class="haz-theme-preview theme-dark" aria-hidden="true"><i></i><i></i><i></i></span><input type="radio" name="interface-theme" value="dark" />Dark</label>
+                             </div>
+                         </div>
+                         <div class="card-group inline-container">
+@@ -1094,6 +1096,39 @@
+                                 </label>
+                             </div>
+                         </div>
++                        <div id="tab-layout-group" class="card-group">
++
++                        </div>
++                        <div class="card-group inline-container hidden">
++                            <label for="vertical-tabs-expand-on-hover"
++                                >Expand vertical tabs on hover when collapsed</label
++                            >
++                            <input id="vertical-tabs-expand-on-hover" type="checkbox" switch />
++                        </div>
++                        <div class="card-group inline-container hidden">
++                            <label for="vertical-tabs-position">Sidebar position</label>
++                            <select id="vertical-tabs-position">
++                                <option value="left">Left</option>
++                                <option value="right">Right</option>
++                            </select>
++                        </div>
++                        <div class="card-group inline-container" id="show-menu-bar-group">
++                            <label for="show-menu-bar">Show system menu bar</label>
++                            <input id="show-menu-bar" type="checkbox" switch />
++                        </div>
++                        <div class="card-group inline-container">
++                            <label for="show-bookmarks-bar">Show bookmarks bar</label>
++                            <select id="show-bookmarks-bar">
++                                <option value="always">Always</option>
++                                <option value="never">Never</option>
++                                <option value="onHover">Only when hovering the navigation toolbar</option>
++                            </select>
++                        </div>
++                    </div>
++                </div>
++                <h3 class="card-title">Web pages</h3>
++                <div class="card">
++                    <div class="card-body">
+                         <div class="card-group inline-container">
+                             <span>
+                                 Websites
+@@ -1125,34 +1160,6 @@
+                                 <button id="force-dark-settings" class="secondary-button" hidden>Overrides…</button>
+                             </div>
+                         </div>
+-                        <div id="tab-layout-group" class="card-group">
+-
+-                        </div>
+-                        <div class="card-group inline-container hidden">
+-                            <label for="vertical-tabs-expand-on-hover"
+-                                >Expand vertical tabs on hover when collapsed</label
+-                            >
+-                            <input id="vertical-tabs-expand-on-hover" type="checkbox" switch />
+-                        </div>
+-                        <div class="card-group inline-container hidden">
+-                            <label for="vertical-tabs-position">Sidebar position</label>
+-                            <select id="vertical-tabs-position">
+-                                <option value="left">Left</option>
+-                                <option value="right">Right</option>
+-                            </select>
+-                        </div>
+-                        <div class="card-group inline-container" id="show-menu-bar-group">
+-                            <label for="show-menu-bar">Show system menu bar</label>
+-                            <input id="show-menu-bar" type="checkbox" switch />
+-                        </div>
+-                        <div class="card-group inline-container">
+-                            <label for="show-bookmarks-bar">Show bookmarks bar</label>
+-                            <select id="show-bookmarks-bar">
+-                                <option value="always">Always</option>
+-                                <option value="never">Never</option>
+-                                <option value="onHover">Only when hovering the navigation toolbar</option>
+-                            </select>
+-                        </div>
+                         <div class="card-group inline-container">
+                             <label for="default-zoom-level">Default page zoom</label>
+                             <div class="setting-controls">

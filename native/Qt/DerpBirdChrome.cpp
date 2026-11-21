@@ -15,7 +15,6 @@
 #include <UI/Qt/DerpBirdFilePicker.h>
 #include <UI/Qt/DerpBirdProxy.h>
 #include <UI/Qt/DerpBirdPageSources.h>
-#include <QFileDialog>
 #include <QRegion>
 #include <QLayout>
 #include <QScopedValueRollback>
@@ -30,6 +29,7 @@
 #include <UI/Qt/Application.h>
 #include <UI/Qt/BrowserWindow.h>
 #include <UI/Qt/DerpBirdChrome.h>
+#include <UI/Qt/DerpBirdDialog.h>
 #include <UI/Qt/DerpBirdAutomation.h>
 #include <UI/Qt/DerpBirdWindowScreenshot.h>
 #include <QToolTip>
@@ -94,6 +94,7 @@ DerpBirdChrome::DerpBirdChrome(BrowserWindow& window)
         m_shell_preferences->remove("theme");
     }
     connect(&SystemAppearance::the(), &SystemAppearance::interface_appearance_changed, this, [this] { queue_snapshot(); });
+    m_window_dialog.changed = [this] { queue_snapshot(); };
     load_workspaces();
     // Browser commands must also work while focus belongs to a web page.
     // The native menu/toolbar is hidden when this chrome is active.
@@ -103,6 +104,9 @@ DerpBirdChrome::DerpBirdChrome(BrowserWindow& window)
         request.set("page"sv, "history"sv);
         if (auto result = command(request); result.is_error())
             warnln("Unable to open history: {}", result.error());
+    });
+    new QShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_M), &window, [] {
+        Application::the().show_process_manager();
     });
     new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_D), &window, [this] {
         if (auto* tab = m_window.current_tab()) {
@@ -242,20 +246,27 @@ DerpBirdChrome::DerpBirdChrome(BrowserWindow& window)
                 if (type == "import.passwords"sv) {
                     if (m_password_import) { completion(Error::from_string_literal("Password import is already running")); return; }
                     m_password_import = true;
-                    auto* picker = new QFileDialog(&m_window, "Import Chrome passwords", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation), "Password CSV (*.csv)");
-                    picker->setFileMode(QFileDialog::ExistingFile);
-                    picker->setAttribute(Qt::WA_DeleteOnClose);
                     auto done = std::make_shared<decltype(completion)>(AK::move(completion));
-                    connect(picker, &QFileDialog::finished, this, [this, picker, done](int result) mutable {
-                        if (result != QDialog::Accepted || picker->selectedFiles().isEmpty()) {
-                            m_password_import = false; JsonObject cancelled; cancelled.set("cancelled"sv, true); (*done)(JsonValue { AK::move(cancelled) }); return;
+                    auto* picker = new QFileDialog(&m_window, "Import Chrome passwords", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation), "CSV files (*.csv)");
+                    picker->setAttribute(Qt::WA_DeleteOnClose);
+                    picker->setFileMode(QFileDialog::ExistingFile);
+                    connect(picker, &QDialog::finished, this, [this, picker, done](int result) mutable {
+                        auto paths = result == QDialog::Accepted ? picker->selectedFiles() : QStringList {};
+                        if (paths.isEmpty()) {
+                            m_password_import = false;
+                            JsonObject cancelled;
+                            cancelled.set("cancelled"sv, true);
+                            (*done)(JsonValue { AK::move(cancelled) });
+                            return;
                         }
-                        JsonObject request; request.set("type"sv, "credentials.import-csv"sv);
-                        request.set("path"sv, ak_string_from_qstring(picker->selectedFiles().first()));
+                        JsonObject request;
+                        request.set("type"sv, "credentials.import-csv"sv);
+                        request.set("path"sv, ak_string_from_qstring(paths.first()));
                         Application::the().derpbird_credentials_request(JsonValue { AK::move(request) }, false,
                             [self = QPointer(this), done](auto result) mutable { if (self) self->m_password_import = false; (*done)(AK::move(result)); });
                     });
-                    picker->open(); return;
+                    picker->open();
+                    return;
                 }
                 if (type == "import.chrome"sv) {
                     if (m_import) { completion(Error::from_string_literal("Import is already running")); return; }
@@ -571,6 +582,7 @@ DerpBirdChrome::DerpBirdChrome(BrowserWindow& window)
     };
     m_shell->on_load_start = [this] {
         m_file_picker->cancel();
+        if (m_window_dialog.is_open()) m_window_dialog.dismiss();
         if (m_source_download) m_source_download->cancel();
         m_credential_proposal.clear();
         m_pending_surface_state.clear();
@@ -580,6 +592,7 @@ DerpBirdChrome::DerpBirdChrome(BrowserWindow& window)
     connect(m_shell, &WebContentView::crash_overlay_changed, this, [this] {
         if (m_shell->crash_overlay_active()) {
             m_file_picker->dismiss();
+            if (m_window_dialog.is_open()) m_window_dialog.dismiss();
             if (m_source_download) m_source_download->cancel();
             m_pending_surface_state.clear();
             m_surface_state.invalidate();
@@ -707,6 +720,8 @@ DerpBirdChrome::DerpBirdChrome(BrowserWindow& window)
 
 DerpBirdChrome::~DerpBirdChrome()
 {
+    m_window_dialog.changed = {};
+    if (m_window_dialog.is_open()) m_window_dialog.dismiss();
     DerpBirdAutomation::the().remove_window(m_automation_window_id);
     if (m_request_log_view) m_request_log_view->set_request_logging(false);
     if (m_autocomplete) { m_autocomplete->on_autocomplete_query_complete = nullptr; m_autocomplete->cancel_pending_query(); }
@@ -1146,6 +1161,10 @@ JsonValue DerpBirdChrome::snapshot()
         tabs.must_append(AK::move(entry));
     }
     auto state = settings_snapshot();
+    if (m_window_dialog.is_open())
+        state.set("dialog"sv, m_window_dialog.state());
+    else if (auto* tab = m_window.current_tab(); tab && tab->shell_dialog() && tab->shell_dialog()->is_open())
+        state.set("dialog"sv, tab->shell_dialog()->state());
     state.set("addressSuggestions"sv, m_address_suggestions);
     StringBuilder dynamic_rules;
     for (auto line : Application::settings().custom_content_blocker_filters().bytes_as_string_view().split_view('\n')) {
@@ -1248,6 +1267,20 @@ void DerpBirdChrome::queue_snapshot()
     QTimer::singleShot(0, this, [this] {
         m_snapshot_queued = false;
         auto state = snapshot();
+        auto dialog = state.as_object().get_object("dialog"sv);
+        auto id = dialog.has_value() ? dialog->get_string("id"sv).value_or(String {}) : String {};
+        if (id != m_focused_dialog) {
+            if (dialog.has_value()) {
+                if (m_focused_dialog.is_empty())
+                    m_dialog_previous_focus = QApplication::focusWidget();
+                m_shell->setFocus(Qt::OtherFocusReason);
+            } else {
+                if (m_dialog_previous_focus && m_dialog_previous_focus->isVisible() && m_shell->hasFocus())
+                    m_dialog_previous_focus->setFocus(Qt::OtherFocusReason);
+                m_dialog_previous_focus = nullptr;
+            }
+            m_focused_dialog = AK::move(id);
+        }
         if (m_focus_address_pending) {
             m_focus_address_pending = false;
             state.as_object().set("focusAddress"sv, true);
@@ -1445,6 +1478,22 @@ ErrorOr<void> DerpBirdChrome::command(JsonValue const& value)
         return Error::from_string_literal("Invalid command");
     auto const& data = value.as_object();
     auto type = data.get_string("type"sv).value_or(String {});
+    if (type.is_one_of("dialog.answer"sv, "dialog.edit"sv)) {
+        auto* tab = m_window.current_tab();
+        auto* dialog = m_window_dialog.is_open() ? &m_window_dialog : (tab ? tab->shell_dialog() : nullptr);
+        auto id = data.get_string("id"sv);
+        auto accepted = data.get_bool("accepted"sv);
+        if (!dialog || !id.has_value() || !dialog->matches(*id))
+            return Error::from_string_literal("Dialog has closed");
+        if (type == "dialog.edit"sv) {
+            auto text = data.get_string("value"sv);
+            if (text.has_value()) dialog->edit(qstring_from_ak_string(*text));
+            return {};
+        }
+        if (!accepted.has_value()) return Error::from_string_literal("Missing dialog answer");
+        dialog->respond(*accepted, qstring_from_ak_string(data.get_string("value"sv).value_or(String {})), data.get_bool("block"sv).value_or(false));
+        return {};
+    }
     if (type == "automation.set-enabled"sv) {
         auto enabled = data.get_bool("enabled"sv);
         if (!enabled.has_value()) return Error::from_string_literal("Missing automation state");

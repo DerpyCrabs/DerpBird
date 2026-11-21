@@ -9,12 +9,13 @@ export function createBirdFixture(layout:'horizontal'|'vertical',canDrop:CanDrop
  let preferences={layout,sidebarWidth:240,wrapTabs:false,theme:'dark' as 'dark'|'light',alwaysClose:true,chromeLayout:layoutFromSettings({verticalTabsEnabled:layout==='vertical'})};
  const makeTab=(id:string,title:string,url='about:blank',privateTab=false):MutableTab=>({id,title,url,private:privateTab,loading:false,canGoBack:false,canGoForward:false,pinned:false,audible:false,muted:false});
  let tabs:MutableTab[]=['Research notes','Accessibility checklist','Release planning'].map((title,i)=>makeTab(['research','accessibility','release'][i],title,`https://example.test/${i}`));
+ let dialog: BrowserSnapshot['dialog'];
  let addressSuggestions: BrowserSnapshot['addressSuggestions'];
  let splits:SplitView[]=[];
  const pair=(id:string)=>splits.find(s=>s.firstTabId===id||s.secondTabId===id);
  const dissolve=(id:string)=>{splits=splits.filter(s=>s!==pair(id));};
  const closed:MutableTab[][]=[];const listeners=new Set<(s:unknown)=>void>();
- const snapshot=():BrowserSnapshot=>structuredClone({version:1,revision,preferences,activeTabId,tabs,splits,addressSuggestions,workspaces:workspaces() as BrowserSnapshot['workspaces']});
+ const snapshot=():BrowserSnapshot=>structuredClone({version:1,revision,dialog,preferences,activeTabId,tabs,splits,addressSuggestions,workspaces:workspaces() as BrowserSnapshot['workspaces']});
  const get=(id:string)=>{const tab=tabs.find(t=>t.id===id);if(!tab)throw Error('Unknown fixture tab '+id);return tab;};
  const block=(id:string)=>tabs.filter(t=>t.id===id||t.parentId===id);
  const end=(id:string)=>{let i=tabs.findIndex(t=>t.id===id);while(tabs[i+1]?.parentId===id)i++;return i+1;};
@@ -46,6 +47,10 @@ export function createBirdFixture(layout:'horizontal'|'vertical',canDrop:CanDrop
   switch(c.type){
    case 'workspace.switch':switchWorkspace(c.id);return;
    case 'workspace.create':createWorkspace(c.name,c.icon,c.color);return;
+   case 'dialog.answer': dialog=undefined;publish();return;
+   case 'dialog.edit':
+    if(dialog)dialog=dialog.kind==='processes'?{...dialog,processes:dialog.processes?.filter(p=>String(p.id)!==c.value)}:{...dialog,value:c.value};
+    publish();return;
    case 'workspace.update':{const w=spaces.find(w=>w.id===c.id);if(!w)throw Error('Unknown workspace');Object.assign(w,{name:c.name,icon:c.icon,color:c.color});publish();return;}
 
    case 'tab.split':{
@@ -130,5 +135,5 @@ export function createBirdFixture(layout:'horizontal'|'vertical',canDrop:CanDrop
  function seedReadingTabs(titles:readonly string[]){
   titles.forEach((title,i)=>{const t=makeTab(`reading-${i+1}`,title,`https://example.test/reading-${i+1}`);tabs.push(t);});publish();
  }
- return {port,snapshot,seedReadingTabs,enableWorkspaces,switchWorkspace,createWorkspace,renameWorkspace,workspaces,dispose(){listeners.clear();}};
+ return {port,snapshot,setDialog(value:BrowserSnapshot['dialog']){dialog=value;publish();},seedReadingTabs,enableWorkspaces,switchWorkspace,createWorkspace,renameWorkspace,workspaces,dispose(){listeners.clear();}};
 }

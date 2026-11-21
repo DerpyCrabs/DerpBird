@@ -1,3 +1,4 @@
+import { mountShellDialogs } from './ui/ShellDialogs';
 import { createDownloadMenu, downloadEntry } from './ui/collections/download-menu';
 import { focusAddress } from './browser/address-focus';
 import { observeSplitInteractions } from './browser/splits';
@@ -180,8 +181,10 @@ const stopDownloads = controller.source.subscribe(updateDownloads);
 window.addEventListener('derpbird-open-downloads', downloads.open);
 window.addEventListener('derpbird-shell-deactivate', downloads.close);
 const stopPages=mountInternalPages(controller);
+const stopDialogs = mountShellDialogs(controller);
 const stopViewport = observeViewport(document, command => controller.send(command), () => controller.state().connected);
 const onKey = (event: KeyboardEvent) => {
+  if (controller.state().browser.dialog) return;
   if (styleManager || scriptManager || credentialManager || importManager || proxyManager || pageSourcePopup) return;
   if (!event.ctrlKey || event.altKey || event.metaKey) return;
   const key = event.key.toLowerCase();
@@ -209,6 +212,7 @@ window.addEventListener('pagehide', () => {
   window.removeEventListener('derpbird-shell-deactivate', downloads.close);
   stopDownloads();
   downloads.dispose();
+  stopDialogs();
   stopViewport();
   stopPages();stopChrome();
   stopSplitInteractions(); stopSidebarResize();

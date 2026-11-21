@@ -1,0 +1,61 @@
+dialog.shell-dialog { box-sizing:border-box; width:360px; text-align:start; }
+.shell-dialog [hidden] { display:none; }
+.shell-dialog .shell-dialog-site { margin:8px 0 0; overflow-wrap:anywhere; }
+.shell-dialog .pref-dialog-description { white-space:pre-wrap; overflow-wrap:anywhere; max-height:40vh; overflow:auto; }
+.shell-dialog .shell-dialog-block { display:flex; align-items:center; gap:8px; margin-top:12px; font-size:13px; }
+.shell-dialog .shell-dialog-block[hidden] { display:none; }
+.shell-dialog button:focus-visible,.shell-dialog input:focus-visible { outline-color:var(--pref-muted); }
+.shell-dialog [data-remove] { margin-inline-end:auto; }
+.shell-value-picker:not(:empty) { margin-block:12px; }
+.shell-color-sample { height:42px; border-radius:7px; border:1px solid var(--pref-line); }
+.shell-value-picker label { display:grid; grid-template-columns:4em 1fr; align-items:center; margin-top:6px; }
+.shell-value-picker input[type=range] { accent-color:var(--pref-text); }
+.shell-calendar-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+.shell-calendar-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:2px; text-align:center; }
+.shell-calendar-grid span { font-size:12px; color:var(--pref-muted); }
+.shell-calendar-grid button { padding:0; border-color:transparent; background:transparent; }
+.shell-calendar-grid button[aria-pressed=true] { background:var(--pref-text); color:var(--pref-bg); }
+.shell-dialog:has(.shell-processes:not([hidden])) { width:720px; }
+.shell-process-list { max-height:50vh; overflow:auto; margin:12px 0; }
+.shell-process-list table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+.shell-process-list :is(th,td) { text-align:end; padding:5px; border-bottom:1px solid var(--pref-line); white-space:nowrap; }
+.shell-process-list :is(th,td):first-child { text-align:start; width:100%; white-space:normal; }
+.shell-process-list th button { border:0; background:transparent; color:inherit; font:inherit; }
+.shell-process-list small { display:block; color:var(--pref-muted); overflow-wrap:anywhere; }
+.shell-process-list label { display:flex; gap:8px; align-items:center; }
+.shell-dialog .shell-dialog-error { color:var(--pref-error); }
+dialog.shell-dialog { --pref-focus:var(--pref-text); width:400px; padding:24px; border-radius:16px; }
+.shell-dialog input::selection { background:#65656f; color:white; }
+.shell-dialog .pref-dialog-description:empty { display:none; }
+.shell-dialog footer { margin-top:24px; align-items:center; }
+.shell-dialog .shell-permission-choices:not([hidden]) { display:grid; gap:4px; margin-top:20px; padding:4px; border:1px solid var(--pref-line); border-radius:10px; }
+.shell-permission-choices .pref-button { width:100%; justify-content:flex-start; border:0; border-radius:6px; padding:9px 12px; background:transparent; }
+.shell-permission-choices .pref-button:hover,.shell-permission-choices .pref-button:focus-visible { background:var(--pref-hover); }
+.shell-dialog[data-kind^=bookmark] { width:440px; }
+.shell-bookmark-fields:not([hidden]) { margin-top:24px; display:grid; grid-template-columns:max-content minmax(0,1fr); gap:20px 12px; }
+.shell-bookmark-fields label { grid-column:1/-1; display:grid; grid-template-columns:subgrid; align-items:center; text-align:end; color:var(--pref-muted); font-size:13px; }
+.shell-bookmark-fields .pref-input { min-width:0; box-sizing:border-box; }
+.shell-dialog .pref-input { box-sizing:border-box; }
+.shell-dialog[data-kind=color] form { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:0 12px; }
+.shell-dialog[data-kind=color] form > :not(.shell-hex):not(#shell-response) { grid-column:1/-1; }
+.shell-dialog[data-kind=color] .shell-value-picker { grid-row:2; margin:16px 0; }
+.shell-hex,.color-hue { font-size:12px; color:var(--pref-muted); }
+.shell-dialog .color-plane { height:155px; border-radius:8px; position:relative; overflow:hidden; touch-action:none; cursor:crosshair; background-image:linear-gradient(to top,black,transparent),linear-gradient(to right,white,transparent); }
+.color-plane i { position:absolute; width:12px; height:12px; transform:translate(-50%,-50%); border-radius:50%; border:2px solid white; box-shadow:0 0 0 1px #0009; pointer-events:none; }
+.shell-value-picker .color-hue { display:grid; grid-template-columns:3em 1fr; gap:8px; margin-top:12px; }
+.color-hue input { appearance:none; width:100%; margin:0; height:10px; border-radius:5px; background:linear-gradient(to right,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00); }
+.color-hue input::-webkit-slider-thumb { appearance:none; width:12px; height:16px; border:2px solid white; background:#29292d; border-radius:4px; }
+.shell-dialog[data-kind=processes] { width:680px; }
+.shell-processes { margin-top:18px; }
+.shell-process-list table { font-size:13px; }
+.shell-process-list :is(td,th) { padding:10px 12px; }
+.shell-process-list th { color:var(--pref-muted); font-size:12px; font-weight:500; background:var(--pref-raised); }
+.shell-process-list th button { padding:0; }
+.shell-process-list small { margin-inline-start:24px; }
+.shell-process-list input { margin:0; width:16px; height:16px; }
+.shell-process-end { margin-inline-end:auto; }
+@media(max-width:420px) {
+  dialog.shell-dialog { padding:18px; }
+  .shell-bookmark-fields:not([hidden]) { display:block; }
+  .shell-bookmark-fields label:not([hidden]) { display:grid; grid-template-columns:1fr; text-align:start; gap:4px; margin-top:16px; }
+}

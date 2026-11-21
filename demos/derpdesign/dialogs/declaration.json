@@ -1,0 +1,177 @@
+{
+  "id": "derpbird-window-dialogs",
+  "projectId": "derpbird",
+  "description": "Production dialogs and Appearance settings with interactive sample data.",
+  "name": "Window closing, web dialogs and Appearance",
+  "panes": [
+    {
+      "id": "bird-changes-permissions",
+      "name": "Permissions and external links",
+      "engine": "ladybird",
+      "route": "/",
+      "viewport": {
+        "width": 900,
+        "height": 700,
+        "deviceScaleFactor": "display"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "conditions": {
+        "dialogGroup": "permissions",
+        "layout": "horizontal"
+      }
+    },
+    {
+      "id": "bird-changes-bookmarks",
+      "name": "Bookmarks",
+      "engine": "ladybird",
+      "route": "/",
+      "viewport": {
+        "width": 900,
+        "height": 700,
+        "deviceScaleFactor": "display"
+      },
+      "position": {
+        "x": 940,
+        "y": 0
+      },
+      "conditions": {
+        "dialogGroup": "bookmarks",
+        "layout": "horizontal"
+      }
+    },
+    {
+      "id": "bird-changes-values",
+      "name": "Color, date and time",
+      "engine": "ladybird",
+      "route": "/",
+      "viewport": {
+        "width": 900,
+        "height": 700,
+        "deviceScaleFactor": "display"
+      },
+      "position": {
+        "x": 1880,
+        "y": 0
+      },
+      "conditions": {
+        "dialogGroup": "values",
+        "layout": "horizontal"
+      }
+    },
+    {
+      "id": "bird-changes-processes",
+      "name": "Task manager",
+      "engine": "ladybird",
+      "route": "/",
+      "viewport": {
+        "width": 900,
+        "height": 700,
+        "deviceScaleFactor": "display"
+      },
+      "position": {
+        "x": 0,
+        "y": 750
+      },
+      "conditions": {
+        "dialogGroup": "processes",
+        "layout": "horizontal"
+      }
+    },
+    {
+      "id": "bird-changes-close",
+      "name": "Window close and navigation",
+      "engine": "ladybird",
+      "route": "/",
+      "viewport": {
+        "width": 900,
+        "height": 700,
+        "deviceScaleFactor": "display"
+      },
+      "position": {
+        "x": 940,
+        "y": 750
+      },
+      "conditions": {
+        "dialogGroup": "close",
+        "layout": "horizontal"
+      }
+    },
+    {
+      "id": "bird-changes-appearance",
+      "name": "Appearance",
+      "engine": "ladybird",
+      "route": "/",
+      "viewport": {
+        "width": 900,
+        "height": 700,
+        "deviceScaleFactor": "display"
+      },
+      "position": {
+        "x": 1880,
+        "y": 750
+      },
+      "conditions": {
+        "settingsStudy": "appearance"
+      }
+    },
+    {
+      "id": "bird-changes-narrow",
+      "name": "Appearance \u00b7 narrow",
+      "engine": "ladybird",
+      "route": "/",
+      "viewport": {
+        "width": 390,
+        "height": 700,
+        "deviceScaleFactor": "display"
+      },
+      "position": {
+        "x": 0,
+        "y": 1500
+      },
+      "conditions": {
+        "settingsStudy": "appearance"
+      }
+    },
+    {
+      "id": "bird-changes-scripts",
+      "name": "Page dialogs",
+      "engine": "ladybird",
+      "route": "/",
+      "viewport": {
+        "width": 900,
+        "height": 700,
+        "deviceScaleFactor": "display"
+      },
+      "position": {
+        "x": 940,
+        "y": 1500
+      },
+      "conditions": {
+        "dialogGroup": "scripts",
+        "layout": "horizontal"
+      }
+    },
+    {
+      "id": "bird-changes-downloads",
+      "name": "Downloads",
+      "engine": "ladybird",
+      "route": "/",
+      "viewport": {
+        "width": 900,
+        "height": 700,
+        "deviceScaleFactor": "display"
+      },
+      "position": {
+        "x": 1880,
+        "y": 1500
+      },
+      "conditions": {
+        "dialogGroup": "downloads",
+        "layout": "horizontal"
+      }
+    }
+  ]
+}

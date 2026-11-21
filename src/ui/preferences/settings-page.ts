@@ -111,38 +111,7 @@ export function mountSettingsPage() {
   ])
     get('#tab-' + tab).append(get<HTMLTemplateElement>('#' + template).content.cloneNode(true));
   get('#layouts').append(get('#tab-layout-group'), get('#vertical-tabs-expand-on-hover').parentElement!);
-  // Preserve native IDs and event handlers while grouping the controls by what they affect.
-  const appearance = get('#tab-appearance');
-  const browserCard = get('#tab-appearance .card');
-  const browserHeading = document.createElement('h3');
-  browserHeading.className = 'card-title';
-  browserHeading.textContent = 'Browser';
-  appearance.insertBefore(browserHeading, browserCard);
-  const pageHeading = document.createElement('h3');
-  pageHeading.className = 'card-title';
-  pageHeading.textContent = 'Web pages';
-  const pageCard = document.createElement('div');
-  pageCard.className = 'card';
-  const pageBody = document.createElement('div');
-  pageBody.className = 'card-body';
-  for (const id of ['website-color-scheme', 'enable-force-dark', 'default-zoom-level'])
-    pageBody.append(get('#' + id).closest('.card-group')!);
-  pageCard.append(pageBody);
-  appearance.append(pageHeading, pageCard);
-  
-  // Keep Ladybird's real radio controls, including the system setting, in the chrome's theme previews.
-  const themePicker = get('#interface-theme');
-  themePicker.className = 'theme-choices';
-  for (const label of themePicker.querySelectorAll('label')) {
-    const mode = label.querySelector('input')!.value;
-    const preview = document.createElement('span');
-    preview.className = 'haz-theme-preview theme-' + mode;
-    preview.setAttribute('aria-hidden', 'true');
-    preview.append(...Array.from({ length: 3 }, () => document.createElement('i')));
-    label.prepend(preview);
-  }
-  
-  for (const panel of document.querySelectorAll<HTMLElement>('.tab-panel')) {
+  for (const panel of document.querySelectorAll<HTMLElement>('.tab-panel:not(:has(> .panel-heading))')) {
     const heading = document.createElement('h2');
     heading.className = 'panel-heading';
     heading.textContent = panel.dataset.title!;
@@ -274,8 +243,6 @@ export function mountSettingsPage() {
   });
   compact.onchange = () => tabs.find((tab) => tab.dataset.tab === compact.value)?.click();
   compact.value = location.hash.slice(1) || 'appearance';
-  get('#interface-theme').previousElementSibling!.textContent = 'Browser theme';
-  get('#interface-theme').setAttribute('aria-label', 'Browser theme');
   const skin = document.createElement('style');
   document.head.prepend(skin);
   function syncTheme(theme: string) {
