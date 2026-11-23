@@ -61,10 +61,14 @@ runScenario(async ({conditions})=>{
  const controller=createController(port);
  const toolStudy=conditions.toolStudy?(await import('./settings-study/sources')).createSourceLibraries(controller):undefined;
  const sources=toolStudy??(conditions.hazProposal?createDemoPageSources(controller):undefined);
- const mounted=mount(document.querySelector('#app')!,shellView(controller,sources?()=>sources.manage('styles'):undefined,sources?()=>sources.manage('scripts'):undefined,undefined,undefined,undefined,show,sources?.open),controller.source);
+ const passwords=conditions.passwordStudy?(await import('./passwords/demo')).passwordStudy():undefined;
+ const mounted=mount(document.querySelector('#app')!,shellView(controller,sources?()=>sources.manage('styles'):undefined,sources?()=>sources.manage('scripts'):undefined,passwords?.open,undefined,undefined,show,sources?.open),controller.source);
  await controller.ready;
  sources?.refresh();
- const stopInteractions=observeSplitInteractions(document,controller);
+ const beginTabDrag = conditions.interactiveTabDrag
+  ? (await import('@bird/ui/design/tab-drag')).tabDragPreview(controller)
+  : undefined;
+ const stopInteractions=observeSplitInteractions(document,controller,beginTabDrag);
  const stopResize=observeSidebarResize(document,controller.previewSidebarWidth,controller.setSidebarWidth);
  const stopDismissal=observeShellDismissal({deactivate:()=>controller.blurAddress()});
  const focusKey=(event:KeyboardEvent)=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='l'){event.preventDefault();focusAddress(document,controller);}};
@@ -75,12 +79,13 @@ runScenario(async ({conditions})=>{
  if(conditions.workspaceEdit)controller.openWorkspaceEditor(controller.state().browser.workspaces?.active);
  if(conditions.workspaceCreate)controller.openWorkspaceEditor();
  const activityDemo = conditions.aiActivity ? await (async()=>{await import('./ai-activity/demo.css');const {mountActivityDemo}=await import('./ai-activity/demo');return mountActivityDemo(document.querySelector<HTMLElement>('#content-surface')!,{time:typeof conditions.aiTime==='number'?conditions.aiTime:undefined});})() : undefined;
- const splitDemo = conditions.splitDemo || toolStudy || conditions.downloadMenu ? (await import('./split-demo')).mountSplitDemo(controller,conditions,fixture) : undefined;
+ const splitDemo = conditions.splitDemo || toolStudy || passwords || conditions.downloadMenu ? (await import('./split-demo')).mountSplitDemo(controller,conditions,fixture) : undefined;
  if(conditions.downloadMenu)downloads=(await import('./collections/download-menu')).mountDownloads(conditions.showDownloads===true, conditions.emptyDownloads===true);
  const stopSettingsTab=toolStudy?(await import('./settings-study/study')).connectSettingsTab(controller):undefined;
  if(toolStudy && conditions.toolStudy!=='toolbar')toolStudy.manage(conditions.toolStudy==='styles'?'styles':'scripts',String(conditions.toolStudy));
  if(conditions.proxyDemo)show();
  const stopGallery=typeof conditions.dialogGroup==='string'?(await import('./dialogs/gallery')).mountGallery(conditions.dialogGroup,controller,fixture.setDialog):undefined;
+ passwords?.open();
  if(conditions.manager)show();
- return()=>{stopGallery?.();downloads?.dispose();stopSettingsTab?.();sources?.dispose();browserUI();stopInteractions();stopResize();stopDismissal();document.removeEventListener('keydown',focusKey);layoutDemo?.();activityDemo?.();tools?.dispose();splitDemo?.();manager?.dispose();mounted.dispose();void controller.close();fixture.dispose()};
+ return()=>{stopGallery?.();passwords?.dispose();downloads?.dispose();stopSettingsTab?.();sources?.dispose();browserUI();stopInteractions();stopResize();stopDismissal();document.removeEventListener('keydown',focusKey);layoutDemo?.();activityDemo?.();tools?.dispose();splitDemo?.();manager?.dispose();mounted.dispose();void controller.close();fixture.dispose()};
 });

@@ -1,3 +1,4 @@
+import { projectTabMove } from '../../src/browser/tab-tree';
 import { favicon } from './favicons';
 import { layoutFromSettings, layoutToSettings, type ChromeLayout } from '../../src/browser/chrome-layout';
 import type {NativePort,Command,Tab,BrowserSnapshot,SplitView} from '../../src/browser/protocol';
@@ -33,12 +34,7 @@ export function createBirdFixture(layout:'horizontal'|'vertical',canDrop:CanDrop
  function move(id:string,targetId:string,placement:'before'|'inside'|'after'){
   const source=get(id),target=get(targetId);
   if(source.private!==target.private||!canDrop(tabs,id,targetId,placement))throw Error('Invalid fixture tab move');
-  dissolve(id);
-  const moving=block(id);tabs=tabs.filter(t=>!moving.includes(t));
-  const parent=placement==='inside'?(pair(target.id)?.firstTabId??target.parentId??target.id):target.parentId;
-  if(parent)source.parentId=parent;else delete source.parentId;
-  const index=placement==='before'?tabs.indexOf(target):placement==='inside'?end(parent!):end(target.id);
-  tabs.splice(index,0,...moving);
+  ({tabs,splits}=projectTabMove(tabs,splits,id,targetId,placement));
  }
  const port:NativePort={version:1,snapshot:async()=>snapshot(),subscribe(listener){listeners.add(listener);return()=>listeners.delete(listener);},async request(command:Command){
   const c=command;

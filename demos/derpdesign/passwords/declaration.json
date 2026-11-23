@@ -1,0 +1,46 @@
+{
+  "id": "derpbird-passwords",
+  "projectId": "derpbird",
+  "name": "Passwords",
+  "description": "Saved login library and password editor in desktop and compact layouts.",
+  "panes": [
+    {
+      "id": "passwords-desktop",
+      "name": "Desktop",
+      "engine": "ladybird",
+      "route": "/",
+      "viewport": {
+        "width": 980,
+        "height": 720,
+        "deviceScaleFactor": "display"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "conditions": {
+        "passwordStudy": true,
+        "layout": "horizontal"
+      }
+    },
+    {
+      "id": "passwords-compact",
+      "name": "Compact",
+      "engine": "ladybird",
+      "route": "/",
+      "viewport": {
+        "width": 390,
+        "height": 720,
+        "deviceScaleFactor": "display"
+      },
+      "position": {
+        "x": 1020,
+        "y": 0
+      },
+      "conditions": {
+        "passwordStudy": true,
+        "layout": "horizontal"
+      }
+    }
+  ]
+}
