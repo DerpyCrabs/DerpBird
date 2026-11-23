@@ -1,7 +1,8 @@
 diff --git i/Libraries/LibWeb/DOM/Document.cpp w/Libraries/LibWeb/DOM/Document.cpp
+index dafd1c162..2e15f1e20 100644
 --- i/Libraries/LibWeb/DOM/Document.cpp
 +++ w/Libraries/LibWeb/DOM/Document.cpp
-@@ -188,6 +188,7 @@
+@@ -189,6 +189,7 @@
  #include <LibWeb/HTML/History.h>
  #include <LibWeb/HTML/ListOfAvailableImages.h>
  #include <LibWeb/HTML/LocalNavigable.h>
@@ -9,7 +10,7 @@ diff --git i/Libraries/LibWeb/DOM/Document.cpp w/Libraries/LibWeb/DOM/Document.c
  #include <LibWeb/HTML/LocalTraversableNavigable.h>
  #include <LibWeb/HTML/Location.h>
  #include <LibWeb/HTML/MessageEvent.h>
-@@ -11545,7 +11546,7 @@
+@@ -11660,7 +11661,7 @@ bool Document::showing_an_unload_prompt_is_unlikely_to_be_annoying_deceptive_or_
      // FIXME: Revisit this approximation of "unlikely to be annoying, deceptive, or pointless".
      return is_active()
          && is_fully_active()
@@ -19,16 +20,16 @@ diff --git i/Libraries/LibWeb/DOM/Document.cpp w/Libraries/LibWeb/DOM/Document.c
  
  // https://html.spec.whatwg.org/multipage/browsing-the-web.html#steps-to-fire-beforeunload
 diff --git i/Libraries/LibWeb/HTML/CheckUnloadingCanceledState.cpp w/Libraries/LibWeb/HTML/CheckUnloadingCanceledState.cpp
+index 133d539c1..16ff0ba23 100644
 --- i/Libraries/LibWeb/HTML/CheckUnloadingCanceledState.cpp
 +++ w/Libraries/LibWeb/HTML/CheckUnloadingCanceledState.cpp
-@@ -68,8 +68,18 @@
+@@ -68,8 +68,18 @@ void CheckUnloadingCanceledState::adopt_for_close(GC::Ref<GC::Function<void(bool
      ++m_phase2_generation;
  }
  
 -void CheckUnloadingCanceledState::start(Vector<GC::Root<LocalNavigable>> const& navigables_that_need_before_unload, RefPtr<SessionHistoryEntry> target_entry)
--{
 +bool CheckUnloadingCanceledState::can_present_background_close_prompt(Page const& page)
-+{
+ {
 +    auto* traversable = as_if<LocalTraversableNavigable>(page.top_level_traversable().ptr());
 +    if (!traversable)
 +        return false;
@@ -43,9 +44,10 @@ diff --git i/Libraries/LibWeb/HTML/CheckUnloadingCanceledState.cpp w/Libraries/L
      for (auto& navigable : navigables_that_need_before_unload)
          m_phase2_documents.append(*navigable->active_document());
 diff --git i/Libraries/LibWeb/HTML/CheckUnloadingCanceledState.h w/Libraries/LibWeb/HTML/CheckUnloadingCanceledState.h
+index f2f072dcd..1e06d6d2b 100644
 --- i/Libraries/LibWeb/HTML/CheckUnloadingCanceledState.h
 +++ w/Libraries/LibWeb/HTML/CheckUnloadingCanceledState.h
-@@ -37,7 +37,9 @@
+@@ -37,7 +37,9 @@ public:
      virtual void visit_edges(Visitor&) override;
  
      void adopt_for_close(GC::Ref<GC::Function<void(bool)>> callback);
@@ -56,7 +58,7 @@ diff --git i/Libraries/LibWeb/HTML/CheckUnloadingCanceledState.h w/Libraries/Lib
  
  private:
      bool document_was_already_fired(DOM::Document const&) const;
-@@ -52,6 +54,7 @@
+@@ -52,6 +54,7 @@ private:
  
      Result m_final_status { Result::Continue };
      UnloadPromptShown m_unload_prompt_shown { UnloadPromptShown::No };
@@ -65,9 +67,10 @@ diff --git i/Libraries/LibWeb/HTML/CheckUnloadingCanceledState.h w/Libraries/Lib
      GC::Ref<Page> m_page;
      GC::Ptr<LocalTraversableNavigable> m_owner;
 diff --git i/Libraries/LibWeb/HTML/LocalNavigable.cpp w/Libraries/LibWeb/HTML/LocalNavigable.cpp
+index 4fa3a5f23..41f4d4edb 100644
 --- i/Libraries/LibWeb/HTML/LocalNavigable.cpp
 +++ w/Libraries/LibWeb/HTML/LocalNavigable.cpp
-@@ -4607,7 +4607,7 @@
+@@ -4637,7 +4637,7 @@ void LocalTraversableNavigable::request_close_preflight(GC::Ref<GC::Function<voi
          if (auto* local_navigable = as_if<LocalNavigable>(navigable.ptr()))
              local_navigables.append(*local_navigable);
      }
@@ -77,6 +80,7 @@ diff --git i/Libraries/LibWeb/HTML/LocalNavigable.cpp w/Libraries/LibWeb/HTML/Lo
  
  // https://html.spec.whatwg.org/multipage/browsing-the-web.html#finalize-a-cross-document-navigation
 diff --git i/UI/Qt/Application.cpp w/UI/Qt/Application.cpp
+index 2d4c71583..7724ae60c 100644
 --- i/UI/Qt/Application.cpp
 +++ w/UI/Qt/Application.cpp
 @@ -5,6 +5,8 @@
@@ -88,8 +92,8 @@ diff --git i/UI/Qt/Application.cpp w/UI/Qt/Application.cpp
  #include <UI/Qt/DerpBirdCredentialManager.h>
  #include <UI/Qt/DerpBirdStyleStore.h>
  #include <LibWebView/Profile.h>
-@@ -1117,8 +1119,78 @@
-     m_picture_in_picture_windows.clear();
+@@ -1257,8 +1259,78 @@ void Application::set_shows_compositor_layers(bool shows)
+     m_compositor_layers_window->raise();
  }
  
 +// Menu actions and download completions can arrive while no browser window has focus.
@@ -167,7 +171,7 @@ diff --git i/UI/Qt/Application.cpp w/UI/Qt/Application.cpp
      if (!m_process_manager_window) {
          m_process_manager_window = make<ProcessManagerWindow>(ProcessManagerWindow::Source {
  #ifdef LADYBIRD_HUB_IN_OWN_PROCESS
-@@ -1931,6 +2003,7 @@
+@@ -2078,6 +2150,7 @@ void Application::update_feedback_buttons()
  void Application::open_file()
  {
      if (!m_active_window) {
@@ -175,7 +179,7 @@ diff --git i/UI/Qt/Application.cpp w/UI/Qt/Application.cpp
          auto filename = QFileDialog::getOpenFileUrl(nullptr, "Open file", QDir::homePath(), "All Files (*.*)");
          if (filename.isValid())
              new_window({ ak_url_from_qurl(filename) });
-@@ -2067,6 +2140,23 @@
+@@ -2214,6 +2287,23 @@ bool Application::confirm_stop_active_downloads(QWidget* parent)
      auto& downloader = RemoteDownloads::the();
  
      if (downloader.has_unresumable_downloads()) {
@@ -199,7 +203,7 @@ diff --git i/UI/Qt/Application.cpp w/UI/Qt/Application.cpp
          QMessageBox dialog(parent ? parent : active_window_if_any());
          dialog.setWindowTitle("Ladybird");
          dialog.setIcon(QMessageBox::Warning);
-@@ -2411,6 +2501,12 @@
+@@ -2558,6 +2648,12 @@ void Application::display_download_confirmation_dialog(StringView download_name,
  {
      auto message = MUST(String::formatted("{} saved to: {}", download_name, path));
  
@@ -212,7 +216,7 @@ diff --git i/UI/Qt/Application.cpp w/UI/Qt/Application.cpp
      auto* dialog = create_message_box(QMessageBox::Information, message, active_window_if_any());
  
      auto* open_folder_button = dialog->addButton(QMessageBox::Open);
-@@ -2424,6 +2520,10 @@
+@@ -2571,6 +2667,10 @@ void Application::display_download_confirmation_dialog(StringView download_name,
  
  void Application::display_error_dialog(StringView error_message) const
  {
@@ -223,7 +227,7 @@ diff --git i/UI/Qt/Application.cpp w/UI/Qt/Application.cpp
      create_message_box(QMessageBox::Warning, error_message, active_window_if_any())->open();
  }
  
-@@ -2431,6 +2531,13 @@
+@@ -2579,6 +2679,13 @@ void Application::display_update_check_result(WebView::UpdateCheckResult::Kind k
  {
      static constexpr auto current_version = BROWSER_VERSION ""sv;
  
@@ -237,7 +241,7 @@ diff --git i/UI/Qt/Application.cpp w/UI/Qt/Application.cpp
      switch (kind) {
      case WebView::UpdateCheckResult::Kind::UpToDate:
          create_message_box(QMessageBox::Information, MUST(String::formatted("Ladybird {} is the newest version.", current_version)), active_window_if_any())->open();
-@@ -2729,6 +2836,36 @@
+@@ -2898,6 +3005,36 @@ void Application::show_bookmark_context_menu(Gfx::IntPoint content_position, Opt
      }
  }
  
@@ -274,7 +278,7 @@ diff --git i/UI/Qt/Application.cpp w/UI/Qt/Application.cpp
  static NonnullRefPtr<Application::BookmarkPromise> display_add_or_edit_bookmark_dialog(
      QWidget* parent,
      BookmarkDialog::Type dialog_type,
-@@ -2737,6 +2874,8 @@
+@@ -2906,6 +3043,8 @@ static NonnullRefPtr<Application::BookmarkPromise> display_add_or_edit_bookmark_
      Optional<String> current_favicon_hash,
      Optional<String const&> selected_folder_id = {})
  {
@@ -283,7 +287,7 @@ diff --git i/UI/Qt/Application.cpp w/UI/Qt/Application.cpp
      auto const& folders = Application::bookmark_store().root_items();
  
      auto* dialog = new BookmarkDialog(parent, dialog_type, current_url, current_title, selected_folder_id, folders);
-@@ -2804,6 +2943,8 @@
+@@ -2973,6 +3112,8 @@ static NonnullRefPtr<Application::BookmarkPromise> display_add_or_edit_bookmark_
      Optional<String const&> selected_folder_id,
      Optional<String const&> excluded_folder_id = {})
  {
@@ -293,25 +297,28 @@ diff --git i/UI/Qt/Application.cpp w/UI/Qt/Application.cpp
      auto promise = Application::BookmarkPromise::construct();
  
 diff --git i/UI/Qt/Application.h w/UI/Qt/Application.h
+index d7199d5f9..42ea36bb7 100644
 --- i/UI/Qt/Application.h
 +++ w/UI/Qt/Application.h
-@@ -160,6 +160,7 @@
-     void reset_private_browsing_session();
+@@ -167,6 +167,7 @@ public:
      void focus_location_editor();
      void show_process_manager();
+     void set_shows_compositor_layers(bool);
 +    static BrowserWindow* shell_dialog_window();
      // Asks every window's pages if they may unload, one window at a time. Once all of them agree, it confirms stopping
      // the downloads and quits; if a page refuses or the downloads are kept, the quit is canceled and no window closes.
      void quit();
 diff --git i/UI/Qt/BrowserWindow.cpp w/UI/Qt/BrowserWindow.cpp
+index 0787a3310..3a9e1007a 100644
 --- i/UI/Qt/BrowserWindow.cpp
 +++ w/UI/Qt/BrowserWindow.cpp
-@@ -2303,15 +2303,15 @@
+@@ -2361,15 +2361,15 @@ void BrowserWindow::request_close_preflight(Function<void(bool approved)> on_com
      begin_window_close_preflight(AK::move(on_complete));
  }
  
 -void BrowserWindow::raise_for_close_prompt()
--{
++bool BrowserWindow::raise_for_close_prompt(Tab& tab)
+ {
 -    // Only an application-wide check carries a completion; a close the user started on this window is already in front.
 -    if (!m_window_close_coordinator.is_running() || !m_window_close_preflight_on_complete)
 -        return;
@@ -319,8 +326,6 @@ diff --git i/UI/Qt/BrowserWindow.cpp w/UI/Qt/BrowserWindow.cpp
 -    // A page's beforeunload prompt shows inside this window, which may sit behind other windows or in the Dock while a
 -    // close check asks it, so the window comes to the front first, where the user can see the prompt.
 -    bring_to_front();
-+bool BrowserWindow::raise_for_close_prompt(Tab& tab)
-+{
 +    if (!m_window_close_coordinator.is_running() || m_window_close_current_preflight_tab != &tab)
 +        return false;
 +    if (m_current_tab != &tab)
@@ -331,7 +336,7 @@ diff --git i/UI/Qt/BrowserWindow.cpp w/UI/Qt/BrowserWindow.cpp
  }
  
  void BrowserWindow::bring_to_front()
-@@ -2361,6 +2361,41 @@
+@@ -2419,6 +2419,41 @@ void BrowserWindow::report_session_window_geometry()
      session().window_geometry_changed(*m_session_window_id, window_geometry);
  }
  
@@ -373,7 +378,7 @@ diff --git i/UI/Qt/BrowserWindow.cpp w/UI/Qt/BrowserWindow.cpp
  void BrowserWindow::begin_window_close_preflight(Function<void(bool approved)> on_complete)
  {
      m_window_close_active_tab_index = static_cast<i64>(max(m_tabs_container->current_index(), 0));
-@@ -2378,34 +2413,8 @@
+@@ -2436,34 +2471,8 @@ void BrowserWindow::begin_window_close_preflight(Function<void(bool approved)> o
  
      Vector<WindowCloseCoordinator::Preflight> preflights;
      preflights.ensure_capacity(tabs.size());
@@ -410,7 +415,7 @@ diff --git i/UI/Qt/BrowserWindow.cpp w/UI/Qt/BrowserWindow.cpp
  
      // With a completion, approval only marks the window as approved (so that a later close() goes straight through),
      // and the caller decides when to close it.
-@@ -2437,11 +2446,6 @@
+@@ -2495,11 +2504,6 @@ void BrowserWindow::begin_window_close_preflight(Function<void(bool approved)> o
          [weak_this] {
              if (!weak_this)
                  return;
@@ -422,7 +427,7 @@ diff --git i/UI/Qt/BrowserWindow.cpp w/UI/Qt/BrowserWindow.cpp
              weak_this->m_window_close_active_tab_index.clear();
              weak_this->m_window_close_original_active_tab = nullptr;
              weak_this->m_window_close_current_preflight_tab = nullptr;
-@@ -2491,6 +2495,16 @@
+@@ -2549,6 +2553,16 @@ void BrowserWindow::on_tab_load_start(Tab& tab)
      if (!m_window_close_coordinator.is_running() && !m_window_close_approved)
          return;
  
@@ -440,9 +445,10 @@ diff --git i/UI/Qt/BrowserWindow.cpp w/UI/Qt/BrowserWindow.cpp
          cancel_window_close_preflight();
  }
 diff --git i/UI/Qt/BrowserWindow.h w/UI/Qt/BrowserWindow.h
+index cb6dd3c2f..1e245af67 100644
 --- i/UI/Qt/BrowserWindow.h
 +++ w/UI/Qt/BrowserWindow.h
-@@ -201,7 +201,7 @@
+@@ -204,7 +204,7 @@ public:
      // a close() goes straight through.
      void request_close_preflight(Function<void(bool approved)> on_complete);
      // Brings the window forward for a page's beforeunload prompt during an application-wide close check.
@@ -451,7 +457,7 @@ diff --git i/UI/Qt/BrowserWindow.h w/UI/Qt/BrowserWindow.h
      // Unminimizes, raises and activates the window, so the user sees it in front.
      void bring_to_front();
      // The tab showing this view, if it's one of this window's.
-@@ -297,6 +297,7 @@
+@@ -303,6 +303,7 @@ private:
      void update_window_title(QString const&);
      void register_window_with_session_store();
      void sync_session_tab_order();
@@ -459,7 +465,7 @@ diff --git i/UI/Qt/BrowserWindow.h w/UI/Qt/BrowserWindow.h
      void begin_window_close_preflight(Function<void(bool approved)> on_complete = {});
  
      void set_current_tab(Tab* tab);
-@@ -377,6 +378,8 @@
+@@ -378,6 +379,8 @@ private:
      Vector<QPointer<Tab>> m_window_close_approved_tabs;
      WindowCloseCoordinator m_window_close_coordinator;
      Function<void(bool approved)> m_window_close_preflight_on_complete;
@@ -469,9 +475,10 @@ diff --git i/UI/Qt/BrowserWindow.h w/UI/Qt/BrowserWindow.h
      bool m_window_close_accepted { false };
  
 diff --git i/UI/Qt/PermissionPromptPopover.cpp w/UI/Qt/PermissionPromptPopover.cpp
+index 7396286fe..6aec88bf9 100644
 --- i/UI/Qt/PermissionPromptPopover.cpp
 +++ w/UI/Qt/PermissionPromptPopover.cpp
-@@ -233,7 +233,7 @@
+@@ -233,7 +233,7 @@ PermissionPromptQueue::~PermissionPromptQueue()
  void PermissionPromptQueue::enqueue(WebView::PermissionPromptRequest request, WebView::PermissionPromptCallback on_outcome)
  {
      m_pending.append({ move(request), move(on_outcome) });
@@ -480,7 +487,7 @@ diff --git i/UI/Qt/PermissionPromptPopover.cpp w/UI/Qt/PermissionPromptPopover.c
          show_next();
  }
  
-@@ -241,6 +241,13 @@
+@@ -241,6 +241,13 @@ void PermissionPromptQueue::cancel(WebView::PermissionPromptRequest const& reque
  {
      m_pending.remove_all_matching([&](auto const& pending) { return pending.request.is_same_request_as(request); });
  
@@ -494,7 +501,7 @@ diff --git i/UI/Qt/PermissionPromptPopover.cpp w/UI/Qt/PermissionPromptPopover.c
      if (!m_current || !m_current->request().is_same_request_as(request))
          return;
      auto* popover = exchange(m_current, nullptr);
-@@ -254,6 +261,12 @@
+@@ -254,6 +261,12 @@ void PermissionPromptQueue::cancel(WebView::PermissionPromptRequest const& reque
  void PermissionPromptQueue::ignore_all()
  {
      auto pending = move(m_pending);
@@ -507,7 +514,7 @@ diff --git i/UI/Qt/PermissionPromptPopover.cpp w/UI/Qt/PermissionPromptPopover.c
      if (m_current)
          m_current->ignore();
      for (auto& entry : pending)
-@@ -262,6 +275,7 @@
+@@ -262,6 +275,7 @@ void PermissionPromptQueue::ignore_all()
  
  void PermissionPromptQueue::suspend()
  {
@@ -515,7 +522,7 @@ diff --git i/UI/Qt/PermissionPromptPopover.cpp w/UI/Qt/PermissionPromptPopover.c
      m_suspended = true;
      if (m_current)
          m_current->suspend();
-@@ -269,17 +283,34 @@
+@@ -269,17 +283,34 @@ void PermissionPromptQueue::suspend()
  
  void PermissionPromptQueue::resume()
  {
@@ -553,9 +560,10 @@ diff --git i/UI/Qt/PermissionPromptPopover.cpp w/UI/Qt/PermissionPromptPopover.c
      m_current_callback = move(next.on_outcome);
      m_current->on_outcome = [this](Web::Permissions::PromptOutcome outcome) {
 diff --git i/UI/Qt/PermissionPromptPopover.h w/UI/Qt/PermissionPromptPopover.h
+index 206a0bbdd..3f24ce3e7 100644
 --- i/UI/Qt/PermissionPromptPopover.h
 +++ w/UI/Qt/PermissionPromptPopover.h
-@@ -71,6 +71,8 @@
+@@ -71,6 +71,8 @@ public:
  
      Function<PermissionPromptPopover*(WebView::PermissionPromptRequest const&)> create_popover;
  
@@ -564,7 +572,7 @@ diff --git i/UI/Qt/PermissionPromptPopover.h w/UI/Qt/PermissionPromptPopover.h
      void enqueue(WebView::PermissionPromptRequest, WebView::PermissionPromptCallback);
      void cancel(WebView::PermissionPromptRequest const&);
      void ignore_all();
-@@ -89,6 +91,8 @@
+@@ -89,6 +91,8 @@ private:
      void show_next();
  
      Vector<Pending> m_pending;
@@ -574,6 +582,7 @@ diff --git i/UI/Qt/PermissionPromptPopover.h w/UI/Qt/PermissionPromptPopover.h
      WebView::PermissionPromptCallback m_current_callback;
      bool m_suspended { false };
 diff --git i/UI/Qt/Tab.cpp w/UI/Qt/Tab.cpp
+index 600ad3dc4..c91116806 100644
 --- i/UI/Qt/Tab.cpp
 +++ w/UI/Qt/Tab.cpp
 @@ -24,6 +24,9 @@
@@ -586,7 +595,7 @@ diff --git i/UI/Qt/Tab.cpp w/UI/Qt/Tab.cpp
  #include <UI/Qt/ChromeStyle.h>
  #include <UI/Qt/HubConnection.h>
  #include <UI/Qt/Icon.h>
-@@ -222,8 +225,20 @@
+@@ -219,8 +222,20 @@ void Tab::initialize(Optional<u64> hub_view_id)
      // where the window stands now.
      m_view->set_window_position({ m_window->x(), m_window->y() });
      m_view->set_window_size({ m_window->width(), m_window->height() });
@@ -609,7 +618,7 @@ diff --git i/UI/Qt/Tab.cpp w/UI/Qt/Tab.cpp
      m_find_in_page = new FindInPageWidget(this, m_view);
      m_view->add_floating_surface(*m_find_in_page);
      m_find_in_page->setVisible(false);
-@@ -430,9 +445,9 @@
+@@ -444,9 +459,9 @@ void Tab::initialize(Optional<u64> hub_view_id)
      view().on_request_before_unload = [this](auto const& source, auto on_complete) {
          hide_hover_label();
          m_before_unload_completion = AK::move(on_complete);
@@ -621,7 +630,7 @@ diff --git i/UI/Qt/Tab.cpp w/UI/Qt/Tab.cpp
      };
  
      view().on_request_confirm = [this, javascript_dialog_title, offer_to_block_further_dialogs](auto const& message) {
-@@ -540,6 +555,11 @@
+@@ -554,6 +569,11 @@ void Tab::initialize(Optional<u64> hub_view_id)
          auto details = MUST(String::formatted("URL: '{}'", url));
          auto open_button_text = handler_name.is_empty() ? "Open"_string : MUST(String::formatted("Open {}", application_name));
  
@@ -633,7 +642,7 @@ diff --git i/UI/Qt/Tab.cpp w/UI/Qt/Tab.cpp
          auto* dialog = new QMessageBox(&view());
          m_external_url_confirmation_dialog = dialog;
          dialog->setAttribute(Qt::WA_DeleteOnClose);
-@@ -562,6 +582,33 @@
+@@ -576,6 +596,33 @@ void Tab::initialize(Optional<u64> hub_view_id)
          dialog->open();
      };
  
@@ -667,7 +676,7 @@ diff --git i/UI/Qt/Tab.cpp w/UI/Qt/Tab.cpp
      m_permission_prompts.create_popover = [this](WebView::PermissionPromptRequest const& request) {
          auto* popover = new PermissionPromptPopover(this, request);
          popover->update_chrome_style(palette());
-@@ -612,14 +659,25 @@
+@@ -626,14 +673,25 @@ void Tab::initialize(Optional<u64> hub_view_id)
      };
  
      view().on_request_accept_dialog = [this]() {
@@ -695,7 +704,7 @@ diff --git i/UI/Qt/Tab.cpp w/UI/Qt/Tab.cpp
          m_color_picker_dialog = new QColorDialog(QColor(current_color.red(), current_color.green(), current_color.blue()), &view());
  
          auto& dialog = *m_color_picker_dialog;
-@@ -644,6 +702,18 @@
+@@ -658,6 +716,18 @@ void Tab::initialize(Optional<u64> hub_view_id)
      };
  
      view().on_request_date_picker = [this](Utf16String const& input_type, Utf16String const& value, Utf16String const& minimum, Utf16String const& maximum) {
@@ -714,7 +723,7 @@ diff --git i/UI/Qt/Tab.cpp w/UI/Qt/Tab.cpp
          if (m_date_picker_dialog) {
              view().date_picker_closed({});
              return;
-@@ -877,6 +947,12 @@
+@@ -891,6 +961,12 @@ void Tab::initialize(Optional<u64> hub_view_id)
      };
  }
  
@@ -727,7 +736,7 @@ diff --git i/UI/Qt/Tab.cpp w/UI/Qt/Tab.cpp
  ErrorOr<void> Tab::complete_file_picker(QStringList const& paths)
  {
      if (!m_file_picker_dialog) return Error::from_string_literal("No file chooser is open for this tab");
-@@ -1333,7 +1409,7 @@
+@@ -1365,7 +1441,7 @@ void Tab::showEvent(QShowEvent* event)
  // comes up over an inactive window is closed by the next click or activation anywhere else.
  void Tab::update_permission_prompts()
  {
@@ -736,7 +745,7 @@ diff --git i/UI/Qt/Tab.cpp w/UI/Qt/Tab.cpp
          m_permission_prompts.resume();
      else
          m_permission_prompts.suspend();
-@@ -1545,6 +1621,29 @@
+@@ -1575,6 +1651,29 @@ void Tab::show_bookmark_popover()
      if (!bookmark.has_value())
          return;
  
@@ -766,7 +775,7 @@ diff --git i/UI/Qt/Tab.cpp w/UI/Qt/Tab.cpp
      if (!m_bookmark_popover) {
          m_bookmark_popover = new BookmarkPopover(this);
          m_bookmark_popover->on_remove = [this](Function<void()> const& remove) {
-@@ -1755,7 +1854,9 @@
+@@ -1785,7 +1884,9 @@ void Tab::request_window_close_preflight(Function<void(bool)> on_complete)
  
      m_suppress_javascript_dialogs_until_navigation = true;
  
@@ -778,9 +787,10 @@ diff --git i/UI/Qt/Tab.cpp w/UI/Qt/Tab.cpp
  
      if (!view().needs_beforeunload_check()) {
 diff --git i/UI/Qt/Tab.h w/UI/Qt/Tab.h
+index 572755e09..fd57e6b6a 100644
 --- i/UI/Qt/Tab.h
 +++ w/UI/Qt/Tab.h
-@@ -46,7 +46,7 @@
+@@ -48,7 +48,7 @@ namespace Ladybird {
  class BookmarkPopover;
  class BrowserWindow;
  enum class ChromeIcon;
@@ -789,7 +799,7 @@ diff --git i/UI/Qt/Tab.h w/UI/Qt/Tab.h
  class MessagePopover;
  
  class HyperlinkLabel final : public QLabel {
-@@ -81,6 +81,7 @@
+@@ -86,6 +86,7 @@ public:
      Tab(BrowserWindow* window, Optional<u64> hub_view_id = {});
      Tab(BrowserWindow* window, DeferredTab);
      virtual ~Tab() override;
@@ -797,9 +807,9 @@ diff --git i/UI/Qt/Tab.h w/UI/Qt/Tab.h
      bool has_file_picker() const { return !m_file_picker_dialog.isNull(); }
      ErrorOr<void> complete_file_picker(QStringList const& paths);
  
-@@ -258,7 +259,8 @@
-     QAction* m_pin_tab_action { nullptr };
+@@ -271,7 +272,8 @@ private:
      WebView::TabPerformanceStats m_performance_stats;
+     Optional<Compositing::CompositorLayersDescription> m_compositor_layers;
  
 -    JavaScriptDialog* m_javascript_dialog { nullptr };
 +    OwnPtr<DerpBirdDialog> m_javascript_dialog;
@@ -808,9 +818,10 @@ diff --git i/UI/Qt/Tab.h w/UI/Qt/Tab.h
      QPointer<QColorDialog> m_color_picker_dialog;
      QPointer<QDialog> m_date_picker_dialog;
 diff --git i/UI/Qt/WindowCloseCoordinator.h w/UI/Qt/WindowCloseCoordinator.h
+index 1835330c4..11aaeb7aa 100644
 --- i/UI/Qt/WindowCloseCoordinator.h
 +++ w/UI/Qt/WindowCloseCoordinator.h
-@@ -17,6 +17,7 @@
+@@ -17,6 +17,7 @@ public:
  
      bool start(Vector<Preflight>, Function<void()> on_approved, Function<void()> on_canceled);
      void cancel();
