@@ -72,13 +72,18 @@ def main():
         return json.loads(evaluate('JSON.stringify((()=>{const r=document.querySelector('+json.dumps(selector)+').getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})())'))
     def click(x, y):
         pointer.move(x, y); time.sleep(.3); pointer.button(True); time.sleep(.06); pointer.button(False); time.sleep(.15)
-    def drag(start, end, preview=None, cancel=False):
+    def drag(start, end, preview=None, cancel=False, held=None):
         pointer.move(*start); time.sleep(.1); pointer.button(True); time.sleep(.1)
         for step in range(1, 17):
             pointer.move(start[0]+(end[0]-start[0])*step/16, start[1]+(end[1]-start[1])*step/16); time.sleep(.04)
+        if held: held()
         if preview: capture(preview)
         if cancel: evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true")
         pointer.button(False); time.sleep(.5)
+    def group_by_drag(source, target):
+        x, y = tab_center(target)
+        vertical = evaluate('document.querySelector(".shell.vertical") !== null')
+        drag(tab_center(source), (x + (32 if vertical else 0), y))
     def capture(name):
         time.sleep(.3)
         path = args.output / (name+'.png')
@@ -203,6 +208,16 @@ def main():
             # A real page must paint all the way to the shell edges.
             for x,y in [(page['x']+page['width']/2,page['y']+page['height']/2),(page['x']+page['width']-2,page['y']+page['height']-2)]:
                 assert image.getpixel((round(x),round(y)))[:3]==(232,228,218), ('unpainted content',layout,x,y)
+            address = bounds('.compact-address' if layout['preset']=='compact' else '#location')
+            address_pixel = image.getpixel((round(address['x'] + address['width']/2), round(address['y'] + address['height']/2)))[:3]
+            assert address_pixel != (232,228,218), ('page covers the address bar', layout, address)
+            if layout['preset']=='compact':
+                assert evaluate("""(() => {
+                    const buttons = [...document.querySelectorAll('.navigation > button:not(.compact-address)')]
+                        .map(button => button.getBoundingClientRect()).filter(rect => rect.width);
+                    const address = document.querySelector('.compact-address').getBoundingClientRect();
+                    return buttons.length === 8 && buttons.every(rect => rect.y === buttons[0].y && rect.bottom <= address.y);
+                })()"""), 'All compact navigation actions must fit on the row above the URL'
             evaluate('window.layoutKeys=[];document.addEventListener("keydown",e=>layoutKeys.push([e.key,e.ctrlKey]));window.addEventListener("derpbird-focus-address",()=>layoutKeys.push("native-focus"));true')
             click(page['x']+page['width']/2,page['y']+page['height']/2)
             subprocess.run(['wtype','-s','100','-M','ctrl','-k','l','-m','ctrl'],env=env,check=True,timeout=10)
@@ -230,8 +245,28 @@ def main():
             assert evaluate('document.activeElement===layoutInput&&layoutInput.value==="typed.example"&&layoutInput.selectionStart===2&&layoutInput.selectionEnd===6'), 'URL input flicker'
             if layout['preset']=='compact':evaluate('document.querySelector('+json.dumps('[aria-label="Close address palette"]')+').click();true')
             else:subprocess.run(['wtype','-k','Escape'],env=env,check=True,timeout=10)
-            drag(tab_center(ids['Release']),tab_center(ids['Notes']))
+            if layout['preset'] == 'compact':
+                # Check the reserved row before releasing, then compare it to the
+                # native order. This also catches demo-only gesture wiring.
+                tabs = snapshot()['tabs']
+                first, second = tabs[0]['id'], tabs[1]['id']
+                from_point, to_point = tab_center(first), tab_center(second)
+                def check_slot():
+                    assert evaluate('document.querySelector(".drag-lifted") !== null')
+                    slot = bounds('.drag-slot')
+                    assert abs(slot['y'] + slot['height']/2 - to_point[1]) < 2
+                    assert [t['id'] for t in snapshot()['tabs']] == [t['id'] for t in tabs]
+                drag(from_point, to_point, held=check_slot, preview='tab-reorder-'+layout['side'])
+                after = snapshot()['tabs']
+                assert [t['id'] for t in after] == [second, first, *[t['id'] for t in tabs[2:]]]
+                assert not after[1].get('parentId')
+            group_by_drag(ids['Release'], ids['Notes'])
             assert next(t for t in snapshot()['tabs'] if t['id']==ids['Release']).get('parentId')==ids['Notes']
+            assert until("""(() => {
+                const parent = document.querySelector('.tree-root .tab-title');
+                const child = document.querySelector('.tree-child .tab-title');
+                return parent && child && getComputedStyle(parent).fontWeight === getComputedStyle(child).fontWeight;
+            })()"""), 'Grouped tabs should use the same title weight'
             before=snapshot()['tabs'];drag(tab_center(ids['Notes']),tab_center(ids['Checklist']),cancel=True)
             assert snapshot()['tabs']==before, 'Cancelled drag changed groups'
             command({'type':'tab.ungroup','tabId':ids['Release']})
@@ -448,7 +483,7 @@ def main():
         page = bounds('#content-surface')
         assert abs(float(evaluate('innerWidth', urls['Notes']))-page['width']) <= 2
         # The same pointer gesture still creates a group in the tab strip.
-        drag(tab_center(ids['Release']), tab_center(ids['Notes']))
+        group_by_drag(ids['Release'], ids['Notes'])
         until('document.querySelectorAll(".tree-child").length===1')
         capture('05-grouping')
         # Extracting that grouped tab to any edge creates the expected ordering.

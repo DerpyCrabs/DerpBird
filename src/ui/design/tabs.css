@@ -193,10 +193,10 @@ body.haz-proposal {
   display: flex;
   flex-wrap: wrap;
   justify-content: start;
-  margin: 6px 6px 3px;
+  margin: var(--tab-rail-inset) var(--tab-rail-inset) calc(var(--tab-rail-inset) - var(--tab-row-gap));
   padding: 0;
   border: 0;
-  gap: 4px;
+  gap: var(--tab-rail-inset);
 }
 .haz-proposal .shell.vertical .pinned-tab-unit {
   flex: 1 0 var(--haz-pin-basis, 34px);
@@ -217,7 +217,6 @@ body.haz-proposal {
 }
 .haz-proposal .shell .pinned-tabs .tab.active {
   background: var(--pref-raised);
-  border-color: var(--pref-line);
 }
 .haz-proposal .shell .pinned-tabs .tab > button {
   padding: 8px;
@@ -287,7 +286,6 @@ body.haz-proposal {
 .haz-proposal .workspace-shortcuts button[aria-pressed='true'] {
   color: var(--pref-text);
   background: var(--pref-raised);
-  box-shadow: inset 0 0 0 1px var(--pref-line);
 }
 .haz-proposal .workspace-shortcuts button:hover {
   background: var(--pref-hover);
@@ -658,10 +656,6 @@ body.haz-proposal {
   padding-left: var(--tab-content-inset);
   padding-right: 4px;
 }
-/* Group structure is visible without spending a second title column on it. */
-.haz-proposal .tab.tree-root .tab-title {
-  font-weight: 600;
-}
 .haz-proposal .shell.vertical .tree-child {
   position: relative;
   margin-left: var(--tab-child-indent);
@@ -836,7 +830,6 @@ body.haz-proposal {
 
 .haz-proposal .chrome-layout .navigation > .compact-address {
   background: var(--pref-raised);
-  border: 1px solid var(--pref-line);
   box-shadow: none;
   border-radius: 7px;
   color: var(--pref-text);
@@ -847,7 +840,6 @@ body.haz-proposal {
 }
 .haz-proposal .chrome-layout .navigation > .compact-address:hover {
   background: var(--pref-hover);
-  border-color: var(--pref-control-edge);
 }
 .haz-proposal .compact-address kbd {
   color: var(--pref-muted);
@@ -875,7 +867,6 @@ body.haz-proposal {
 }
 .haz-proposal .shell.horizontal.wrap-tabs .pinned-tabs .tab.active {
   background: var(--pref-raised);
-  border-color: var(--pref-line);
 }
 .haz-proposal .shell.horizontal.wrap-tabs .pinned-tabs .tab:hover:not(.active) {
   background: #ffffff09;
@@ -893,7 +884,6 @@ body.haz-proposal {
 }
 .haz-proposal .shell.vertical .pinned-tabs .tab.active {
   background: var(--pref-raised);
-  border-color: var(--pref-control-edge);
 }
 
 /* Reference palette and a single separator geometry for the whole strip. */
@@ -1048,6 +1038,12 @@ body.haz-proposal {
 }
 .haz-proposal .shell.compact-chrome .navigation {
   padding: 4px 4px 8px;
+}
+.haz-proposal .shell.compact-chrome:has(.pinned-tabs) {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.haz-proposal .shell.compact-chrome:has(.pinned-tabs) .navigation {
+  padding-bottom: 0;
 }
 .haz-proposal .shell.compact-chrome .navigation > button:not(.compact-address) {
   width: min(28px, calc((100% - 12px) / 7));

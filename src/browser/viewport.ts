@@ -17,6 +17,7 @@ export function observeViewport(document: Document, send: (command: Command) => 
   const window = document.defaultView!;
   const content = document.getElementById('content-surface');
   if (!content) return () => {};
+  const shell = content.closest('.shell');
   let frame: number | undefined;
   let previous = '';
   let disposed = false;
@@ -53,9 +54,12 @@ export function observeViewport(document: Document, send: (command: Command) => 
   const mutations = new window.MutationObserver(records => {
     const structural = records.some(record => record.type === 'childList' &&
       [...record.addedNodes, ...record.removedNodes].some(containsSurface));
+    // A layout switch can move the page without changing its measured size.
+    const shellLayoutChanged = records.some(record => record.type === 'attributes' &&
+      record.target === shell);
     const geometry = records.some(record => record.type === 'attributes' &&
       (observed.has(record.target as Element) || (record.target as Element).matches(surfaceSelector)));
-    if (structural || geometry) { syncSurfaces(); schedule(); }
+    if (shellLayoutChanged || structural || geometry) { syncSurfaces(); schedule(); }
   });
   mutations.observe(document.body, { attributes: true, attributeFilter: ['class', 'style', 'open', 'hidden', 'data-internal-page'], childList: true, subtree: true });
   syncSurfaces();

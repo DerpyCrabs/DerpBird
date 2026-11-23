@@ -1,3 +1,4 @@
+import { tabDragPreview } from './ui/design/tab-drag';
 import { mountShellDialogs } from './ui/ShellDialogs';
 import { createDownloadMenu, downloadEntry } from './ui/collections/download-menu';
 import { focusAddress } from './browser/address-focus';
@@ -168,7 +169,7 @@ const updateTimer = webui ? setInterval(() => { void syncFolders(); }, 3_600_000
 const autofillPort = (window.derpbird as (NativePort & { autofill?: (token: string, id?: string) => Promise<void> }) | undefined)?.autofill ?? webui?.autofill;
 const autofill = autofillPort ? (token: string, id?: string) => { void autofillPort(token, id).catch(error => controller.reportError(error)); } : undefined;
 const mounted = mount(document.getElementById('app')!, shellView(controller, showStyles, showScripts, showCredentials, showImport, autofill, showProxy, showPageSources), controller.source);
-const stopSplitInteractions = observeSplitInteractions(document, controller);
+const stopSplitInteractions = observeSplitInteractions(document, controller, tabDragPreview(controller));
 const stopSidebarResize = observeSidebarResize(document, controller.previewSidebarWidth, controller.setSidebarWidth);
 document.body.classList.add('native-shell');
 const stopChrome=mountBrowserChrome(controller);

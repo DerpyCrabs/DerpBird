@@ -11,9 +11,11 @@ export function observePinLayout(shell:HTMLElement){
   if(next!==host){if(host)resize.unobserve(host);host=next;if(host)resize.observe(host);}
   if(!host)return;
   const width=host.clientWidth;
-  const capacity=Math.max(1,Math.min(6,Math.floor((width+4)/32)));
+  const gap=parseFloat(host.ownerDocument.defaultView!.getComputedStyle(host).columnGap)||0;
+  const minPinWidth=28;
+  const capacity=Math.max(1,Math.min(6,Math.floor((width+gap)/(minPinWidth+gap))));
   const rows=pinRows(host.children.length,capacity),columns=rows[0]??1;
-  const basis=`${Math.max(0,(width-4*(columns-1))/columns-.02)}px`,signature=rows.join('+');
+  const basis=`${Math.max(0,(width-gap*(columns-1))/columns-.02)}px`,signature=rows.join('+');
   if(host.style.getPropertyValue('--haz-pin-basis')!==basis)host.style.setProperty('--haz-pin-basis',basis);
   if(host.dataset.pinRows!==signature)host.dataset.pinRows=signature;
  };

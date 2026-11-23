@@ -1,6 +1,6 @@
 import type { BrowserSnapshot, Tab, SplitView } from './protocol';
 import type { ShellController } from './controller';
-import { canDropTab, tabDropPlacement } from './tab-tree';
+import { canDropTab, tabDropPlacement, type TabPlacement } from './tab-tree';
 
 export function splitFor(browser: BrowserSnapshot, tabId: string | undefined | null) {
   return browser.splits?.find(split => split.firstTabId === tabId || split.secondTabId === tabId);
@@ -58,21 +58,29 @@ export function splitEdge(x: number, y: number, width: number, height: number): 
 }
 export const splitRatio = (position: number, length: number) => Math.max(.2, Math.min(.8, (position - 3) / Math.max(1, length - 6)));
 
+export type TabDragPreview = {
+  target(event: PointerEvent): { tabId?: string; placement: TabPlacement };
+  dispose(settle?: boolean): void;
+};
+type BeginTabDragPreview = (id: string, x: number, y: number) => TabDragPreview | undefined;
+
 /** Own the whole gesture, including grouping, without relying on pointer capture
  * (not implemented by every supported engine). The temporary page overlay gives
  * the shell native input ownership before a pointer leaves the tab strip. */
-export function observeSplitInteractions(document: Document, controller: Pick<ShellController, 'state' | 'send'>) {
+export function observeSplitInteractions(document: Document, controller: Pick<ShellController, 'state' | 'send'>, beginPreview?: BeginTabDragPreview) {
   const window = document.defaultView!;
   const content = document.getElementById('content-surface');
   const overlay = document.querySelector<HTMLElement>('.split-drag-surface');
   if (!content || !overlay) return () => {};
   type Drag = { pointer: number; x: number; y: number; tabId: string; started: boolean; layout: string };
   let drag: Drag | undefined;
+  let preview: TabDragPreview | undefined;
   let resize: { pointer: number; split: SplitView; ratio: number } | undefined;
   let suppressClick = false;
   let frame: number | undefined;
   const clearMarkers = () => document.querySelectorAll('[data-drop]').forEach(node => node.removeAttribute('data-drop'));
   const reset = () => {
+    preview?.dispose(); preview = undefined;
     drag = undefined; resize = undefined;
     overlay.hidden = true; overlay.removeAttribute('data-edge'); clearMarkers();
     if (frame !== undefined) window.cancelAnimationFrame(frame);
@@ -107,6 +115,11 @@ export function observeSplitInteractions(document: Document, controller: Pick<Sh
     const rect = content.getBoundingClientRect();
     return splitEdge(event.clientX - rect.left, event.clientY - rect.top, rect.width, rect.height);
   };
+  const allowedEdge = (event: PointerEvent, browser: BrowserSnapshot, tabId: string) => {
+    const active = browser.tabs.find(tab => tab.id === browser.activeTabId);
+    const source = browser.tabs.find(tab => tab.id === tabId);
+    return active && source && active !== source && !source.pinned && !active.pinned && source.private === active.private ? edgeAt(event) : undefined;
+  };
   const move = (event: PointerEvent) => {
     if (resize && event.pointerId === resize.pointer) {
       const rect = content.getBoundingClientRect();
@@ -120,13 +133,13 @@ export function observeSplitInteractions(document: Document, controller: Pick<Sh
     if (!drag || drag.pointer !== event.pointerId) return;
     if (drag.layout !== layoutKey()) { reset(); return; }
     if (!drag.started && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 5) return;
+    if (!drag.started) preview = beginPreview?.(drag.tabId, drag.x, drag.y);
     drag.started = true; suppressClick = true; overlay.hidden = false;
     event.preventDefault(); clearMarkers();
     const browser = controller.state().browser;
-    const source = browser.tabs.find(tab => tab.id === drag!.tabId);
-    const active = browser.tabs.find(tab => tab.id === browser.activeTabId);
-    const edge = source && active && source !== active && source.private === active.private && !source.pinned && !active.pinned ? edgeAt(event) : undefined;
+    const edge = allowedEdge(event, browser, drag.tabId);
     if (edge) overlay.dataset.edge = edge; else overlay.removeAttribute('data-edge');
+    if (preview) { preview.target(event); return; }
     const target = targetAt(event);
     if (target.tabId && canDropTab(browser.tabs, drag.tabId, target.tabId, target.placement)) target.row!.dataset.drop = target.placement;
   };
@@ -139,14 +152,15 @@ export function observeSplitInteractions(document: Document, controller: Pick<Sh
     if (drag.layout !== layoutKey()) { reset(); return; }
     if (drag.started) {
       const browser = controller.state().browser;
-      const edge = overlay.dataset.edge as ReturnType<typeof splitEdge>;
-      const target = targetAt(event);
+      const edge = allowedEdge(event, browser, drag.tabId);
+      const target = preview ? preview.target(event) : targetAt(event);
       if (edge && browser.activeTabId) controller.send({ type: 'tab.split', tabId: drag.tabId, targetId: browser.activeTabId, edge });
       else if (target.tabId && canDropTab(browser.tabs, drag.tabId, target.tabId, target.placement)) controller.send({ type: 'tab.tree-move', tabId: drag.tabId, targetId: target.tabId, placement: target.placement });
-      else if (document.elementFromPoint(event.clientX, event.clientY)?.closest('.tabs') && !target.tabId) {
+      else if (!preview && document.elementFromPoint(event.clientX, event.clientY)?.closest('.tabs') && !target.tabId) {
         const last = browser.tabs.findLast(tab => !tab.parentId && tab.id !== drag!.tabId);
         if (last && canDropTab(browser.tabs, drag.tabId, last.id, 'after')) controller.send({ type: 'tab.tree-move', tabId: drag.tabId, targetId: last.id, placement: 'after' });
       }
+      preview?.dispose(!edge); preview = undefined;
     }
     reset();
   };
@@ -171,6 +185,12 @@ export function observeSplitInteractions(document: Document, controller: Pick<Sh
     const ratio = event.key === 'Home' ? .2 : event.key === 'End' ? .8 : Math.max(.2, Math.min(.8, split.ratio + (event.key === keys[0] ? -.05 : .05)));
     controller.send({ type: 'split.resize', tabId: split.firstTabId, ratio });
   };
+  // A pinned tab's favicon is an image. Its native drag would cancel our
+  // pointer stream before the first preview frame.
+  const nativeDrag = (event: DragEvent) => {
+    if (beginPreview && drag) event.preventDefault();
+  };
+  document.addEventListener('dragstart', nativeDrag);
   document.addEventListener('pointerdown', down, true);
   document.addEventListener('pointermove', move);
   document.addEventListener('pointerup', up);
@@ -180,6 +200,7 @@ export function observeSplitInteractions(document: Document, controller: Pick<Sh
   window.addEventListener('blur', reset);
   return () => {
     reset();
+    document.removeEventListener('dragstart', nativeDrag);
     document.removeEventListener('pointerdown', down, true); document.removeEventListener('pointermove', move);
     document.removeEventListener('pointerup', up); document.removeEventListener('pointercancel', reset);
     document.removeEventListener('click', click, true); document.removeEventListener('keydown', key);

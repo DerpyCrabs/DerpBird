@@ -1,0 +1,29 @@
+.haz-proposal .drag-original { opacity: 0; }
+.haz-proposal .shell.vertical .drag-projection,
+.haz-proposal .shell.vertical .tab.drag-lifted {
+  position: fixed;
+  z-index: 100;
+  margin: 0;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+.haz-proposal .shell.vertical .drag-projection { overflow: hidden; scrollbar-width: none; }
+.haz-proposal .shell.vertical .tab.drag-lifted {
+  z-index: 101;
+  color: var(--pref-text);
+  background: var(--pref-raised);
+  box-shadow: 0 3px 10px #0005;
+  opacity: .94;
+}
+.haz-proposal .drag-pin .tab-title { display: none; }
+.haz-proposal .drag-pin > button:first-child { justify-content: center; }
+.haz-proposal .shell.vertical .drag-projection .drag-slot {
+  background: var(--pref-raised);
+  opacity: .55;
+  border-color: transparent;
+}
+.haz-proposal .drag-slot > * { visibility: hidden; }
+.haz-proposal .shell.vertical .drag-projection [data-drag-parent] { background: var(--pref-hover); }
+.haz-proposal .drag-landing { opacity: 0; }
+/* Hit-test the row throughout the gesture. Its buttons have native tooltips. */
+.haz-proposal .drag-original .tab > button { pointer-events: none; }

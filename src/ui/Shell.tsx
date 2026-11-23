@@ -91,8 +91,11 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
             {!tab.pinned ? <button class="close-tab" aria-label={`Close ${tab.title || 'tab'}`} onClick={() => controller.send({ type: 'tab.close', tabId: tab.id })}><X size={13}/></button> : null}
           </div>)}</div>;
     const pins = pinned.length;
-    const columns = Math.max(1, Math.min(6, pins, model.layout === 'horizontal' ? 6 : Math.floor(((model.sidebarResizeWidth ?? model.sidebarWidth) - 8) / 36)));
-    return <main class={`shell ${pins > columns ? 'has-pin-rows' : ''} ${model.layout} ${model.wrapTabs ? 'wrap-tabs' : ''} ${arrangement ? `chrome-layout tabs-${arrangement.side} ${bottomAddress ? 'address-bottom' : ''} ${compact ? 'compact-chrome' : ''}` : ''}`} style={{ '--pin-columns': columns, '--sidebar-width': `${model.sidebarResizeWidth ?? model.sidebarWidth}px` }}>
+    // Compact puts the eight navigation buttons in the sidebar above the address.
+    const minimumSidebarWidth = compact ? 256 : 120;
+    const sidebarWidth = Math.max(minimumSidebarWidth, model.sidebarResizeWidth ?? model.sidebarWidth);
+    const columns = Math.max(1, Math.min(6, pins, model.layout === 'horizontal' ? 6 : Math.floor((sidebarWidth - 8) / 36)));
+    return <main class={`shell ${pins > columns ? 'has-pin-rows' : ''} ${model.layout} ${model.wrapTabs ? 'wrap-tabs' : ''} ${arrangement ? `chrome-layout tabs-${arrangement.side} ${bottomAddress ? 'address-bottom' : ''} ${compact ? 'compact-chrome' : ''}` : ''}`} style={{ '--pin-columns': columns, '--sidebar-width': `${sidebarWidth}px`, '--sidebar-min-width': `${minimumSidebarWidth}px` }}>
       <div id="style-manager-host"/>
       <header class="navigation">
         <Button variant="ghost" size="icon" aria-label="Back" title="Back (Alt+Left)" disabled={!active?.canGoBack} onClick={() => tabCommand('tab.back')}><ArrowLeft size={17}/></Button>
@@ -125,7 +128,7 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
         <Button variant="ghost" class="new-tab" title="New tab (Ctrl+T)" aria-label="New tab" disabled={!model.connected} onClick={() => controller.send({ type: 'tab.create', private: active?.private ?? false })}><Plus size={16}/><span class="new-tab-label">New tab</span></Button>
         {workspaceControls(model,controller)}
       </aside>
-      <div id="sidebar-resize" role="separator" aria-label="Resize tab sidebar" aria-orientation="vertical" aria-valuemin={120} aria-valuemax={600} aria-valuenow={model.sidebarResizeWidth ?? model.sidebarWidth} tabindex={model.layout === 'vertical' ? 0 : -1} title="Drag to resize · double-click to reset"/>
+      <div id="sidebar-resize" role="separator" aria-label="Resize tab sidebar" aria-orientation="vertical" aria-valuemin={minimumSidebarWidth} aria-valuemax={600} aria-valuenow={sidebarWidth} tabindex={model.layout === 'vertical' ? 0 : -1} title="Drag to resize · double-click to reset"/>
       <section id="content-surface" data-new-tab={!activeSplit && isNewTabPage(active) ? true : undefined} class="content-surface" aria-label="Page">
         {activeSplit ? <div class={`split-divider ${activeSplit.axis}`} role="separator" aria-label="Resize split" aria-orientation={activeSplit.axis === 'horizontal' ? 'vertical' : 'horizontal'} aria-valuemin={20} aria-valuemax={80} aria-valuenow={Math.round(activeSplit.ratio * 100)} tabindex={0} style={{ '--split-ratio': activeSplit.ratio }} data-tab-id={activeSplit.firstTabId}/> : null}
         <div class="split-drag-surface" hidden={true}/>

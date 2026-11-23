@@ -1,5 +1,5 @@
-export function sidebarWidth(value: number, viewportWidth: number): number {
-  return Math.round(Math.max(120, Math.min(value, 600, Math.max(120, viewportWidth / 2))));
+export function sidebarWidth(value: number, viewportWidth: number, minimum = 120): number {
+  return Math.round(Math.max(minimum, Math.min(value, 600, Math.max(minimum, viewportWidth / 2))));
 }
 
 /** Preview at most once per frame; persist only when the gesture completes. */
@@ -8,6 +8,8 @@ export function observeSidebarResize(document: Document, preview: (width: number
   let handle = document.getElementById('sidebar-resize');
   if (!handle) return () => {};
   const direction = () => document.querySelector('.shell.tabs-right') ? -1 : 1;
+  const constrain = (width: number) => sidebarWidth(width, window.innerWidth,
+    Number(document.getElementById('sidebar-resize')?.getAttribute('aria-valuemin')) || 120);
   let drag: { pointer: number; startX: number; startWidth: number; width: number } | undefined;
   let frame: number | undefined;
   const flush = () => { frame = undefined; if (drag) preview(drag.width); };
@@ -23,14 +25,14 @@ export function observeSidebarResize(document: Document, preview: (width: number
   };
   const move = (event: PointerEvent) => {
     if (!drag || event.pointerId !== drag.pointer) return;
-    drag.width = sidebarWidth(drag.startWidth + (event.clientX - drag.startX) * direction(), window.innerWidth);
+    drag.width = constrain(drag.startWidth + (event.clientX - drag.startX) * direction());
     if (frame === undefined) frame = window.requestAnimationFrame(flush);
   };
   const finish = (event: PointerEvent) => {
     if (!drag || event.pointerId !== drag.pointer) return;
     if (frame !== undefined) window.cancelAnimationFrame(frame);
     frame = undefined;
-    const width = sidebarWidth(drag.startWidth + (event.clientX - drag.startX) * direction(), window.innerWidth);
+    const width = constrain(drag.startWidth + (event.clientX - drag.startX) * direction());
     drag = undefined;
     handle!.removeAttribute('data-resizing');
     document.getElementById('sidebar-resize')?.removeAttribute('data-resizing');
@@ -43,9 +45,9 @@ export function observeSidebarResize(document: Document, preview: (width: number
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
     event.preventDefault();
     const width = document.querySelector('.tabs')!.getBoundingClientRect().width;
-    commit(sidebarWidth(event.key === 'Home' ? 120 : event.key === 'End' ? 600 : width + (event.key === 'ArrowLeft' ? -10 : 10) * direction(), window.innerWidth));
+    commit(constrain(event.key === 'Home' ? 120 : event.key === 'End' ? 600 : width + (event.key === 'ArrowLeft' ? -10 : 10) * direction()));
   };
-  const reset = (event: MouseEvent) => { if (event.target instanceof window.HTMLElement && event.target.id === 'sidebar-resize') commit(196); };
+  const reset = (event: MouseEvent) => { if (event.target instanceof window.HTMLElement && event.target.id === 'sidebar-resize') commit(constrain(196)); };
   // The reactive shell may replace the separator during a width preview.
   // Keep the gesture on the document so pointer-up still commits or cancels.
   document.addEventListener('pointerdown', down);
