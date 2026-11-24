@@ -1,0 +1,32 @@
+--- a/UI/Qt/BookmarksBar.cpp
++++ b/UI/Qt/BookmarksBar.cpp
+@@ -1336,7 +1336,7 @@
+ 
+ bool BookmarksBar::handle_middle_mouse_click(QMouseEvent* event, QObject* item)
+ {
+-    auto activate_tab = event->modifiers().testFlag(Qt::ShiftModifier) ? Web::HTML::ActivateTab::No : Web::HTML::ActivateTab::Yes;
++    auto activate_tab = event->modifiers().testFlag(Qt::ShiftModifier) ? Web::HTML::ActivateTab::Yes : Web::HTML::ActivateTab::No;
+ 
+     if (auto* button = as_if<QToolButton>(item)) {
+         auto* action = button->defaultAction();
+--- a/Libraries/LibWebView/WebContentPage.cpp
++++ b/Libraries/LibWebView/WebContentPage.cpp
+@@ -1139,7 +1139,7 @@
+     }
+ }
+ 
+-void WebContentPage::did_middle_click_link(Web::HTML::PreparedNavigationDescriptor navigation, ByteString, unsigned)
++void WebContentPage::did_middle_click_link(Web::HTML::PreparedNavigationDescriptor navigation, ByteString, unsigned modifiers)
+ {
+     auto verified_navigation = navigation_from_page(client(), move(navigation));
+     if (!verified_navigation.has_value())
+@@ -1154,7 +1154,8 @@
+     //     That click opens the link whatever activation the page used up for other things.
+     if (!view().take_input_to_open_link_in_new_tab({}, *this))
+         return;
+-    view().open_navigation_in_new_tab(verified_navigation.release_value(), Web::HTML::ActivateTab::No);
++    auto activate = modifiers & Web::UIEvents::Mod_Shift ? Web::HTML::ActivateTab::Yes : Web::HTML::ActivateTab::No;
++    view().open_navigation_in_new_tab(verified_navigation.release_value(), activate);
+ }
+ 
+ void WebContentPage::did_request_external_url(URL::URL url, URL::Origin initiator_origin, bool has_transient_activation)

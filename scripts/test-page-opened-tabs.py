@@ -23,12 +23,15 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--wayland-output', default='WAYLAND-1')
     parser.add_argument('--extent', type=int, nargs=2, default=[1280, 720])
+    parser.add_argument('--selection-only', action='store_true', help='Exercise opening and closing without checking the theme')
     args = parser.parse_args()
     environment = dict(os.environ, **json.loads(args.environment.read_text()))
     assert 'artifacts' in environment['XDG_RUNTIME_DIR'], 'Use the isolated compositor'
     args.output.mkdir(parents=True, exist_ok=True)
     profile = args.output / 'profile'
     (profile / 'config').mkdir(parents=True, exist_ok=True)
+    (profile / 'data').mkdir(exist_ok=True)
+    (profile / 'data/ImportWelcomeSeen').write_text('1')
     shutil.copyfile(args.settings, profile / 'config/Settings.json')
     icon = io.BytesIO()
     Image.new('RGBA', (16, 16), '#56ae85').save(icon, format='PNG')
@@ -67,8 +70,10 @@ def main():
     transitions = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(transitions)
     pointer = transitions.Pointer(environment, args.extent)
+    environment['DERPBIRD_PROFILE'] = str(profile.resolve())
+    profile_args = [] if args.browser.name == 'derpbird' else ['--profile-path', str(profile.resolve())]
     with (args.output / 'browser.log').open('w') as log:
-        browser = subprocess.Popen([str(args.browser), '--profile-path', str(profile.resolve()), '--devtools=18993', base+'/root'], env=environment, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        browser = subprocess.Popen([str(args.browser), *profile_args, '--devtools=18993', base+'/root'], env=environment, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     try:
         def evaluate(code, url='about:derpbird'):
             path = args.output / 'evaluate.js'
@@ -100,13 +105,16 @@ def main():
             x = (shell['rect']['left']+link['left']+link['width']/2)*shell['dpr']
             y = (shell['rect']['top']+link['top']+link['height']/2)*shell['dpr']
             pointer.move(x,y)
+            time.sleep(.3)
             for down in [1,0]:
                 pointer.send(5,2,int(time.monotonic()*1000)&0xffffffff,button,down)
                 pointer.send(5,4)
+                time.sleep(.06)
 
         until('document.querySelector(".tab-favicon")?.complete')
         if evaluate('document.querySelector("[role=tablist]").getAttribute("aria-orientation")') != 'vertical':
-            evaluate('document.querySelector("[aria-label=Menu]").click();Array.from(document.querySelectorAll(".browser-menu button")).find(b=>b.textContent==="Vertical tabs").click();document.querySelector(".browser-menu")&&document.querySelector("[aria-label=Menu]").click();true')
+            evaluate('window.ladybird.sendMessage("derpbird.request",{requestId:900001,payload:{type:"command",command:{type:"shell.set-layout",layout:"vertical"}}});true')
+            until('document.querySelector("[role=tablist]").getAttribute("aria-orientation")==="vertical"')
         click_link('/root', '#open')
         until('document.querySelectorAll(".tree-child").length===1 && document.querySelector(".tree-child .tab-title")?.textContent==="Child without icon"')
         capture('01-page-opened-child')
@@ -116,7 +124,8 @@ def main():
         rows = json.loads(evaluate('JSON.stringify(Array.from(document.querySelectorAll(".tab")).map(e=>({id:e.querySelector("[role=tab]").dataset.tabId,group:e.dataset.group,left:e.querySelector(".tab-title").getBoundingClientRect().left,border:getComputedStyle(e).borderLeftWidth,line:getComputedStyle(e,"::before").content})))'))
         assert rows[1]['group'] == rows[2]['group'] == rows[0]['id'], rows
         assert rows[1]['left'] == rows[2]['left'] > rows[0]['left'], rows
-        assert all(row['border']=='0px' and row['line'] in ['none','normal'] for row in rows), rows
+        if not args.selection_only:
+            assert all(row['border']=='0px' and row['line'] in ['none','normal'] for row in rows), rows
         assert evaluate('document.querySelectorAll(".group-count").length') == 0
         capture('02-two-level-group-aligned')
         evaluate('document.querySelector("[role=tab]").click();true')
@@ -128,11 +137,64 @@ def main():
         until('document.querySelectorAll(".tab").length===5')
         top_level = json.loads(evaluate('JSON.stringify(Array.from(document.querySelectorAll(".tab:not(.tree-child) .tab-title")).map(e=>e.getBoundingClientRect().left))'))
         assert len(top_level)==2 and top_level[0]==top_level[1], top_level
-        assert evaluate('document.querySelectorAll(".tab:not(.tree-child) .tab-favicon").length') == 1
-        assert evaluate('document.querySelectorAll(".tab:not(.tree-child) .tab-placeholder").length') == 1
+        if not args.selection_only:
+            assert evaluate('document.querySelectorAll(".tab:not(.tree-child) .tab-favicon").length') == 1
+            assert evaluate('document.querySelectorAll(".tab:not(.tree-child) .tab-placeholder").length') == 1
         capture('04-ungrouped-new-tab-aligned')
+        # The grandchild displays at level two but returns to its actual opener.
+        def select(tab_id):
+            selector = json.dumps(f'[role=tab][data-tab-id="{tab_id}"]')
+            evaluate(f'document.querySelector({selector}).click();true')
+            until(f'document.querySelector({selector}).getAttribute("aria-selected")==="true"')
+
+        def close_active(expected):
+            evaluate('document.querySelector("[aria-selected=true][role=tab]").closest(".tab").querySelector(".close-tab").click();true')
+            until('document.querySelector("[aria-selected=true][role=tab]").dataset.tabId===' + json.dumps(expected))
+
+        middle = evaluate('document.querySelectorAll(".tree-child [role=tab]")[2].dataset.tabId')
+        select(rows[2]['id'])
+        close_active(rows[1]['id'])
+        close_active(middle)
+        close_active(rows[0]['id'])
+        def modified_click(modifiers, button):
+            command = ['wtype']
+            for modifier in modifiers:
+                command.extend(['-M', modifier])
+            command.extend(['-s', '1200'])
+            for modifier in reversed(modifiers):
+                command.extend(['-m', modifier])
+            with subprocess.Popen(command, env=environment) as keyboard:
+                time.sleep(.15)
+                click_link('/root', '#middle', button)
+                assert keyboard.wait(timeout=3) == 0
+
+        for modifiers, button, foreground in [(['ctrl'], 272, False), (['ctrl', 'shift'], 272, True), (['shift'], 274, True)]:
+            modified_click(modifiers, button)
+            until('document.querySelectorAll(".tree-child").length===1')
+            child = evaluate('document.querySelector(".tree-child [role=tab]").dataset.tabId')
+            expected = child if foreground else rows[0]['id']
+            assert evaluate('document.querySelector("[role=tab][aria-selected=true]").dataset.tabId') == expected
+            if foreground:
+                close_active(rows[0]['id'])
+            else:
+                evaluate('document.querySelector(".tree-child .close-tab").click();true')
+                until('document.querySelectorAll(".tree-child").length===0')
+                assert evaluate('document.querySelector("[role=tab][aria-selected=true]").dataset.tabId') == expected
+
+        # Leave an unrelated top-level tab open throughout the reading queue.
+        evaluate('window.ladybird.sendMessage("derpbird.request",{requestId:900002,payload:{type:"command",command:{type:"shell.set-layout",layout:"horizontal"}}});true')
+        until('document.querySelector("[role=tablist]").getAttribute("aria-orientation")==="horizontal"')
+        children = []
+        for count in range(1, 4):
+            click_link('/root', '#middle', 274)
+            until(f'document.querySelectorAll(".tree-child").length==={count}')
+            assert evaluate('document.querySelector("[role=tab][aria-selected=true]").dataset.tabId') == rows[0]['id']
+            children.append(evaluate('Array.from(document.querySelectorAll(".tree-child [role=tab]")).at(-1).dataset.tabId'))
+        for child in children:
+            subprocess.run(['wtype', '-M', 'ctrl', '-k', 'w', '-m', 'ctrl'], env=environment, check=True)
+            until('document.querySelector("[aria-selected=true][role=tab]").dataset.tabId===' + json.dumps(child))
         (args.output/'results.json').write_text(json.dumps({'group_rows':rows,'top_level_title_offsets':top_level,'middle_click_grouped':True},indent=2)+'\n')
-        print('PASS: icon alignment, page links, two-level limit, middle click, plain new tab, vertical decorations')
+        print('PASS: page links, two-level tree, foreground/background gestures and close selection')
     except Exception:
         try:
             capture('failure')

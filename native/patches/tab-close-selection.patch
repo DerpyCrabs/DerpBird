@@ -1,0 +1,29 @@
+--- a/UI/Qt/BrowserWindow.cpp
++++ b/UI/Qt/BrowserWindow.cpp
+@@ -1226,7 +1226,8 @@
+     }
+ 
+     auto* tab = m_tabs_container->tab(index);
+-    if (tab == m_current_tab && tab->derpbird_script_parent()) {
++    auto* successor = tab == m_current_tab && m_derpbird_chrome ? m_derpbird_chrome->successor_for_close(*tab) : nullptr;
++    if (!m_derpbird_chrome && tab == m_current_tab && tab->derpbird_script_parent()) {
+         auto parent_index = tab_index(tab->derpbird_script_parent());
+         if (parent_index >= 0) activate_tab(parent_index);
+     }
+@@ -1234,6 +1235,8 @@
+         auto detached = m_derpbird_chrome->detach_tree_tab(*tab);
+         if (detached.is_error()) { dbgln("Cannot update tab tree: {}", detached.error()); return false; }
+     }
++    if (successor && tab == m_current_tab)
++        activate_tab(tab_index(successor));
+     m_tabs_container->remove_tab(index);
+     if (auto session_tab_id = tab->session_tab_id(); session_tab_id.has_value()) {
+         SessionStore::TabClosed closed {
+@@ -1287,6 +1290,7 @@
+         .discarded_tab_state_id = discarded_tab_state_id,
+     };
+     auto* discarded_tab = new Tab(this, AK::move(deferred_tab));
++    discarded_tab->setProperty("derpbirdOpener", tab.property("derpbirdOpener"));
+     discarded_tab->set_needs_attention(tab.needs_attention());
+     // NB: The tab that stands in for the discarded one takes its place among the tabs that the window and other tabs
+     //     refer to, such as the background tabs opened from the current tab, which new ones open after.

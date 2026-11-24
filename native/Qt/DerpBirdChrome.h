@@ -51,6 +51,7 @@ public:
     void cycle_workspace_tab(int direction);
     ErrorOr<void> inspect_tab(Tab&, Optional<Web::UniqueNodeID> = {});
     void update_display_metadata(double device_pixel_ratio, Optional<u64> display_id, double refresh_rate);
+    Tab* successor_for_close(Tab&) const;
     Tab* tree_parent(Tab&) const;
     void group_tab_from_view(Tab& child, Optional<u64> source_view_id);
     ErrorOr<void> detach_tree_tab(Tab&);

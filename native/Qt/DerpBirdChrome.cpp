@@ -1018,12 +1018,54 @@ void DerpBirdChrome::normalize_tree_order()
     m_reordering_tree = false;
 }
 
+Tab* DerpBirdChrome::successor_for_close(Tab& closing) const
+{
+    auto workspace = tab_workspace(closing);
+    auto* script_parent = closing.derpbird_script_parent();
+    if (script_parent && m_window.tab_index(script_parent) >= 0 && tab_workspace(*script_parent) == workspace)
+        return script_parent;
+
+    auto opener_of = [this](Tab& tab) -> Tab* {
+        auto id = tab.property("derpbirdOpener").toLongLong();
+        if (auto* opener = m_tree_tabs.value(id).data())
+            return opener;
+        return tree_parent(tab);
+    };
+    auto* opener = opener_of(closing);
+    auto opener_id = closing.property("derpbirdOpener").toLongLong();
+    auto index = m_window.tab_index(&closing);
+    Tab* best = nullptr;
+    int best_rank = 5;
+    // Within each preference, search right first, then left.
+    auto consider = [&](Tab* candidate) {
+        if (tab_workspace(*candidate) != workspace) return;
+        auto* source = opener_of(*candidate);
+        int rank = 4;
+        if (source == &closing) rank = 0;
+        else if ((opener && source == opener) || (opener_id && candidate->property("derpbirdOpener").toLongLong() == opener_id)) rank = 1;
+        else if (candidate == opener) rank = 2;
+        else if (tree_parent(*candidate) == &closing || tree_parent(closing) == candidate) rank = 3;
+        // Session IDs follow creation order, even after a drag or the opener closing.
+        bool earlier_relative = rank == best_rank && rank <= 1 && candidate->session_tab_id().has_value() && best->session_tab_id().has_value()
+            && *candidate->session_tab_id() < *best->session_tab_id();
+        if (rank < best_rank || earlier_relative) {
+            best = candidate;
+            best_rank = rank;
+        }
+    };
+    for (int i = index + 1; i < m_window.tab_count(); ++i) consider(m_window.tab_at(i));
+    for (int i = index - 1; i >= 0; --i) consider(m_window.tab_at(i));
+    return best;
+}
+
 void DerpBirdChrome::group_tab_from_view(Tab& child, Optional<u64> source_view_id)
 {
     if (!source_view_id.has_value()) return;
     for (int i = 0; i < m_window.tab_count(); ++i) {
         auto* source = m_window.tab_at(i);
-        if (source == &child || !source->is_loaded() || source->view().view_id() != *source_view_id || source->is_pinned()) continue;
+        if (source == &child || !source->is_loaded() || source->view().view_id() != *source_view_id) continue;
+        child.setProperty("derpbirdOpener", static_cast<qlonglong>(source->session_tab_id().value_or(0)));
+        if (source->is_pinned()) return;
         if (auto result = move_tree_tab(child, *source, "inside"sv); result.is_error())
             warnln("Cannot group tab opened from page: {}", result.error());
         return;
@@ -1848,6 +1890,7 @@ ErrorOr<void> DerpBirdChrome::command(JsonValue const& value)
         auto* parent = tree_parent(*tab);
         if (!parent) parent = tab;
         auto& child = m_window.new_tab_from_url(Application::settings().new_tab_page_url(), Web::HTML::ActivateTab::Yes, BrowserWindow::TabLocation::end());
+        child.setProperty("derpbirdOpener", static_cast<qlonglong>(tab->session_tab_id().value_or(0)));
         return move_tree_tab(child, *parent, "inside"sv);
     }
     if (type == "tab.close-group"sv) {
