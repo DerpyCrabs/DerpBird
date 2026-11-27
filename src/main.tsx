@@ -8,7 +8,14 @@ async function start() {
   if (location.href === 'about:derpbird') {
     const transport = createWebUIPort(document, () => window.ladybird);
     try {
-      const port = await connectDevTools(transport);
+      let downloadsMounted = false;
+      const port = await connectDevTools(transport, async () => {
+        const { mountAppDownloads } = await import("./ui/AppDownloads");
+        const dispose = await mountAppDownloads(document.getElementById("app")!, transport);
+        window.addEventListener("pagehide", () => { dispose(); transport.close(); }, { once: true });
+        downloadsMounted = true;
+      });
+      if (downloadsMounted) return;
       if (port) {
         const { mountDevTools } = await import('./devtools/DevTools');
         const ui = mountDevTools(document.getElementById('app')!, port, 'Elements');

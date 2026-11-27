@@ -145,6 +145,7 @@ private:
     QHash<Tab*, Observation> m_observed_tabs;
     u64 m_revision { 0 };
     bool m_focus_address_pending { false };
+    QHash<u64, String> m_download_thumbnails;
     bool m_snapshot_queued { false };
 };
 

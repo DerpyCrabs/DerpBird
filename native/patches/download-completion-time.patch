@@ -1,0 +1,141 @@
+--- a/Libraries/LibWebView/FileDownloader.h
++++ b/Libraries/LibWebView/FileDownloader.h
+@@ -76,6 +76,7 @@
+         Optional<u64> bytes_per_second;
+         bool is_waiting_to_retry { false };
+         UnixDateTime created_time;
++        UnixDateTime finished_time {};
+ 
+         Optional<AK::Duration> estimated_time_remaining() const;
+     };
+@@ -168,7 +169,7 @@
+     void discard_active_download(u64 id);
+ 
+     void notify_download_added(Download const&);
+-    void notify_download_updated(Download const&);
++    void notify_download_updated(Download&);
+     void notify_download_removed(u64 id, IsPrivate);
+ 
+     Vector<Download> m_downloads;
+--- a/Libraries/LibWebView/FileDownloader.cpp
++++ b/Libraries/LibWebView/FileDownloader.cpp
+@@ -1381,6 +1381,7 @@
+             .error = {},
+             .bytes_per_second = {},
+             .created_time = record.created_time,
++            .finished_time = record.finished_time,
+         };
+         if (record.total_size >= 0) download.total_size = static_cast<u64>(record.total_size);
+         if (!record.error.is_empty()) download.error = record.error;
+@@ -1792,8 +1793,10 @@
+         observer.download_added(download);
+ }
+ 
+-void FileDownloader::notify_download_updated(Download const& download)
+-{
++void FileDownloader::notify_download_updated(Download& download)
++{
++    if (download.status == DownloadStatus::Completed && download.finished_time == UnixDateTime {})
++        download.finished_time = UnixDateTime::now();
+     static_assert(static_cast<u8>(DownloadStatus::Completed) == 2);
+     static_assert(static_cast<u8>(DownloadStatus::Canceled) == 3);
+     static_assert(static_cast<u8>(DownloadStatus::Failed) == 4);
+@@ -1807,7 +1810,7 @@
+             static_cast<i64>(download.id), download.url.serialize(),
+             MUST(String::from_byte_string(download.destination.string())), static_cast<u8>(download.status),
+             static_cast<i64>(download.downloaded_size), download.total_size.has_value() ? static_cast<i64>(*download.total_size) : -1,
+-            download.error.value_or(String {}), download.created_time });
++            download.error.value_or(String {}), download.created_time, download.finished_time });
+     }
+     RefPtr<AdoptedResponseObserver> response_observer;
+     Optional<Download> finished_download;
+--- a/Libraries/LibWebView/DownloadStore.h
++++ b/Libraries/LibWebView/DownloadStore.h
+@@ -53,6 +53,7 @@
+     i64 total_size { -1 }; // Unknown size.
+     String error;
+     UnixDateTime created_time;
++    UnixDateTime finished_time {};
+ };
+ 
+ class WEBVIEW_API DownloadStore {
+--- a/Libraries/LibWebView/DownloadStore.cpp
++++ b/Libraries/LibWebView/DownloadStore.cpp
+@@ -127,6 +127,10 @@
+                 ALTER TABLE Downloads ADD COLUMN top_level_navigation INTEGER NOT NULL DEFAULT 0;
+                 ALTER TABLE Downloads ADD COLUMN safe_method INTEGER NOT NULL DEFAULT 0;
+             )#"sv,
++        },
++        {
++            .version = 6u,
++            .sql = "ALTER TABLE DownloadHistory ADD COLUMN finished_time INTEGER NOT NULL DEFAULT 0;"sv,
+         },
+     });
+ 
+@@ -191,14 +195,14 @@
+     )#"sv));
+ 
+     statements.save_history = TRY(database.prepare_statement(R"#(
+-        INSERT INTO DownloadHistory (id, url, destination, status, downloaded_size, total_size, error, created_time)
+-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
++        INSERT INTO DownloadHistory (id, url, destination, status, downloaded_size, total_size, error, created_time, finished_time)
++        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET url=excluded.url, destination=excluded.destination,
+             status=excluded.status, downloaded_size=excluded.downloaded_size,
+-            total_size=excluded.total_size, error=excluded.error;
++            total_size=excluded.total_size, error=excluded.error, finished_time=excluded.finished_time;
+     )#"sv));
+     statements.list_history = TRY(database.prepare_statement(
+-        "SELECT id,url,destination,status,downloaded_size,total_size,error,created_time FROM DownloadHistory ORDER BY id ASC"sv));
++        "SELECT id,url,destination,status,downloaded_size,total_size,error,created_time,finished_time FROM DownloadHistory ORDER BY id ASC"sv));
+     statements.delete_history = TRY(database.prepare_statement("DELETE FROM DownloadHistory WHERE id=?"sv));
+     statements.trim_history = TRY(database.prepare_statement(
+         "DELETE FROM DownloadHistory WHERE id IN (SELECT id FROM DownloadHistory ORDER BY created_time DESC,id DESC LIMIT -1 OFFSET 5000)"sv));
+@@ -329,7 +333,7 @@
+         || record.downloaded_size < 0 || record.total_size < -1)
+         return;
+     m_database->execute_statement(m_statements.save_history, {}, record.id, record.url,
+-        record.destination, record.status, record.downloaded_size, record.total_size, record.error, record.created_time);
++        record.destination, record.status, record.downloaded_size, record.total_size, record.error, record.created_time, record.finished_time);
+     m_database->execute_statement(m_statements.trim_history, {});
+ }
+ 
+@@ -347,7 +351,7 @@
+             return {};
+         records.append({ id.value(), m_database->result_column<String>(statement, 1),
+             m_database->result_column<String>(statement, 2), static_cast<u8>(status.value()), size.value(), total.value(),
+-            m_database->result_column<String>(statement, 6), m_database->result_column<UnixDateTime>(statement, 7) });
++            m_database->result_column<String>(statement, 6), m_database->result_column<UnixDateTime>(statement, 7), m_database->result_column<UnixDateTime>(statement, 8) });
+         return {};
+     });
+     return records;
+--- a/Services/Hub/HubClient.ipc
++++ b/Services/Hub/HubClient.ipc
+@@ -110,6 +110,7 @@
+     Optional<u64> bytes_per_second;
+     bool is_waiting_to_retry;
+     UnixDateTime created_time;
++    UnixDateTime finished_time;
+     Vector<WebView::FileDownloader::SegmentProgress> segments;
+ }
+ 
+--- a/Services/Hub/ConnectionFromUI.cpp
++++ b/Services/Hub/ConnectionFromUI.cpp
+@@ -200,6 +200,7 @@
+     state.bytes_per_second = download.bytes_per_second;
+     state.is_waiting_to_retry = download.is_waiting_to_retry;
+     state.created_time = download.created_time;
++    state.finished_time = download.finished_time;
+     state.segments = Application::the().file_downloader().segment_progress(download.id);
+     return state;
+ }
+--- a/UI/Qt/RemoteDownloads.cpp
++++ b/UI/Qt/RemoteDownloads.cpp
+@@ -32,6 +32,7 @@
+         .bytes_per_second = state.bytes_per_second,
+         .is_waiting_to_retry = state.is_waiting_to_retry,
+         .created_time = state.created_time,
++        .finished_time = state.finished_time,
+     };
+ }
+ 

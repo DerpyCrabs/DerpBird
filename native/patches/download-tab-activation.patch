@@ -1,0 +1,164 @@
+diff --git a/Libraries/LibWeb/HTML/LocalNavigable.cpp b/Libraries/LibWeb/HTML/LocalNavigable.cpp
+index 4458a1c377c..f7ce19b7b6a 100644
+--- a/Libraries/LibWeb/HTML/LocalNavigable.cpp
++++ b/Libraries/LibWeb/HTML/LocalNavigable.cpp
+@@ -1954,6 +1954,8 @@ LocalNavigable::ChosenNavigable LocalNavigable::choose_a_navigable(Utf16View nam
+         auto request_new_web_view = [&] {
+             TokenizedFeature::Map empty_window_features;
+             auto hints = web_view_hints_from_tokenised_features(window_features.has_value() ? *window_features : empty_window_features);
++            // The response may become a download instead of a document.
++            hints.wait_for_navigation_commit = popup_url.has_value() && popup_url->scheme().is_one_of("http"sv, "https"sv, "blob"sv);
+             return page().client().page_did_request_new_web_view(activate_tab, hints, id(), Utf16String::from_utf16(name), no_opener, active_document()->base_url());
+         };
+ 
+diff --git a/Libraries/LibWebCommon/HTML/WebViewHints.cpp b/Libraries/LibWebCommon/HTML/WebViewHints.cpp
+index 0451866d54d..1b9552ab5e5 100644
+--- a/Libraries/LibWebCommon/HTML/WebViewHints.cpp
++++ b/Libraries/LibWebCommon/HTML/WebViewHints.cpp
+@@ -30,6 +30,7 @@ template<>
+ ErrorOr<void> encode(Encoder& encoder, ::Web::HTML::WebViewHints const& data_holder)
+ {
+     TRY(encoder.encode(data_holder.popup));
++    TRY(encoder.encode(data_holder.wait_for_navigation_commit));
+     TRY(encoder.encode(data_holder.picture_in_picture_window));
+     TRY(encoder.encode(data_holder.width));
+     TRY(encoder.encode(data_holder.height));
+@@ -43,6 +44,7 @@ template<>
+ ErrorOr<::Web::HTML::WebViewHints> decode(Decoder& decoder)
+ {
+     auto popup = TRY(decoder.decode<bool>());
++    auto wait_for_navigation_commit = TRY(decoder.decode<bool>());
+     auto picture_in_picture_window = TRY(decoder.decode<Optional<Web::HTML::PictureInPictureWindowHints>>());
+     auto width = TRY(decoder.decode<Optional<Web::DevicePixels>>());
+     auto height = TRY(decoder.decode<Optional<Web::DevicePixels>>());
+@@ -51,6 +53,7 @@ ErrorOr<::Web::HTML::WebViewHints> decode(Decoder& decoder)
+ 
+     return ::Web::HTML::WebViewHints {
+         .popup = popup,
++        .wait_for_navigation_commit = wait_for_navigation_commit,
+         .picture_in_picture_window = picture_in_picture_window,
+         .width = width,
+         .height = height,
+diff --git a/Libraries/LibWebCommon/HTML/WebViewHints.h b/Libraries/LibWebCommon/HTML/WebViewHints.h
+index 715c040a7cd..96ef4017a73 100644
+--- a/Libraries/LibWebCommon/HTML/WebViewHints.h
++++ b/Libraries/LibWebCommon/HTML/WebViewHints.h
+@@ -24,6 +24,7 @@ struct PictureInPictureWindowHints {
+ 
+ struct WebViewHints {
+     bool popup = false;
++    bool wait_for_navigation_commit = false;
+     Optional<PictureInPictureWindowHints> picture_in_picture_window;
+     Optional<DevicePixels> width;
+     Optional<DevicePixels> height;
+diff --git a/UI/Qt/BrowserWindow.cpp b/UI/Qt/BrowserWindow.cpp
+index a2a36a44479..95f1081c26b 100644
+--- a/UI/Qt/BrowserWindow.cpp
++++ b/UI/Qt/BrowserWindow.cpp
+@@ -978,14 +978,7 @@ void BrowserWindow::initialize_tab_view(Tab* tab)
+         }
+     });
+ 
+-    auto group_with_source = [this, tab](Tab& new_tab) {
+-        if (m_derpbird_chrome && !tab->is_pinned()) {
+-            auto result = m_derpbird_chrome->move_tree_tab(new_tab, *tab, "inside"sv);
+-            if (result.is_error())
+-                dbgln("Cannot group tab opened from page: {}", result.error());
+-        }
+-    };
+-    tab->view().on_open_new_view = [this, group_with_source](auto activate_tab, Web::HTML::WebViewHints hints, u64 hub_view_id) {
++    tab->view().on_open_new_view = [this, tab](auto activate_tab, Web::HTML::WebViewHints hints, u64 hub_view_id) {
+         if (hints.popup) {
+             auto cascaded_configuration = Application::the().configuration_for_new_window();
+             WindowConfiguration configuration {
+@@ -996,8 +989,16 @@ void BrowserWindow::initialize_tab_view(Tab* tab)
+             window.place_popup_window(hints, *screen());
+             return;
+         }
+-        auto& new_tab = create_new_tab(activate_tab, hub_view_id);
+-        group_with_source(new_tab);
++        if (is_app_window()) {
++            Application::the().open_view_in_new_tab(hub_view_id, tab->view().view_id(), m_is_private, activate_tab);
++            return;
++        }
++        bool defer_activation = m_derpbird_chrome && hints.wait_for_navigation_commit && activate_tab == Web::HTML::ActivateTab::Yes;
++        auto& new_tab = create_new_tab(defer_activation ? Web::HTML::ActivateTab::No : activate_tab, hub_view_id);
++        if (m_derpbird_chrome)
++            m_derpbird_chrome->group_tab_from_view(new_tab, tab->view().view_id());
++        if (defer_activation && current_tab() == tab)
++            m_tab_to_activate_on_commit = &new_tab;
+     };
+ }
+ 
+@@ -1129,11 +1130,21 @@ void BrowserWindow::acknowledge_failed_downloads()
+     toolbar().update_downloads_button();
+ }
+ 
++void BrowserWindow::did_commit_navigation(Tab& tab)
++{
++    if (m_tab_to_activate_on_commit == &tab) {
++        m_tab_to_activate_on_commit.clear();
++        activate_tab(tab_index(&tab));
++    }
++}
++
+ void BrowserWindow::set_current_tab(Tab* tab)
+ {
+     if (tab == m_current_tab)
+         return;
+ 
++    m_tab_to_activate_on_commit.clear();
++
+     // A restored tab loads only once it's selected.
+     if (tab)
+         tab->ensure_loaded();
+diff --git a/UI/Qt/BrowserWindow.h b/UI/Qt/BrowserWindow.h
+index 3bb3513f25a..39da5384a73 100644
+--- a/UI/Qt/BrowserWindow.h
++++ b/UI/Qt/BrowserWindow.h
+@@ -191,6 +191,7 @@ public:
+     void update_tab_audio_button(Tab&);
+     // Opens a window's restored tabs, keeping the session rows the store re-adopted for them.
+     void restore_tabs(Vector<RestoredSessionTab> const&, i64 active_tab_index);
++    void did_commit_navigation(Tab&);
+     Tab* current_tab() const { return m_current_tab; }
+ 
+     enum class PageCardSlot : u8 {
+@@ -349,6 +350,7 @@ private:
+ 
+     TabWidget* m_tabs_container { nullptr };
+     Tab* m_current_tab { nullptr };
++    QPointer<Tab> m_tab_to_activate_on_commit;
+     Array<QPointer<PageCard>, 3> m_page_cards;
+     QPointer<WebContentView> m_page_cards_view;
+     Vector<QPointer<Tab>> m_background_tabs_from_current_tab;
+diff --git a/UI/Qt/Tab.cpp b/UI/Qt/Tab.cpp
+index b0ee8faa54a..d8a3afc7ece 100644
+--- a/UI/Qt/Tab.cpp
++++ b/UI/Qt/Tab.cpp
+@@ -367,6 +367,7 @@ void Tab::initialize(Optional<u64> hub_view_id)
+     };
+ 
+     view().on_top_level_navigation_commit = [this] {
++        m_window->did_commit_navigation(*this);
+         m_is_waiting_for_response = false;
+         m_suppress_javascript_dialogs_until_navigation = false;
+         m_javascript_dialogs_shown_by_document = 0;
+--- a/UI/Qt/Application.h
++++ b/UI/Qt/Application.h
+@@ -155,6 +155,7 @@
+ 
+     void open_new_tab();
+     void open_new_window(WebView::IsPrivate);
++    void open_view_in_new_tab(u64 view_id, Optional<u64> source_view_id, WebView::IsPrivate, Web::HTML::ActivateTab);
+     enum class ReopenClosedWindow {
+         InNewWindow,
+         InTargetWindow,
+@@ -287,7 +288,6 @@
+ 
+     BrowserWindow* window_of_view(u64 view_id) const;
+     BrowserWindow* window_for_new_tab(Optional<u64> source_view_id, WebView::IsPrivate) const;
+-    void open_view_in_new_tab(u64 view_id, Optional<u64> source_view_id, WebView::IsPrivate, Web::HTML::ActivateTab);
+     void open_url_in_new_tab(URL::URL const&, Web::HTML::ActivateTab, Optional<u64> source_view_id, WebView::IsPrivate) const;
+     void open_urls_in_new_tabs(ReadonlySpan<URL::URL>) const;
+     void open_url_in_new_window(URL::URL const&, WebView::IsPrivate);

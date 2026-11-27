@@ -1,0 +1,533 @@
+diff --git a/Libraries/LibWebView/Application.cpp b/Libraries/LibWebView/Application.cpp
+index 4d7a344b548..478a1f0cd69 100644
+--- a/Libraries/LibWebView/Application.cpp
++++ b/Libraries/LibWebView/Application.cpp
+@@ -336,6 +336,7 @@ ErrorOr<void> Application::initialize(Main::Arguments const& arguments)
+     Optional<u32> screenshot_delay;
+     Optional<StringView> screenshot_path;
+     bool new_window = false;
++    Optional<StringView> app_url;
+     Optional<i64> replace_browser_from_before;
+     StringView stats_log_directory;
+     Optional<StringView> profile_name;
+@@ -439,6 +440,7 @@ ErrorOr<void> Application::initialize(Main::Arguments const& arguments)
+         },
+         .hide_mode = Core::ArgsParser::OptionHideMode::CommandLineAndMarkdown,
+     });
++    args_parser.add_option(app_url, "Open an HTTP or HTTPS URL in a standalone application window", "app", 0, "url");
+     args_parser.add_option(new_window, "Force opening in a new window", "new-window", 'n');
+ #if !defined(AK_OS_WINDOWS)
+     // FIXME: Offer this on Windows as well, once an unresponsive browser can be ended there.
+@@ -556,6 +558,13 @@ ErrorOr<void> Application::initialize(Main::Arguments const& arguments)
+     create_platform_arguments(args_parser);
+     args_parser.parse(m_arguments);
+ 
++    if (app_url.has_value()) {
++        auto url = URL::Parser::basic_parse(*app_url);
++        if (!url.has_value() || (url->scheme() != "http"sv && url->scheme() != "https"sv) || !raw_urls.is_empty())
++            return Error::from_string_literal("--app requires one HTTP or HTTPS URL");
++        raw_urls.append(app_url->to_byte_string());
++    }
++
+     m_stats_log = TRY(Core::StatsLog::create(stats_log_directory, "Ladybird"sv));
+ 
+     if (!dns_server_port.has_value())
+@@ -590,7 +599,7 @@ ErrorOr<void> Application::initialize(Main::Arguments const& arguments)
+         .urls = {},
+         .raw_urls = move(raw_urls),
+         .headless_mode = headless_mode,
+-        .new_window = new_window ? NewWindow::Yes : NewWindow::No,
++        .new_window = app_url.has_value() ? NewWindow::App : (new_window ? NewWindow::Yes : NewWindow::No),
+         .allow_popups = allow_popups ? AllowPopups::Yes : AllowPopups::No,
+         .disable_scripting = disable_scripting ? DisableScripting::Yes : DisableScripting::No,
+         .disable_sql_database = disable_sql_database ? DisableSQLDatabase::Yes : DisableSQLDatabase::No,
+@@ -728,7 +737,7 @@ ErrorOr<void> Application::initialize(Main::Arguments const& arguments)
+     m_content_blocker_lists_directory = LexicalPath::join(profile().paths().data, "ContentBlocking/Lists"sv).string();
+     rebuild_content_blocker_list_paths();
+ 
+-    if (!m_settings->first_run_complete() && !m_browser_options.headless_mode.has_value()
++    if (m_browser_options.new_window != NewWindow::App && !m_settings->first_run_complete() && !m_browser_options.headless_mode.has_value()
+         && !m_browser_options.webdriver_browser_endpoint.has_value()) {
+         if (m_browser_options.raw_urls.is_empty())
+             m_browser_options.urls = { URL::about_welcome() };
+diff --git a/Libraries/LibWebView/BrowserProcess.cpp b/Libraries/LibWebView/BrowserProcess.cpp
+index 36fc8ca0bbf..2a9bc06e53a 100644
+--- a/Libraries/LibWebView/BrowserProcess.cpp
++++ b/Libraries/LibWebView/BrowserProcess.cpp
+@@ -392,6 +392,9 @@ static BrowserProcess::Handover hand_over(UIProcessClient& client, Vector<ByteSt
+     auto deadline = MonotonicTime::now() + timeout;
+     bool done = false;
+     switch (new_window) {
++    case NewWindow::App:
++        done = client.send_sync_until<Messages::UIProcessServer::CreateAppWindow>(deadline, raw_urls);
++        break;
+     case NewWindow::Yes:
+         done = client.send_sync_until<Messages::UIProcessServer::CreateNewWindow>(deadline, raw_urls);
+         break;
+@@ -495,9 +498,9 @@ void BrowserProcess::accept_transport(NonnullOwnPtr<IPC::Transport> transport)
+             this->on_new_tab(raw_urls);
+     };
+ 
+-    client->on_new_window = [this](auto raw_urls) {
++    client->on_new_window = [this](auto raw_urls, bool app_window) {
+         if (this->on_new_window)
+-            this->on_new_window(raw_urls);
++            this->on_new_window(raw_urls, app_window);
+     };
+ }
+ 
+@@ -577,7 +580,13 @@ void UIProcessConnectionFromClient::create_new_tab(Vector<ByteString> urls)
+ void UIProcessConnectionFromClient::create_new_window(Vector<ByteString> urls)
+ {
+     if (on_new_window)
+-        on_new_window(sanitize_urls(urls));
++        on_new_window(sanitize_urls(urls), false);
++}
++
++void UIProcessConnectionFromClient::create_app_window(Vector<ByteString> urls)
++{
++    if (on_new_window)
++        on_new_window(sanitize_urls(urls), true);
+ }
+ 
+ }
+diff --git a/Libraries/LibWebView/BrowserProcess.h b/Libraries/LibWebView/BrowserProcess.h
+index b52a09f39ef..fd041eebbd2 100644
+--- a/Libraries/LibWebView/BrowserProcess.h
++++ b/Libraries/LibWebView/BrowserProcess.h
+@@ -32,12 +32,13 @@ public:
+     virtual void die() override;
+ 
+     Function<void(Vector<URL::URL> const&)> on_new_tab;
+-    Function<void(Vector<URL::URL> const&)> on_new_window;
++    Function<void(Vector<URL::URL> const&, bool app_window)> on_new_window;
+ 
+ private:
+     UIProcessConnectionFromClient(NonnullOwnPtr<IPC::Transport>, int client_id);
+ 
+     virtual void create_new_tab(Vector<ByteString> urls) override;
++    virtual void create_app_window(Vector<ByteString> urls) override;
+     virtual void create_new_window(Vector<ByteString> urls) override;
+ };
+ 
+@@ -75,7 +76,7 @@ public:
+     ErrorOr<ProcessDisposition> connect(Vector<ByteString> const& raw_urls, NewWindow new_window, StringView runtime_directory, StringView profile_identity, Optional<pid_t> ui_pid, Optional<UnixDateTime> replace_browser_from_before);
+ 
+     Function<void(Vector<URL::URL> const&)> on_new_tab;
+-    Function<void(Vector<URL::URL> const&)> on_new_window;
++    Function<void(Vector<URL::URL> const&, bool app_window)> on_new_window;
+ 
+ private:
+     void accept_transport(NonnullOwnPtr<IPC::Transport>);
+diff --git a/Libraries/LibWebView/Options.h b/Libraries/LibWebView/Options.h
+index 84b0d9642f3..aa0baa132f2 100644
+--- a/Libraries/LibWebView/Options.h
++++ b/Libraries/LibWebView/Options.h
+@@ -30,6 +30,7 @@ enum class HeadlessMode {
+ enum class NewWindow {
+     No,
+     Yes,
++    App,
+ };
+ 
+ enum class AllowPopups {
+diff --git a/Libraries/LibWebView/UIProcessServer.ipc b/Libraries/LibWebView/UIProcessServer.ipc
+index c7508666ad0..5bf7bb16146 100644
+--- a/Libraries/LibWebView/UIProcessServer.ipc
++++ b/Libraries/LibWebView/UIProcessServer.ipc
+@@ -1,4 +1,5 @@
+ endpoint UIProcessServer {
+     create_new_tab(Vector<ByteString> urls) => ()
+     create_new_window(Vector<ByteString> urls) => ()
++    create_app_window(Vector<ByteString> urls) => ()
+ }
+diff --git a/Services/Hub/ConnectionFromUI.cpp b/Services/Hub/ConnectionFromUI.cpp
+index c961f5f29d9..b76bf3feb18 100644
+--- a/Services/Hub/ConnectionFromUI.cpp
++++ b/Services/Hub/ConnectionFromUI.cpp
+@@ -53,7 +53,7 @@ ConnectionFromUI::ConnectionFromUI(NonnullOwnPtr<IPC::Transport> transport)
+ 
+     auto& browser_process = Application::the().browser_process();
+     browser_process.on_new_tab = [this](auto const& urls) { async_app_open_new_tab(urls); };
+-    browser_process.on_new_window = [this](auto const& urls) { async_app_open_new_window(urls); };
++    browser_process.on_new_window = [this](auto const& urls, bool app_window) { async_app_open_new_window(urls, app_window); };
+ }
+ 
+ ConnectionFromUI::~ConnectionFromUI()
+@@ -610,6 +610,7 @@ Messages::HubServer::InitializeResponse ConnectionFromUI::initialize()
+     state.downloads = downloads();
+     state.urls = options.urls;
+     state.raw_urls = options.raw_urls;
++    state.standalone_app = options.new_window == WebView::NewWindow::App;
+     state.crash_report_directory = WebView::CrashReportStore::the().directory();
+     state.devtools_port = options.devtools_port;
+     auto const& profile = Application::profile();
+diff --git a/Services/Hub/HubClient.ipc b/Services/Hub/HubClient.ipc
+index 2d086bb6577..e39a78ad879 100644
+--- a/Services/Hub/HubClient.ipc
++++ b/Services/Hub/HubClient.ipc
+@@ -159,6 +159,7 @@ struct Hub::InitialState {
+     Vector<Hub::DownloadState> downloads;
+     Vector<URL::URL> urls;
+     Vector<ByteString> raw_urls;
++    bool standalone_app;
+     ByteString crash_report_directory;
+     Optional<u16> devtools_port;
+     ByteString profile_identifier;
+@@ -248,7 +249,7 @@ endpoint HubClient
+     crash_reports_changed() =|
+     request_finished(u64 request_id, bool had_network_error, Optional<u32> response_code, Vector<HTTP::Header> response_headers, ByteString body) =|
+     app_open_new_tab(Vector<URL::URL> urls) =|
+-    app_open_new_window(Vector<URL::URL> urls) =|
++    app_open_new_window(Vector<URL::URL> urls, bool app_window) =|
+     view_selected_text(u64 view_id, u64 request_id, Optional<ByteString> text) =|
+     view_close_preflight_finished(u64 view_id, u64 request_id, bool may_close) =|
+     view_page_dumps(u64 view_id, u64 request_id, Optional<String> dumps) =|
+diff --git a/UI/Qt/Application.cpp b/UI/Qt/Application.cpp
+index 3e9ba030ff6..3c3278c7033 100644
+--- a/UI/Qt/Application.cpp
++++ b/UI/Qt/Application.cpp
+@@ -1000,6 +1000,8 @@ ErrorOr<void> Application::connect_to_hub(Main::Arguments const& arguments)
+ 
+     m_browser_options.urls = move(state.urls);
+     m_browser_options.raw_urls = move(state.raw_urls);
++    if (state.standalone_app)
++        m_browser_options.new_window = WebView::NewWindow::App;
+     m_browser_options.devtools_port = state.devtools_port;
+     if (state.devtools_enabled)
+         m_devtools_port = state.devtools_port;
+@@ -1526,19 +1528,23 @@ Optional<String> Application::system_font_family() const
+ 
+ BrowserWindow& Application::new_window(Vector<URL::URL> const& initial_urls, WindowConfiguration const& configuration, BrowserWindow::IsPopupWindow is_popup_window, WebView::IsPrivate is_private, Optional<u64> hub_view_id, ShowWindow show_window, Optional<Web::HTML::PreparedNavigationDescriptor> initial_navigation, QString agent_id)
+ {
+-    auto* window = new BrowserWindow(initial_urls, is_popup_window, is_private, hub_view_id, {}, agent_id);
++    auto* window = new BrowserWindow(initial_urls, is_popup_window, is_private, hub_view_id, {}, agent_id, configuration.app_id);
+ 
+     if (!agent_id.isEmpty()) {
+         window->setWindowRole("derpbird-agent");
+         window->setAttribute(Qt::WA_ShowWithoutActivating);
+         window->setWindowTitle("DerpBird");
+ #ifdef LADYBIRD_HAS_WAYLAND_CLIENT
+-        set_wayland_agent_window_identity(*window);
++        set_wayland_window_identity(*window, "org.derpbird.Agent");
+ #endif
+ #if defined(AK_OS_LINUX)
+         set_x11_agent_window_identity(*window);
+ #endif
+     }
++#ifdef LADYBIRD_HAS_WAYLAND_CLIENT
++    if (!configuration.app_id.isEmpty())
++        set_wayland_window_identity(*window, configuration.app_id.toUtf8());
++#endif
+     auto should_focus_location_editor = agent_id.isEmpty() && initial_urls.size() == 1 && initial_urls.first() == Application::settings().new_tab_page_url();
+     if (should_focus_location_editor) {
+         if (auto* tab = window->current_tab())
+@@ -1863,11 +1869,11 @@ void Application::open_startup_tabs(BrowserWindow& window, Vector<URL::URL> cons
+ 
+ BrowserWindow* Application::non_private_window_if_any() const
+ {
+-    if (m_active_window && m_active_window->is_private() == WebView::IsPrivate::No && m_active_window->property("derpbirdAgentId").toString().isEmpty())
++    if (m_active_window && m_active_window->is_private() == WebView::IsPrivate::No && m_active_window->property("derpbirdAgentId").toString().isEmpty() && !m_active_window->is_app_window())
+         return m_active_window;
+ 
+     for (auto* widget : QApplication::topLevelWidgets()) {
+-        if (auto* window = as_if<BrowserWindow>(widget); window && window->is_private() == WebView::IsPrivate::No && window->property("derpbirdAgentId").toString().isEmpty())
++        if (auto* window = as_if<BrowserWindow>(widget); window && window->is_private() == WebView::IsPrivate::No && window->property("derpbirdAgentId").toString().isEmpty() && !window->is_app_window())
+             return window;
+     }
+ 
+@@ -2022,7 +2028,7 @@ void Application::focus_location_editor()
+ 
+ void Application::reopen_recently_closed_tab(BrowserWindow* target_window, Optional<SessionWindowId> unit_id, ReopenClosedWindow reopen_closed_window)
+ {
+-    if (target_window && !target_window->property("derpbirdAgentId").toString().isEmpty())
++    if (target_window && (target_window->is_app_window() || !target_window->property("derpbirdAgentId").toString().isEmpty()))
+         return;
+     auto is_private = target_window ? target_window->is_private() : WebView::IsPrivate::No;
+     auto& session = target_window ? target_window->session() : session_store(WebView::IsPrivate::No);
+@@ -2427,7 +2433,7 @@ Tab* Application::activate_tab_with_url(URL::URL const& url, URL::ExcludeFragmen
+ {
+     auto is_private = m_active_window ? m_active_window->is_private() : WebView::IsPrivate::No;
+     for (auto* window : visible_browser_windows_active_first(m_active_window)) {
+-        if (window->is_private() != is_private)
++        if (window->is_private() != is_private || window->is_app_window() || !window->property("derpbirdAgentId").toString().isEmpty())
+             continue;
+ 
+         auto* tab = window->activate_tab_with_url(url, exclude_fragment);
+@@ -2469,11 +2475,11 @@ BrowserWindow* Application::window_of_view(u64 view_id) const
+ BrowserWindow* Application::window_for_new_tab(Optional<u64> source_view_id, WebView::IsPrivate is_private) const
+ {
+     if (source_view_id.has_value()) {
+-        if (auto* window = window_of_view(*source_view_id); window && window->is_private() == is_private)
++        if (auto* window = window_of_view(*source_view_id); window && window->is_private() == is_private && !window->is_app_window())
+             return window;
+     }
+     for (auto* window : visible_browser_windows_active_first(m_active_window)) {
+-        if (window->is_private() == is_private)
++        if (window->is_private() == is_private && !window->is_app_window() && window->property("derpbirdAgentId").toString().isEmpty())
+             return window;
+     }
+     return nullptr;
+@@ -2505,17 +2511,19 @@ void Application::open_urls_in_new_tabs(ReadonlySpan<URL::URL> urls) const
+     if (urls.is_empty())
+         return;
+ 
+-    if (!m_active_window) {
++    auto is_private = m_active_window ? m_active_window->is_private() : WebView::IsPrivate::No;
++    auto* target = window_for_new_tab({}, is_private);
++    if (!target) {
+         Vector<URL::URL> initial_urls;
+         initial_urls.ensure_capacity(urls.size());
+         for (auto const& url : urls)
+             initial_urls.append(url);
+ 
+-        const_cast<Application&>(*this).new_window(initial_urls);
++        const_cast<Application&>(*this).new_window(initial_urls, {}, BrowserWindow::IsPopupWindow::No, is_private);
+         return;
+     }
+ 
+-    auto& window = active_window();
++    auto& window = *target;
+     auto deferred_tab_updates = window.tab_widget().defer_tab_updates();
+     auto* previous_tab = window.current_tab();
+     for (auto const& url : urls) {
+diff --git a/UI/Qt/Application.h b/UI/Qt/Application.h
+index 18f967c7a68..64706bef6a9 100644
+--- a/UI/Qt/Application.h
++++ b/UI/Qt/Application.h
+@@ -53,6 +53,7 @@ struct WindowConfiguration {
+     Optional<Web::DevicePixels> width {};
+     Optional<Web::DevicePixels> height {};
+     Optional<bool> maximized {};
++    QString app_id {};
+ };
+ 
+ class DerpBirdScriptStore;
+@@ -105,7 +106,7 @@ public:
+     ErrorOr<int> execute();
+ 
+     Function<void(Vector<URL::URL> const&)> on_new_tab;
+-    Function<void(Vector<URL::URL> const&)> on_new_window;
++    Function<void(Vector<URL::URL> const&, bool app_window)> on_new_window;
+     static WebView::Settings& settings() { return *s_the->m_settings; }
+     static Bookmarks& bookmarks() { return *s_the->m_bookmarks; }
+     static BookmarkStore& bookmark_store() { return *s_the->m_bookmark_store; }
+diff --git a/UI/Qt/BrowserWindow.cpp b/UI/Qt/BrowserWindow.cpp
+index 62e031666c7..e597b951f4b 100644
+--- a/UI/Qt/BrowserWindow.cpp
++++ b/UI/Qt/BrowserWindow.cpp
+@@ -9,6 +9,7 @@
+  * SPDX-License-Identifier: BSD-2-Clause
+  */
+ 
++#include <LibURL/Parser.h>
+ #include <AK/Platform.h>
+ #include <AK/StdLibExtras.h>
+ #include <AK/TypeCasts.h>
+@@ -344,12 +345,15 @@ static QIcon const& app_icon(WebView::IsPrivate is_private)
+     return cached_icon;
+ }
+ 
+-BrowserWindow::BrowserWindow(Vector<URL::URL> const& initial_urls, IsPopupWindow is_popup_window, WebView::IsPrivate is_private, Optional<u64> hub_view_id, Optional<SessionWindowId> restored_session_window_id, QString agent_id)
++BrowserWindow::BrowserWindow(Vector<URL::URL> const& initial_urls, IsPopupWindow is_popup_window, WebView::IsPrivate is_private, Optional<u64> hub_view_id, Optional<SessionWindowId> restored_session_window_id, QString agent_id, QString app_id)
+     : WebView::SettingsObserver(Application::settings())
+     , m_is_private(is_private)
+     , m_tabs_container(new TabWidget(is_private, this))
++    , m_app_id(std::move(app_id))
+     , m_is_popup_window(is_popup_window)
+ {
++    if (is_app_window() && !initial_urls.is_empty())
++        m_app_scope = URL::Parser::basic_parse("."sv, initial_urls.first());
+     if (!agent_id.isEmpty())
+         setProperty("derpbirdAgentId", agent_id);
+ 
+@@ -469,7 +473,12 @@ BrowserWindow::BrowserWindow(Vector<URL::URL> const& initial_urls, IsPopupWindow
+     m_devtools_banner->hide();
+     main_layout->addWidget(m_devtools_banner);
+ 
+-    if (qEnvironmentVariableIsSet("DERPBIRD_UI")) {
++    if (is_app_window()) {
++        new DerpBirdAppDownloads(*this, *main_widget);
++        m_tabs_container->set_tab_bar_visible(false);
++        setWindowFlag(Qt::FramelessWindowHint, false);
++        update_window_border();
++    } else if (qEnvironmentVariableIsSet("DERPBIRD_UI")) {
+         main_layout->removeWidget(m_tabs_container);
+         m_derpbird_chrome = new DerpBirdChrome(*this);
+         main_layout->insertWidget(0, m_derpbird_chrome, 1);
+@@ -1402,7 +1410,7 @@ void BrowserWindow::activate_first_unpinned_tab()
+ 
+ void BrowserWindow::register_window_with_session_store()
+ {
+-    if (!property("derpbirdAgentId").toString().isEmpty())
++    if (is_app_window() || !property("derpbirdAgentId").toString().isEmpty())
+         return;
+     if (auto session_window_id = session().window_opened(); session_window_id.is_error())
+         dbgln("Unable to register the new window with the session store: {}", session_window_id.error());
+@@ -1559,7 +1567,7 @@ void BrowserWindow::create_menu_bar_window_controls()
+ 
+ void BrowserWindow::update_menu_bar_visibility()
+ {
+-    auto show_menu_bar = show_menu_bar_option_available() && Application::settings().appearance().show_menu_bar;
++    auto show_menu_bar = !is_app_window() && show_menu_bar_option_available() && Application::settings().appearance().show_menu_bar;
+ 
+     // Update the controls first so the menu bar measures its corner widgets with the controls visible when shown.
+     if (m_menu_bar_window_controls)
+@@ -1840,7 +1848,7 @@ void BrowserWindow::exit_fullscreen()
+     if (!current_tab())
+         return;
+ 
+-    m_tabs_container->set_tab_bar_visible(true);
++    m_tabs_container->set_tab_bar_visible(!is_app_window());
+ 
+     // A full-screen window is no longer maximized, so it has to ask to be maximized again. On macOS, the window is
+     // zoomed again as it leaves full screen, and asking for the normal state would then unzoom it.
+diff --git a/UI/Qt/BrowserWindow.h b/UI/Qt/BrowserWindow.h
+index ae2449a68b2..e88749a07ce 100644
+--- a/UI/Qt/BrowserWindow.h
++++ b/UI/Qt/BrowserWindow.h
+@@ -155,7 +155,9 @@ public:
+         int m_index { 0 };
+     };
+ 
+-    BrowserWindow(Vector<URL::URL> const& initial_urls, IsPopupWindow is_popup_window = IsPopupWindow::No, WebView::IsPrivate = WebView::IsPrivate::No, Optional<u64> hub_view_id = {}, Optional<SessionWindowId> restored_session_window_id = {}, QString agent_id = {});
++    BrowserWindow(Vector<URL::URL> const& initial_urls, IsPopupWindow is_popup_window = IsPopupWindow::No, WebView::IsPrivate = WebView::IsPrivate::No, Optional<u64> hub_view_id = {}, Optional<SessionWindowId> restored_session_window_id = {}, QString agent_id = {}, QString app_id = {});
++    Optional<URL::URL> const& app_scope() const { return m_app_scope; }
++    bool is_app_window() const { return !m_app_id.isEmpty(); }
+     virtual ~BrowserWindow() override;
+ 
+     DerpBirdChrome* derpbird_chrome() const { return m_derpbird_chrome; }
+@@ -366,6 +368,8 @@ private:
+     QAction* m_always_on_top_action { nullptr };
+     QActionGroup* m_tab_layout_actions { nullptr };
+ 
++    QString m_app_id;
++    Optional<URL::URL> m_app_scope;
+     IsPopupWindow m_is_popup_window { IsPopupWindow::No };
+ 
+     Optional<SessionWindowId> m_session_window_id;
+diff --git a/UI/Qt/HubConnection.cpp b/UI/Qt/HubConnection.cpp
+index e3b2cff69cc..fdd855975fa 100644
+--- a/UI/Qt/HubConnection.cpp
++++ b/UI/Qt/HubConnection.cpp
+@@ -847,10 +847,10 @@ void HubConnection::app_open_new_tab(Vector<URL::URL> urls)
+         application.on_new_tab(urls);
+ }
+ 
+-void HubConnection::app_open_new_window(Vector<URL::URL> urls)
++void HubConnection::app_open_new_window(Vector<URL::URL> urls, bool app_window)
+ {
+     if (auto& application = Application::the(); application.on_new_window)
+-        application.on_new_window(urls);
++        application.on_new_window(urls, app_window);
+ }
+ 
+ void HubConnection::web_ui_opened(u64 web_ui_id, String host, WebView::IsPrivate is_private)
+diff --git a/UI/Qt/HubConnection.h b/UI/Qt/HubConnection.h
+index 47103993e29..89cbd7a4f14 100644
+--- a/UI/Qt/HubConnection.h
++++ b/UI/Qt/HubConnection.h
+@@ -98,7 +98,7 @@ private:
+     virtual void crash_reports_changed() override;
+     virtual void request_finished(u64 request_id, bool had_network_error, Optional<u32> response_code, Vector<HTTP::Header> response_headers, ByteString body) override;
+     virtual void app_open_new_tab(Vector<URL::URL> urls) override;
+-    virtual void app_open_new_window(Vector<URL::URL> urls) override;
++    virtual void app_open_new_window(Vector<URL::URL> urls, bool app_window) override;
+     virtual void view_selected_text(u64 view_id, u64 request_id, Optional<ByteString> text) override;
+     virtual void view_close_preflight_finished(u64 view_id, u64 request_id, bool may_close) override;
+     virtual void view_page_dumps(u64 view_id, u64 request_id, Optional<String> dumps) override;
+diff --git a/UI/Qt/WaylandWindow.cpp b/UI/Qt/WaylandWindow.cpp
+index bc8859e9495..12400bd6c9e 100644
+--- a/UI/Qt/WaylandWindow.cpp
++++ b/UI/Qt/WaylandWindow.cpp
+@@ -42,7 +42,7 @@ QNativeInterface::QWaylandApplication* wayland_application()
+     return qGuiApp->nativeInterface<QNativeInterface::QWaylandApplication>();
+ }
+ 
+-void set_wayland_agent_window_identity(QWidget& widget)
++void set_wayland_window_identity(QWidget& widget, QByteArray app_id)
+ {
+ #ifdef DERPBIRD_HAS_WAYLAND_APP_ID
+     if (!wayland_application())
+@@ -52,9 +52,9 @@ void set_wayland_agent_window_identity(QWidget& widget)
+     auto* native = window->nativeInterface<QNativeInterface::Private::QWaylandWindow>();
+     if (!native)
+         return;
+-    auto apply = [native] {
++    auto apply = [native, app_id] {
+         if (auto* toplevel = native->surfaceRole<xdg_toplevel>())
+-            xdg_toplevel_set_app_id(toplevel, "org.derpbird.Agent");
++            xdg_toplevel_set_app_id(toplevel, app_id.constData());
+     };
+     // Qt emits this after its default app_id, before the initial surface commit.
+     // Keep the connection for hide/show surface recreation as well.
+@@ -62,6 +62,7 @@ void set_wayland_agent_window_identity(QWidget& widget)
+     apply();
+ #else
+     Q_UNUSED(widget);
++    Q_UNUSED(app_id);
+ #endif
+ }
+ 
+diff --git a/UI/Qt/WaylandWindow.h b/UI/Qt/WaylandWindow.h
+index 4270617b1f7..c20e5ad6db6 100644
+--- a/UI/Qt/WaylandWindow.h
++++ b/UI/Qt/WaylandWindow.h
+@@ -6,6 +6,8 @@
+ 
+ #pragma once
+ 
++#include <QByteArray>
++
+ class QWidget;
+ class QWindow;
+ struct wl_surface;
+@@ -22,7 +24,7 @@ QNativeInterface::QWaylandApplication* wayland_application();
+ 
+ // The surface of an existing native Wayland window. This does not create a platform window.
+ wl_surface* wayland_surface_for_window(QWindow const&);
+-void set_wayland_agent_window_identity(QWidget&);
++void set_wayland_window_identity(QWidget&, QByteArray app_id);
+ 
+ // Whether the Wayland compositor can move a window with the pointer while it is dragged. It never can off Wayland.
+ bool wayland_compositor_moves_dragged_windows();
+diff --git a/UI/Qt/main.cpp b/UI/Qt/main.cpp
+index 47c1301ee0d..1928b5bfe0d 100644
+--- a/UI/Qt/main.cpp
++++ b/UI/Qt/main.cpp
+@@ -12,6 +12,7 @@
+ #include <LibWebView/URL.h>
+ #include <LibWebView/Utilities.h>
+ #include <UI/Qt/Application.h>
++#include <QCryptographicHash>
+ #include <UI/Qt/BrowserWindow.h>
+ #include <UI/Qt/ChromeStyle.h>
+ #include <UI/Qt/HubConnection.h>
+@@ -120,7 +121,15 @@ ErrorOr<int> ladybird_main(Main::Arguments arguments)
+             window.raise();
+         };
+ 
+-        app->on_new_window = [&](auto const& urls) {
++        app->on_new_window = [&](auto const& urls, bool app_window) {
++            if (app_window && urls.size() == 1) {
++                auto serialized = urls.first().serialize();
++                auto digest = QCryptographicHash::hash(QByteArray(serialized.bytes_as_string_view().characters_without_null_termination(), serialized.bytes_as_string_view().length()), QCryptographicHash::Sha256);
++                auto config = app->configuration_for_new_window();
++                config.app_id = "org.derpbird.App." + digest.toHex().left(32);
++                app->new_window(urls, config);
++                return;
++            }
+             if (!app->non_private_window_if_any())
+                 app->on_new_tab(urls);
+             else
+@@ -129,7 +138,9 @@ ErrorOr<int> ladybird_main(Main::Arguments arguments)
+ 
+         auto configuration = app->configuration_for_new_window();
+         auto agent_id = qEnvironmentVariable("DERPBIRD_AGENT_WINDOW");
+-        if (!agent_id.isEmpty()) {
++        if (browser_options.new_window == WebView::NewWindow::App) {
++            app->on_new_window(browser_options.urls, true);
++        } else if (!agent_id.isEmpty()) {
+             app->new_window(browser_options.urls, configuration, Ladybird::BrowserWindow::IsPopupWindow::No, WebView::IsPrivate::No, {}, Ladybird::ShowWindow::Yes, {}, agent_id);
+         } else if (auto* restored_window = app->restore_previous_session(configuration)) {
+             // A whole restored session replaces the usual startup tab, so only the URLs the user passed open with it.

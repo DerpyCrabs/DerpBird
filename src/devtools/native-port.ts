@@ -26,7 +26,7 @@ export function decodeDOM(value: unknown, rootDepth = 0): DOMRecord[] {
   }
   return rows;
 }
-export async function connectDevTools(transport: DevToolsTransport): Promise<(DevToolsPort & {dispose():void}) | null> {
+export async function connectDevTools(transport: DevToolsTransport, onAppDownloads?: () => Promise<void>): Promise<(DevToolsPort & {dispose():void}) | null> {
   const listeners = new Set<(update: DevToolsUpdate)=>void>();
   const requests = new Map<string,RequestRecord>();
   let port: (DevToolsPort & {dispose():void}) | undefined;
@@ -107,6 +107,7 @@ export async function connectDevTools(transport: DevToolsTransport): Promise<(De
   const unsubscribe=transport.onDevTools(value=>{if(stopped)return;if(!port)buffered.push(value);else {try{apply(value);}catch(error){for(const listener of listeners)listener({error:String(error)});}}});
   try {
     const initial=await transport.devtoolsRequest({type:'devtools.bootstrap'});
+    if (initial === "app-downloads" && onAppDownloads) { unsubscribe(); await onAppDownloads(); return null; }
     if(initial===null){unsubscribe();return null;}
     port={requests:[],elements:[],sources:[],messages:[],
       ...(record(initial).dock!==undefined?{setDock:async(position: import("./model").DockPosition)=>{await transport.devtoolsRequest({type:"devtools.dock",position});},pickElement:async()=>{await transport.devtoolsRequest({type:"devtools.pick"});},dismiss:async()=>{await transport.devtoolsRequest({type:"devtools.dismiss"});}}:{}),

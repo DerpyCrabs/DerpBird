@@ -1,7 +1,7 @@
-diff --git i/Base/res/ladybird/about-pages/settings.html w/Base/res/ladybird/about-pages/settings.html
-index cf22f2f5f..69760d90f 100644
---- i/Base/res/ladybird/about-pages/settings.html
-+++ w/Base/res/ladybird/about-pages/settings.html
+diff --git a/Base/res/ladybird/about-pages/settings.html b/Base/res/ladybird/about-pages/settings.html
+index ecb241e0a99..829aedf39ff 100644
+--- a/Base/res/ladybird/about-pages/settings.html
++++ b/Base/res/ladybird/about-pages/settings.html
 @@ -978,14 +978,16 @@
          <main class="settings-content">
              <p id="search-empty" class="search-empty" hidden>No settings match this search.</p>
@@ -64,7 +64,7 @@ index cf22f2f5f..69760d90f 100644
                          <div class="card-group inline-container">
                              <span>
                                  Websites
-@@ -1063,35 +1098,7 @@
+@@ -1063,47 +1098,6 @@
                                  </button>
                              </div>
                          </div>
@@ -84,9 +84,22 @@ index cf22f2f5f..69760d90f 100644
 -                                <option value="right">Right</option>
 -                            </select>
 -                        </div>
+-                        <div class="card-group inline-container control-row">
+-                            <label for="always-show-scrollbars">Always show scrollbars</label>
+-                            <input id="always-show-scrollbars" type="checkbox" switch />
+-                        </div>
 -                        <div class="card-group inline-container control-row" id="show-menu-bar-group">
 -                            <label for="show-menu-bar">Show system menu bar</label>
 -                            <input id="show-menu-bar" type="checkbox" switch />
+-                        </div>
+-                        <div class="card-group inline-container control-row hidden" id="window-decorations-group">
+-                            <label for="use-client-side-window-decorations">
+-                                Use client-side window decorations
+-                                <p class="description">
+-                                    Use custom title bar and window controls instead of the system window frame.
+-                                </p>
+-                            </label>
+-                            <input id="use-client-side-window-decorations" type="checkbox" switch />
 -                        </div>
 -                        <div class="card-group inline-container control-row">
 -                            <label for="show-bookmarks-bar">Show bookmarks bar</label>
@@ -96,8 +109,6 @@ index cf22f2f5f..69760d90f 100644
 -                                <option value="onHover">Only when hovering the navigation toolbar</option>
 -                            </select>
 -                        </div>
--                        <div class="card-group inline-container control-row">
-+                        <div class="card-group inline-container">
+                         <div class="card-group inline-container control-row">
                              <label for="default-zoom-level">Default page zoom</label>
                              <div class="setting-controls">
-                                 <select id="default-zoom-level"></select>

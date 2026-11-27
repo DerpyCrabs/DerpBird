@@ -39,11 +39,38 @@ def main():
     child_icon = io.BytesIO()
     Image.new('RGBA', (16, 16), '#d6b985').save(child_icon, format='PNG')
 
+    downloads = args.output / 'downloads'
+    downloads.mkdir(exist_ok=True)
+    environment['XDG_DOWNLOAD_DIR'] = str(downloads.resolve())
+    attachment = b'video attachment fixture'
+    release_attachment = threading.Event()
+    release_page = threading.Event()
+
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
             pass
 
         def do_GET(self):
+            if self.path == '/slow-page':
+                if not release_page.wait(15):
+                    self.send_error(504)
+                    return
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/html')
+                self.end_headers()
+                self.wfile.write(b'<title>Delayed document</title>')
+                return
+            if self.path == '/clip.mp4':
+                if not release_attachment.wait(15):
+                    self.send_error(504)
+                    return
+                self.send_response(200)
+                self.send_header('Content-Type', 'video/mp4')
+                self.send_header('Content-Disposition', 'attachment; filename="clip.mp4"')
+                self.send_header('Content-Length', str(len(attachment)))
+                self.end_headers()
+                self.wfile.write(attachment)
+                return
             if self.path in ['/icon.png', '/child-icon.png']:
                 body, mime = (icon if self.path == '/icon.png' else child_icon).getvalue(), 'image/png'
             elif self.path in ['/root', '/child', '/grandchild', '/middle']:
@@ -52,7 +79,9 @@ def main():
                 target = '/child' if self.path == '/root' else '/grandchild'
                 body = (f'<!doctype html><title>{title}</title>{favicon}<body style="padding:24px;font:20px sans-serif"><h1>{title}</h1>'
                         f'<p><a id="open" target="_blank" href="{target}">Open child</a></p>'
-                        '<p><a id="middle" href="/middle">Open with middle click</a></p>').encode()
+                        '<p><a id="middle" href="/middle">Open with middle click</a></p>'
+                        '<p><a id="download" target="_blank" href="/clip.mp4">Download</a></p>'
+                        '<p><a id="slow" target="_blank" href="/slow-page">Delayed page</a></p>').encode()
                 mime = 'text/html'
             else:
                 self.send_error(404)
@@ -193,6 +222,47 @@ def main():
         for child in children:
             subprocess.run(['wtype', '-M', 'ctrl', '-k', 'w', '-m', 'ctrl'], env=environment, check=True)
             until('document.querySelector("[aria-selected=true][role=tab]").dataset.tabId===' + json.dumps(child))
+        pinned = children[-1]
+        pin_command = {'type': 'command', 'command': {'type': 'tab.pin', 'tabId': pinned, 'value': True}}
+        evaluate('window.ladybird.sendMessage("derpbird.request",{requestId:900003,payload:'+json.dumps(pin_command)+'});true')
+        until('document.querySelector(".pinned-tab-unit [role=tab]")?.dataset.tabId===' + json.dumps(pinned))
+        # An unrelated tab remains to the right. Keep the server response pending
+        # while inspecting selection so a transient foreground tab cannot pass.
+        click_link('/middle', '#download')
+        until('document.querySelectorAll("[role=tab]").length===3')
+        active_id = 'document.querySelector("[role=tab][aria-selected=true]").dataset.tabId'
+        assert evaluate(active_id) == pinned
+        release_attachment.set()
+        until('document.querySelectorAll("[role=tab]").length===2')
+        assert evaluate(active_id) == pinned
+        deadline = time.monotonic() + 5
+        while not (downloads / 'clip.mp4').exists() and time.monotonic() < deadline:
+            time.sleep(.05)
+        assert (downloads / 'clip.mp4').read_bytes() == attachment
+        # Completion can show the downloads popover above the content.
+        until('document.querySelector("#downloads-popover:not([hidden])") !== null')
+        until('Array.from(document.querySelectorAll(".transfer-row")).some(row=>row.querySelector("b").textContent==="clip.mp4" && row.title.startsWith("Finished · ") && row.querySelector("small").textContent.endsWith(new Intl.RelativeTimeFormat(undefined,{numeric:"auto"}).format(0,"second")))')
+        evaluate('document.querySelector("#downloads-indicator").click();true')
+        until('document.querySelector("#downloads-popover").hidden')
+
+        tab_order = 'JSON.stringify(Array.from(document.querySelectorAll("[role=tab]"),e=>e.dataset.tabId))'
+        unrelated = json.loads(evaluate(tab_order))[1]
+        click_link('/middle', '#open')
+        until('document.querySelectorAll("[role=tab]").length===3 && '+active_id+'!=='+json.dumps(pinned))
+        first = evaluate(active_id)
+        assert json.loads(evaluate(tab_order)) == [pinned, first, unrelated]
+        select(pinned)
+        click_link('/middle', '#open', 274)
+        until('document.querySelectorAll("[role=tab]").length===4')
+        order = json.loads(evaluate(tab_order))
+        assert order[:2] == [pinned, first] and order[-1] == unrelated, order
+        assert evaluate(active_id) == pinned
+        click_link('/middle', '#slow')
+        until('document.querySelectorAll("[role=tab]").length===5')
+        select(unrelated)
+        release_page.set()
+        until('Array.from(document.querySelectorAll(".tab-title")).some(t=>t.textContent==="Delayed document")')
+        assert evaluate(active_id) == unrelated
         (args.output/'results.json').write_text(json.dumps({'group_rows':rows,'top_level_title_offsets':top_level,'middle_click_grouped':True},indent=2)+'\n')
         print('PASS: page links, two-level tree, foreground/background gestures and close selection')
     except Exception:

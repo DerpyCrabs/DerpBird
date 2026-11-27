@@ -1,0 +1,114 @@
+--- a/Libraries/LibWebView/FileDownloader.h
++++ b/Libraries/LibWebView/FileDownloader.h
+@@ -65,2 +65,3 @@
+         u64 id { 0 };
++        Optional<u64> source_view_id {};
+         IsPrivate is_private { IsPrivate::No };
+@@ -92,7 +93,7 @@
+ 
+-    u64 download_file(IsPrivate, URL::URL const&, LexicalPath, MayReplaceDestination = MayReplaceDestination::No, RefPtr<HTTP::HeaderList> request_headers = {});
++    u64 download_file(IsPrivate, URL::URL const&, LexicalPath, MayReplaceDestination = MayReplaceDestination::No, RefPtr<HTTP::HeaderList> request_headers = {}, Optional<u64> source_view_id = {});
+     using ResponseFinished = Function<void(u64 decoded_body_size, Requests::RequestTimingInfo const*,
+         Optional<StringView> error)>;
+-    u64 adopt_download(IsPrivate, URL::URL const&, LexicalPath, Optional<u64> total_size, HTTP::Cookie::SameSiteContext, int request_server_client_id, u64 request_server_request_id, int owner_client_id, ReadonlyBytes initial_data = {}, ResponseFinished = {});
+-    u64 start_download(IsPrivate, URL::URL const&, LexicalPath, Optional<u64> total_size = {}, MayReplaceDestination = MayReplaceDestination::No);
++    u64 adopt_download(IsPrivate, URL::URL const&, LexicalPath, Optional<u64> total_size, HTTP::Cookie::SameSiteContext, int request_server_client_id, u64 request_server_request_id, int owner_client_id, ReadonlyBytes initial_data = {}, ResponseFinished = {}, Optional<u64> source_view_id = {});
++    u64 start_download(IsPrivate, URL::URL const&, LexicalPath, Optional<u64> total_size = {}, MayReplaceDestination = MayReplaceDestination::No, Optional<u64> source_view_id = {});
+     bool has_active_downloads() const;
+--- a/Libraries/LibWebView/FileDownloader.cpp
++++ b/Libraries/LibWebView/FileDownloader.cpp
+@@ -217,5 +217,5 @@
+ 
+-u64 FileDownloader::download_file(IsPrivate is_private, URL::URL const& url, LexicalPath destination, MayReplaceDestination may_replace_destination, RefPtr<HTTP::HeaderList> request_headers)
+-{
+-    auto download_id = start_download(is_private, url, move(destination), {}, may_replace_destination);
++u64 FileDownloader::download_file(IsPrivate is_private, URL::URL const& url, LexicalPath destination, MayReplaceDestination may_replace_destination, RefPtr<HTTP::HeaderList> request_headers, Optional<u64> source_view_id)
++{
++    auto download_id = start_download(is_private, url, move(destination), {}, may_replace_destination, source_view_id);
+     auto* active = active_download(download_id);
+@@ -298,3 +298,3 @@
+ u64 FileDownloader::adopt_download(IsPrivate is_private, URL::URL const& url, LexicalPath destination, Optional<u64> total_size, HTTP::Cookie::SameSiteContext same_site_context, int request_server_client_id, u64 request_server_request_id, int owner_client_id, ReadonlyBytes initial_data,
+-    ResponseFinished on_response_finished)
++    ResponseFinished on_response_finished, Optional<u64> source_view_id)
+ {
+@@ -305,3 +305,3 @@
+     };
+-    auto download_id = start_download(is_private, url, move(destination), total_size);
++    auto download_id = start_download(is_private, url, move(destination), total_size, MayReplaceDestination::No, source_view_id);
+     auto* active = active_download(download_id);
+@@ -962,3 +962,3 @@
+ 
+-u64 FileDownloader::start_download(IsPrivate is_private, URL::URL const& url, LexicalPath destination, Optional<u64> total_size, MayReplaceDestination may_replace_destination)
++u64 FileDownloader::start_download(IsPrivate is_private, URL::URL const& url, LexicalPath destination, Optional<u64> total_size, MayReplaceDestination may_replace_destination, Optional<u64> source_view_id)
+ {
+@@ -968,2 +968,3 @@
+         .id = download_id,
++        .source_view_id = source_view_id,
+         .is_private = is_private,
+--- a/Libraries/LibWebView/WebContentPage.cpp
++++ b/Libraries/LibWebView/WebContentPage.cpp
+@@ -3084,3 +3084,3 @@
+     auto& file_downloader = Application::the().file_downloader();
+-    auto download_id = file_downloader.start_download(client().is_private(), url, destination.release_value(), total_size);
++    auto download_id = file_downloader.start_download(client().is_private(), url, destination.release_value(), total_size, FileDownloader::MayReplaceDestination::No, view().view_id());
+     if (!is_download_in_progress(file_downloader, download_id))
+@@ -3161,3 +3161,3 @@
+     auto download_id = file_downloader.adopt_download(client().is_private(), url, destination.release_value(), total_size, same_site_context, request_server_client_id, request_server_request_id, *owner_client_id, initial_data.bytes(),
+-        move(on_response_finished));
++        move(on_response_finished), view().view_id());
+     if (!is_download_in_progress(file_downloader, download_id))
+--- a/Libraries/LibWebView/ViewImplementation.cpp
++++ b/Libraries/LibWebView/ViewImplementation.cpp
+@@ -6098,7 +6098,7 @@
+         if (auto download_path = Application::the().default_path_for_downloaded_file(suggested_filename); !download_path.is_error())
+-            Application::the().file_downloader().download_file(is_private(), url, download_path.release_value(), FileDownloader::MayReplaceDestination::No);
+-        return;
+-    }
+-
+-    Application::the().path_for_downloaded_file(suggested_filename)->when_resolved([is_private = is_private(), url](auto const& download_path) {
++            Application::the().file_downloader().download_file(is_private(), url, download_path.release_value(), FileDownloader::MayReplaceDestination::No, {}, view_id());
++        return;
++    }
++
++    Application::the().path_for_downloaded_file(suggested_filename)->when_resolved([is_private = is_private(), url, source_view_id = view_id()](auto const& download_path) {
+         // NB: A file at a path the user chose was there when the user chose to replace it, as saving asks before replacing.
+@@ -6107,3 +6107,3 @@
+             : FileDownloader::MayReplaceDestination::No;
+-        Application::the().file_downloader().download_file(is_private, url, download_path, may_replace_destination);
++        Application::the().file_downloader().download_file(is_private, url, download_path, may_replace_destination, {}, source_view_id);
+     });
+--- a/Services/Hub/HubClient.ipc
++++ b/Services/Hub/HubClient.ipc
+@@ -100,2 +100,3 @@
+     u64 id;
++    Optional<u64> source_view_id;
+     WebView::IsPrivate is_private;
+--- a/Services/Hub/ConnectionFromUI.cpp
++++ b/Services/Hub/ConnectionFromUI.cpp
+@@ -191,2 +191,3 @@
+     state.id = download.id;
++    state.source_view_id = download.source_view_id;
+     state.is_private = download.is_private;
+--- a/UI/Qt/RemoteDownloads.cpp
++++ b/UI/Qt/RemoteDownloads.cpp
+@@ -22,2 +22,3 @@
+         .id = state.id,
++        .source_view_id = state.source_view_id,
+         .is_private = state.is_private,
+--- a/UI/Qt/BrowserWindow.cpp
++++ b/UI/Qt/BrowserWindow.cpp
+@@ -23,2 +23,3 @@
+ #include <UI/Qt/BrowserWindow.h>
++#include <UI/Qt/DerpBirdAppDownloads.h>
+ #include <UI/Qt/DerpBirdChrome.h>
+--- a/UI/Qt/WindowToolbar.cpp
++++ b/UI/Qt/WindowToolbar.cpp
+@@ -2220,6 +2220,6 @@
+ void WindowToolbar::download_added(WebView::FileDownloader::Download const& download)
+ {
+-    // NB: A window lists the downloads of its own browsing session only.
+-    if (download.is_private != m_is_private)
++    // Standalone windows present their own download notification.
++    if (browser_window().is_app_window() || download.is_private != m_is_private)
+         return;
+     update_downloads_button();

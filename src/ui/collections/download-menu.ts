@@ -5,10 +5,9 @@ import { iconNode as documentFile } from '@effectweb/lucide/icons/file-text';
 import './download-menu.css';
 import type { BrowserDownload } from '../../browser/protocol';
 
-type Status = 'Downloading' | 'Paused' | 'Finished' | 'Canceled' | 'Failed';
-export type DownloadEntry = { id: string; name: string; path: string; size: string; status: Status; resumable: boolean };
-export type DownloadAction = 'clear' | 'cancel' | 'pause' | 'resume' | 'open' | 'reveal';
-export function downloadEntry(file: BrowserDownload): DownloadEntry {
+export type DownloadEntry = Pick<BrowserDownload, 'thumbnail' | 'id' | 'name' | 'path' | 'status' | 'resumable' | 'startedAt' | 'finishedAt'> & { size: string };
+export type DownloadAction = 'clear' | 'cancel' | 'pause' | 'resume' | 'open' | 'reveal' | 'thumbnail' | 'drag';
+export function downloadSize(file: Pick<BrowserDownload, "received" | "total" | "status">): string {
   function size(bytes: number) {
     const units = ['B', 'KB', 'MB', 'GB', 'TB'];
     const power = Math.min(units.length - 1, Math.max(0, Math.floor(Math.log10(Math.max(bytes, 1)) / 3)));
@@ -20,8 +19,40 @@ export function downloadEntry(file: BrowserDownload): DownloadEntry {
     const total = size(file.total);
     description = (received.unit === total.unit ? received.value : description) + ' of ' + total.value + ' ' + total.unit;
   }
-  return { ...file, size: description };
+  return description;
 }
+export function downloadEntry(file: BrowserDownload): DownloadEntry {
+  return { ...file, size: downloadSize(file) };
+}
+const relativeTime = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+const shortDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
+const fullDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'full', timeStyle: 'long' });
+
+function downloadAge(timestamp: number, now: number) {
+  const minutes = Math.max(0, Math.floor((now - timestamp) / 60_000));
+  if (minutes === 0) return relativeTime.format(0, 'second');
+  if (minutes < 60) return relativeTime.format(-minutes, 'minute');
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return relativeTime.format(-hours, 'hour');
+  const days = Math.floor(hours / 24);
+  if (days < 7) return relativeTime.format(-days, 'day');
+  return shortDate.format(timestamp);
+}
+
+function updateMetadata(row: HTMLElement, file: DownloadEntry, now: number) {
+  const meta = row.querySelector('small')!;
+  const timestamp = file.finishedAt ?? file.startedAt;
+  let text = file.status + ' · ' + file.size;
+  if (timestamp !== undefined) {
+    text += ' · ' + downloadAge(timestamp, now);
+    const title = (file.finishedAt !== undefined ? 'Finished' : 'Started') + ' · ' + fullDate.format(timestamp);
+    if (row.title !== title) row.title = title;
+  } else {
+    row.removeAttribute('title');
+  }
+  if (meta.textContent !== text) meta.textContent = text;
+}
+
 const paths = {
   download: 'M8 2v8m-3-3 3 3 3-3M2 10v3h12v-3',
   pause: 'M5 3v10m6-10v10',
@@ -67,6 +98,7 @@ export function createDownloadMenu(files: readonly DownloadEntry[], act: (action
   trigger.setAttribute('aria-expanded', 'false');
   document.querySelector('.proxy-switcher-button')!.before(trigger);
   document.body.append(panel);
+  let clock: number | undefined;
   let submenu: HTMLElement | undefined;
   let invoker: HTMLButtonElement | undefined;
   function dismissSubmenu(restoreFocus = true) {
@@ -128,6 +160,14 @@ export function createDownloadMenu(files: readonly DownloadEntry[], act: (action
     panel.style.left = Math.max(6, Math.min(innerWidth - panel.offsetWidth - 6, r.right - panel.offsetWidth)) + 'px';
     panel.style.top = (r.bottom + panel.offsetHeight + 4 <= innerHeight ? r.bottom + 4 : Math.max(4, r.top - panel.offsetHeight - 4)) + 'px';
   }
+  function showThumbnail(handle: Element, url: string) {
+    if (handle.firstElementChild instanceof HTMLImageElement) return;
+    const image = document.createElement('img');
+    image.src = url;
+    image.alt = '';
+    image.draggable = false;
+    handle.replaceChildren(image);
+  }
   function render() {
     const focus = document.activeElement as HTMLElement;
     const index = [...panel.querySelectorAll('button')].indexOf(focus as HTMLButtonElement);
@@ -158,9 +198,29 @@ export function createDownloadMenu(files: readonly DownloadEntry[], act: (action
       const name = document.createElement('b');
       name.textContent = file.name;
       const meta = document.createElement('small');
-      meta.textContent = file.status + ' · ' + file.size;
       label.append(name, meta);
-      row.append(fileIcon(file.name), label);
+      const handle = document.createElement('span');
+      handle.className = 'download-icon';
+      handle.append(fileIcon(file.name));
+      if (file.thumbnail) showThumbnail(handle, file.thumbnail);
+      else if (!panel.hidden && file.status === 'Finished' && /\.(png|jpe?g|gif|webp|avif|bmp|mp4|m4v|mov|mkv|webm|avi)$/i.test(file.name))
+        act('thumbnail', file.id);
+      if (file.status === 'Finished') {
+        handle.classList.add('draggable');
+        handle.onpointerdown = down => {
+          if (down.button !== 0) return;
+          down.preventDefault();
+          handle.setPointerCapture(down.pointerId);
+          handle.onpointermove = move => {
+            if (!(move.buttons & 1) || Math.hypot(move.clientX - down.clientX, move.clientY - down.clientY) < 6) return;
+            handle.releasePointerCapture(down.pointerId);
+            handle.onpointermove = null;
+            act('drag', file.id);
+          };
+          handle.onlostpointercapture = () => { handle.onpointermove = null; };
+        };
+      }
+      row.append(handle, label);
       if (file.resumable && (active(file) || file.status === 'Failed')) {
         const pause = file.status === 'Downloading';
         const verb = pause ? 'Pause' : file.status === 'Paused' ? 'Resume' : 'Retry';
@@ -173,6 +233,7 @@ export function createDownloadMenu(files: readonly DownloadEntry[], act: (action
         if (e.key === 'ArrowDown' || e.key === 'ArrowRight') { e.preventDefault(); showActions(file, more); }
       };
       row.append(more);
+      updateMetadata(row, file, Date.now());
       panel.append(row);
     }
     if (!panel.hidden) position();
@@ -185,6 +246,10 @@ export function createDownloadMenu(files: readonly DownloadEntry[], act: (action
     dismissSubmenu(false);
     panel.setAttribute('role', 'dialog');
     panel.hidden = false;
+    if (clock === undefined) clock = window.setInterval(() => {
+      const now = Date.now();
+      panel.querySelectorAll<HTMLElement>('.transfer-row').forEach((row, i) => updateMetadata(row, files[i], now));
+    }, 30_000);
     trigger.setAttribute('aria-expanded', 'true');
     render();
     panel.tabIndex = -1;
@@ -193,6 +258,8 @@ export function createDownloadMenu(files: readonly DownloadEntry[], act: (action
   function close() {
     dismissSubmenu();
     panel.hidden = true;
+    window.clearInterval(clock);
+    clock = undefined;
     panel.removeAttribute('role');
     trigger.setAttribute('aria-expanded', 'false');
     if (panel.contains(document.activeElement)) trigger.focus();
@@ -228,13 +295,18 @@ export function createDownloadMenu(files: readonly DownloadEntry[], act: (action
     // Preserve the open submenu and keyboard focus during progress ticks.
     const key = JSON.stringify(next.map(f => [f.id, f.name, f.status, f.resumable, f.path]));
     if (key === structure) {
-      const rows = panel.querySelectorAll('.transfer-row small');
-      next.forEach((f, i) => { if (rows[i]) rows[i].textContent = f.status + ' · ' + f.size; });
+      const rows = panel.querySelectorAll<HTMLElement>('.transfer-row');
+      next.forEach((f, i) => {
+        const row = rows[i];
+        if (!row) return;
+        updateMetadata(row, f, Date.now());
+        if (f.thumbnail) showThumbnail(row.querySelector('.download-icon')!, f.thumbnail);
+      });
       return;
     }
     structure = key;
     dismissSubmenu(false);
     render();
   }
-  return { open, close, update, dispose() { listeners.abort(); trigger.remove(); panel.remove(); } };
+  return { open, close, update, dispose() { window.clearInterval(clock); listeners.abort(); trigger.remove(); panel.remove(); } };
 }

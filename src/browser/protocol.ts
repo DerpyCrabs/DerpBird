@@ -30,7 +30,8 @@ export interface BlockingLog { readonly tabId: string; readonly entries: readonl
 export interface CredentialAutofill { readonly token: string; readonly origin: string; readonly x: number; readonly y: number; readonly items: readonly Credential[] }
 export interface SplitView { readonly id: string; readonly firstTabId: string; readonly secondTabId: string; readonly axis: 'horizontal' | 'vertical'; readonly ratio: number }
 export interface BrowserDownload {
-  id: string; name: string; path: string; received: number; total?: number; resumable: boolean;
+  thumbnail?: string;
+  id: string; name: string; path: string; received: number; total?: number; startedAt?: number; finishedAt?: number; resumable: boolean;
   status: 'Downloading' | 'Paused' | 'Finished' | 'Canceled' | 'Failed';
 }
 export interface ShellDialog {
@@ -64,7 +65,7 @@ export interface SurfaceRect { readonly x: number; readonly y: number; readonly 
 export type Command =
   | { readonly type: 'dialog.edit'; readonly id: string; readonly value: string }
   | { readonly type: 'dialog.answer'; readonly id: string; readonly accepted: boolean; readonly value: string; readonly block: boolean }
-  | { readonly type: 'download.action'; readonly action: 'clear' | 'cancel' | 'pause' | 'resume' | 'open' | 'reveal'; readonly id?: string }
+  | { readonly type: 'download.action'; readonly action: 'clear' | 'cancel' | 'pause' | 'resume' | 'open' | 'reveal' | 'thumbnail' | 'drag'; readonly id?: string }
   | { readonly type: 'automation.set-enabled'; readonly enabled: boolean }
   | { readonly type: 'workspace.switch'; readonly id: string }
   | ({ readonly type: 'workspace.create' | 'workspace.update' } & WorkspaceDraft)
@@ -230,6 +231,7 @@ export function decodeSnapshot(value: unknown): BrowserSnapshot {
   const downloads = s.downloads ?? [];
   if (!Array.isArray(downloads) || downloads.some(file => !file || typeof file.id !== 'string' || typeof file.name !== 'string'
     || typeof file.path !== 'string' || !Number.isFinite(file.received) || (file.total !== undefined && !Number.isFinite(file.total))
+    || [file.startedAt, file.finishedAt].some(time => time !== undefined && (!Number.isSafeInteger(time) || time <= 0 || time > 8.64e15))
     || typeof file.resumable !== 'boolean' || !['Downloading','Paused','Finished','Canceled','Failed'].includes(file.status)))
     throw new Error('Invalid download snapshot');
   return Object.freeze({ dialog, downloads: Object.freeze(downloads), ...(automation ? { automation } : {}), workspaces: decodeWorkspaces(s.workspaces), splits: Object.freeze(splits), ...(s.proxyProfile === undefined ? {} : { proxyProfile: s.proxyProfile as string }), credentialAutofill, addressSuggestions, dynamicRules: s.dynamicRules as string | undefined, filterProposal, blockingLog, scriptCommands: Object.freeze(scriptCommands), credentialProposal, version: protocolVersion, revision: s.revision as number, preferences, tabs: Object.freeze(tabs), activeTabId: s.activeTabId as string | null });

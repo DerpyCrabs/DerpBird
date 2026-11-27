@@ -13,7 +13,15 @@ for directory in ('bin', 'lib', 'libexec'):
 shutil.copy2(build / 'bin/Ladybird', stage / 'bin/Ladybird')
 shutil.copy2(ROOT / 'artifacts/package/derpbird-mcp', stage / 'bin/derpbird-mcp')
 shutil.copy2(ROOT / 'artifacts/package/style-compiler.worker.js', stage / 'bin/style-compiler.worker.js')
-shutil.copytree(build / 'libexec', stage / 'libexec', dirs_exist_ok=True)
+# An incremental build can retain services that upstream has removed.
+targets = subprocess.check_output(['ninja', '-C', str(build), '-t', 'targets', 'all'], text=True)
+helpers = [Path(name) for line in targets.splitlines()
+           for name, _, rule in [line.partition(': ')]
+           if name.startswith('libexec/') and rule.startswith('CXX_EXECUTABLE_LINKER')]
+if not helpers:
+    raise SystemExit('No engine helper executables found in the build graph')
+for helper in helpers:
+    shutil.copy2(build / helper, stage / helper)
 shutil.copytree(build / 'share/Lagom', stage / 'share/Lagom', dirs_exist_ok=True)
 triplet = build / 'vcpkg_installed/x64-linux-dynamic'
 for directory in (triplet / 'lib', build / 'lib'):

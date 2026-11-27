@@ -43,6 +43,10 @@
 #include <memory>
 #include <LibWebCommon/WebView/PageInfo.h>
 #include <UI/Qt/DerpBirdSourceDownload.h>
+#include <QDrag>
+#include <QMimeData>
+#include <QProcess>
+#include <QFileInfo>
 #include <UI/Qt/NavigationPolicy.h>
 #include <UI/Qt/StringUtils.h>
 #include <UI/Qt/Tab.h>
@@ -1065,7 +1069,23 @@ void DerpBirdChrome::group_tab_from_view(Tab& child, Optional<u64> source_view_i
         auto* source = m_window.tab_at(i);
         if (source == &child || !source->is_loaded() || source->view().view_id() != *source_view_id) continue;
         child.setProperty("derpbirdOpener", static_cast<qlonglong>(source->session_tab_id().value_or(0)));
-        if (source->is_pinned()) return;
+        if (source->is_pinned()) {
+            // Pinned tabs cannot be tree parents. Keep their reading queue at the
+            // start of the unpinned strip, moving past each sibling's whole group.
+            int destination = m_window.pinned_tab_count();
+            for (int j = destination; j < m_window.tab_count(); ++j) {
+                auto* candidate = m_window.tab_at(j);
+                if (candidate == &child) continue;
+                if (!tree_parent(*candidate) && candidate->property("derpbirdOpener") != child.property("derpbirdOpener"))
+                    break;
+                destination = j + 1;
+            }
+            int from = m_window.tab_index(&child);
+            m_reordering_tree = true;
+            m_window.move_tab(from, from < destination ? destination - 1 : destination);
+            m_reordering_tree = false;
+            return;
+        }
         if (auto result = move_tree_tab(child, *source, "inside"sv); result.is_error())
             warnln("Cannot group tab opened from page: {}", result.error());
         return;
@@ -1121,8 +1141,9 @@ void DerpBirdChrome::download_updated(RemoteDownloads::Download const& download)
     if (download.is_private == m_window.is_private()) queue_snapshot();
 }
 
-void DerpBirdChrome::download_removed(u64, WebView::IsPrivate session)
+void DerpBirdChrome::download_removed(u64 id, WebView::IsPrivate session)
 {
+    m_download_thumbnails.remove(id);
     if (session == m_window.is_private()) queue_snapshot();
 }
 
@@ -1244,6 +1265,11 @@ JsonValue DerpBirdChrome::snapshot()
         entry.set("id"sv, String::number(file.id));
         entry.set("name"sv, String::from_utf8_with_replacement_character(file.destination.basename(), String::WithBOMHandling::No));
         entry.set("path"sv, String::from_utf8_with_replacement_character(file.destination.string().view(), String::WithBOMHandling::No));
+        if (auto thumbnail = m_download_thumbnails.value(file.id); !thumbnail.is_empty()) entry.set("thumbnail"sv, thumbnail);
+        if (file.created_time > UnixDateTime {})
+            entry.set("startedAt"sv, file.created_time.milliseconds_since_epoch());
+        if (file.finished_time != UnixDateTime {})
+            entry.set("finishedAt"sv, file.finished_time.milliseconds_since_epoch());
         entry.set("received"sv, file.downloaded_size);
         if (file.total_size.has_value()) entry.set("total"sv, *file.total_size);
         entry.set("resumable"sv, file.can_resume);
@@ -1646,7 +1672,35 @@ ErrorOr<void> DerpBirdChrome::command(JsonValue const& value)
         else if (action == "cancel"sv && WebView::FileDownloader::status_is_active(file->status)) downloads.cancel_download(*id);
         else if (action == "open"sv && file->status == Status::Completed) downloads.open(*id);
         else if (action == "reveal"sv && file->status == Status::Completed) downloads.show_in_folder(*id);
-        else return Error::from_string_literal("Unknown download action");
+        else if (file->status == Status::Completed && (action == "drag"sv || action == "thumbnail"sv)) {
+            auto bytes = file->destination.string().view();
+            auto path = QString::fromUtf8(bytes.characters_without_null_termination(), bytes.length());
+            if (!QFileInfo(path).isFile()) return {};
+            if (action == "drag"sv) {
+                auto* drag = new QDrag(&m_window);
+                auto* mime = new QMimeData;
+                mime->setUrls({ QUrl::fromLocalFile(path) });
+                drag->setMimeData(mime);
+                drag->exec(Qt::CopyAction);
+                drag->deleteLater();
+            } else if (!m_download_thumbnails.contains(*id)) {
+                m_download_thumbnails.insert(*id, String {});
+                auto* process = new QProcess(this);
+                connect(process, &QProcess::finished, this, [this, process, id = *id](int code, QProcess::ExitStatus status) {
+                    auto png = process->readAllStandardOutput();
+                    if (status == QProcess::NormalExit && !code && !png.isEmpty() && m_download_thumbnails.contains(id)) {
+                        m_download_thumbnails[id] = ak_string_from_qstring("data:image/png;base64," + QString::fromLatin1(png.toBase64()));
+                        queue_snapshot();
+                    }
+                    process->deleteLater();
+                });
+                connect(process, &QProcess::errorOccurred, process, [process](QProcess::ProcessError error) {
+                    if (error == QProcess::FailedToStart) process->deleteLater();
+                });
+                QTimer::singleShot(10000, process, [process] { process->kill(); });
+                process->start("ffmpeg", { "-nostdin", "-loglevel", "error", "-protocol_whitelist", "file", "-format_whitelist", "png_pipe,jpeg_pipe,gif,webp_pipe,bmp_pipe,mov,matroska,avi", "-threads", "1", "-i", path, "-map", "0:v:0", "-frames:v", "1", "-vf", "scale=64:64:force_original_aspect_ratio=decrease", "-threads", "1", "-f", "image2pipe", "-c:v", "png", "pipe:1" });
+            }
+        } else return Error::from_string_literal("Unknown download action");
         return {};
     }
     if (type == "browser.open-page"sv) {

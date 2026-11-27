@@ -1,0 +1,1220 @@
+diff --git a/Libraries/LibWeb/Bindings/Rust/src/indexed_db/cpp.rs b/Libraries/LibWeb/Bindings/Rust/src/indexed_db/cpp.rs
+index 3d9ca4d3031..b21891655b8 100644
+--- a/Libraries/LibWeb/Bindings/Rust/src/indexed_db/cpp.rs
++++ b/Libraries/LibWeb/Bindings/Rust/src/indexed_db/cpp.rs
+@@ -26,6 +26,14 @@ unsafe extern "C" {
+     fn web_indexed_db_wrap_dom_exception(realm: *mut c_void, exception: *mut c_void) -> *mut c_void;
+     fn web_indexed_db_queue_a_database_task(cell: *mut c_void, steps: unsafe extern "C" fn(*mut c_void, *mut c_void));
+     fn web_indexed_db_run_in_parallel(cell: *mut c_void, steps: unsafe extern "C" fn(*mut c_void, *mut c_void));
++    fn web_indexed_db_commit(realm: *mut c_void, name: ak::Span<'_, u8>, revision: i64, snapshot: ak::Span<'_, u8>) -> bool;
++    fn web_indexed_db_catalog(realm: *mut c_void, target: *mut c_void, receive: unsafe extern "C" fn(*mut c_void, ak::Span<'_, u8>)) -> i64;
++    fn web_indexed_db_read(
++        realm: *mut c_void,
++        name: ak::Span<'_, u8>,
++        target: *mut c_void,
++        receive: unsafe extern "C" fn(*mut c_void, ak::Span<'_, u8>),
++    ) -> i64;
+     fn web_indexed_db_current_event_loop() -> *mut c_void;
+     fn web_indexed_db_enqueue_check_pending_connection_wait(database: *mut c_void);
+     fn web_indexed_db_devtools_client_is_active(realm: *mut c_void) -> bool;
+@@ -46,6 +54,48 @@ unsafe extern "C" {
+     fn web_indexed_db_json_array_append(array: *mut c_void, value: *mut c_void);
+ }
+ 
++pub(crate) fn stored_database_infos(realm: Gc<Realm>) -> Result<Option<Vec<(Utf16String, u64)>>, ()> {
++    unsafe extern "C" fn receive(target: *mut c_void, bytes: ak::Span<'_, u8>) {
++        // SAFETY: target borrows the caller's result for the synchronous callback.
++        let entries = unsafe { &mut *target.cast::<Result<Vec<(Utf16String, u64)>, ()>>() };
++        if let Ok(list) = entries {
++            if let Some(entry) = crate::indexed_db::internal::snapshot::catalog_entry(bytes.as_slice()) {
++                list.push(entry);
++            } else {
++                *entries = Err(());
++            }
++        }
++    }
++    let mut entries: Result<Vec<(Utf16String, u64)>, ()> = Ok(Vec::new());
++    // SAFETY: All callback arguments are live until the read returns.
++    match unsafe { web_indexed_db_catalog(realm.as_ptr().cast(), (&raw mut entries).cast(), receive) } {
++        0 => entries.map(Some),
++        -2 => Ok(None),
++        _ => Err(()),
++    }
++}
++
++pub(crate) fn commit_database(realm: Gc<Realm>, name: &Utf16String, revision: i64, snapshot: &[u8]) -> bool {
++    let name: Vec<u8> = name.to_utf16().iter().flat_map(|unit| unit.to_le_bytes()).collect();
++    // SAFETY: The realm and both byte slices are live for the synchronous write.
++    unsafe { web_indexed_db_commit(realm.as_ptr().cast(), ak::Span::new(&name), revision, ak::Span::new(snapshot)) }
++}
++
++pub(crate) fn read_database(realm: Gc<Realm>, name: &Utf16String) -> (i64, Vec<u8>) {
++    unsafe extern "C" fn receive(target: *mut c_void, bytes: ak::Span<'_, u8>) {
++        // SAFETY: The synchronous caller lends its output vector for the callback.
++        unsafe { &mut *target.cast::<Vec<u8>>() }.extend_from_slice(bytes.as_slice());
++    }
++
++    let name: Vec<u8> = name.to_utf16().iter().flat_map(|unit| unit.to_le_bytes()).collect();
++    let mut bytes = Vec::new();
++    // SAFETY: All borrowed arguments stay live until the synchronous call returns.
++    let revision = unsafe {
++        web_indexed_db_read(realm.as_ptr().cast(), ak::Span::new(&name), (&raw mut bytes).cast(), receive)
++    };
++    (revision, bytes)
++}
++
+ /// A WebIDL::DOMException of LibWeb.
+ #[derive(Clone, Trace)]
+ #[gc(crate = libjs_rust)]
+diff --git a/Libraries/LibWeb/Bindings/Rust/src/indexed_db/idb_factory.rs b/Libraries/LibWeb/Bindings/Rust/src/indexed_db/idb_factory.rs
+index e624888d912..deb5a842355 100644
+--- a/Libraries/LibWeb/Bindings/Rust/src/indexed_db/idb_factory.rs
++++ b/Libraries/LibWeb/Bindings/Rust/src/indexed_db/idb_factory.rs
+@@ -24,7 +24,7 @@ use crate::indexed_db::internal::algorithms::{
+     DeleteResult, OpenResult, convert_a_value_to_a_key, delete_a_database, fire_a_version_change_event,
+     open_a_database_connection, queue_a_database_task, set_idb_request_result,
+ };
+-use crate::indexed_db::internal::database::{Database, DatabaseRef};
++use crate::indexed_db::internal::database::Database;
+ use crate::indexed_db::internal::function::{NoCells, create_function, create_function_with};
+ use crate::indexed_db::internal::key::Key;
+ use crate::storage_api::storage_key::obtain_a_storage_key;
+@@ -286,7 +286,19 @@ impl IDBFactory {
+                     crate::bindings::interface::with_temporary_execution_context_and_callbacks(realm, || {
+                         // 1. Let databases be the set of databases in storageKey.
+                         //    If this cannot be determined for any reason, then queue a database task to reject p with an appropriate error (e.g. an "UnknownError" DOMException) and terminate these steps.
+-                        let databases = Database::for_key(vm, &storage_key.0);
++                        let databases = match crate::indexed_db::cpp::stored_database_infos(realm) {
++                            Ok(Some(entries)) => entries,
++                            Ok(None) => Database::for_key(vm, &storage_key.0).values().iter().map(|db| {
++                                let version = db.upgrade_transaction().map_or_else(|| db.version(), |tx| tx.original_version());
++                                (db.name(), version)
++                            }).collect(),
++                            Err(()) => {
++                                let error = Exception::Dom("UnknownError", Utf16String::from_utf8("Could not list stored databases"))
++                                    .throw(&CallContext::new(vm, realm));
++                                reject_promise(vm, promise, error.value());
++                                return;
++                            }
++                        };
+ 
+                         // 2. Let result be a new list.
+                         // 3. For each db of databases:
+@@ -297,7 +309,7 @@ impl IDBFactory {
+                         //     5. Append info to result.
+                         // 4. Queue a database task to resolve p with result.
+                         // AD-HOC: p is resolved directly in a deferred invocation, not in a database task.
+-                        resolve_database_info_list_promise(vm, realm, promise, &databases.values());
++                        resolve_database_info_list_promise(vm, realm, promise, &databases);
+                     });
+                 },
+             ),
+@@ -309,19 +321,12 @@ impl IDBFactory {
+ }
+ 
+ // NB: The generated conversion of IDBDatabaseInfo is only built with the bindings, so the dictionaries are built here.
+-fn resolve_database_info_list_promise(vm: &Vm, realm: Gc<Realm>, promise: WebIdlPromise, databases: &[DatabaseRef]) {
++fn resolve_database_info_list_promise(vm: &Vm, realm: Gc<Realm>, promise: WebIdlPromise, databases: &[(Utf16String, u64)]) {
+     let result = Array::create(vm, realm, 0, None).must();
+ 
+     let mut result_index: u64 = 0;
+-    for db in databases {
+-        // INTEROP: A database's version is not reported until its upgrade transaction commits, so that databases()
+-        //          does not pick up changes that have not been committed.
+-        let mut version = db.version();
+-        if let Some(upgrade_transaction) = db.upgrade_transaction() {
+-            version = upgrade_transaction.original_version();
+-        }
+-
+-        if version == 0 {
++    for (name, version) in databases {
++        if *version == 0 {
+             continue;
+         }
+ 
+@@ -329,7 +334,7 @@ fn resolve_database_info_list_promise(vm: &Vm, realm: Gc<Realm>, promise: WebIdl
+         info.create_data_property(
+             vm,
+             &PropertyKey::from_utf8("name"),
+-            Value::from_string(PrimitiveString::create(vm, db.name())),
++            Value::from_string(PrimitiveString::create(vm, name.clone())),
+             None,
+             None,
+         )
+@@ -341,7 +346,7 @@ fn resolve_database_info_list_promise(vm: &Vm, realm: Gc<Realm>, promise: WebIdl
+         info.create_data_property(
+             vm,
+             &PropertyKey::from_utf8("version"),
+-            Value::from_f64(version as f64),
++            Value::from_f64(*version as f64),
+             None,
+             None,
+         )
+diff --git a/Libraries/LibWeb/Bindings/Rust/src/indexed_db/internal/algorithms.rs b/Libraries/LibWeb/Bindings/Rust/src/indexed_db/internal/algorithms.rs
+index 78807aed9a9..80570907deb 100644
+--- a/Libraries/LibWeb/Bindings/Rust/src/indexed_db/internal/algorithms.rs
++++ b/Libraries/LibWeb/Bindings/Rust/src/indexed_db/internal/algorithms.rs
+@@ -41,7 +41,7 @@ use crate::indexed_db::idb_record::{IDBRecord, IndexRecord, ObjectStoreRecord, S
+ use crate::indexed_db::idb_request::{AnyIDBRequest, IDBRequest, IDBRequestSource};
+ use crate::indexed_db::idb_transaction::{IDBTransaction, IDBTransactionMode, TransactionState};
+ use crate::indexed_db::idb_version_change_event::{IDBVersionChangeEvent, IDBVersionChangeEventInit};
+-use crate::indexed_db::internal::database::Database;
++use crate::indexed_db::internal::database::{Database, DatabaseRef};
+ use crate::indexed_db::internal::function::{
+     Function, FunctionWith, NoCells, Operation, create_function, create_operation, perform_operation,
+ };
+@@ -110,6 +110,30 @@ fn call_completion<A: 'static>(vm: &Vm, queue: ConnectionQueueRef, completion: F
+     queue.request_list.on_request_processed(vm);
+ }
+ 
++fn load_database(vm: &Vm, realm: Gc<Realm>, key: &StorageKey, name: &Utf16String) -> Result<DatabaseRef, DomException> {
++    if let Some(database) = Database::for_key_and_name(vm, key, name) {
++        return Ok(database);
++    }
++    let (revision, bytes) = crate::indexed_db::cpp::read_database(realm, name);
++    let database = Database::create(vm, name);
++    if revision == -2 {
++        return Ok(database);
++    }
++    if revision < 0 {
++        return Err(DomException::create("UnknownError", "Could not read the stored database"));
++    }
++    // A deleted database retains its revision so an outstanding writer cannot recreate it.
++    if !bytes.is_empty() {
++        super::snapshot::restore(vm, database, &bytes)
++            .ok_or_else(|| DomException::create("UnknownError", "Could not decode the stored database"))?;
++        if bytes.starts_with(b"IDB\0\x01") {
++            database.legacy_snapshot.replace(bytes);
++        }
++    }
++    database.disk_revision.set(Some(revision));
++    Ok(database)
++}
++
+ // https://w3c.github.io/IndexedDB/#open-a-database-connection
+ pub(crate) fn open_a_database_connection(
+     vm: &Vm,
+@@ -138,14 +162,15 @@ pub(crate) fn open_a_database_connection(
+         ),
+         |vm, &(realm, queue, ref storage_key, ref name, maybe_version, request, on_complete), ()| {
+             // 4. Let db be the database named name in storageKey, or null otherwise.
+-            let maybe_db = Database::for_key_and_name(vm, &storage_key.0, name);
+-
+-            // 5. If version is undefined, let version be 1 if db is null, or db’s version otherwise.
+-            let version = maybe_version.unwrap_or_else(|| maybe_db.map_or(1, |db| db.version()));
+-
+-            // 6. If db is null, let db be a new database with name name, version 0 (zero), and with no object stores.
+-            //    If this fails for any reason, return an appropriate error (e.g. a QuotaExceededError, or an "UnknownError" DOMException).
+-            let db = maybe_db.unwrap_or_else(|| Database::create_for_key_and_name(vm, &storage_key.0, name));
++            let db = match load_database(vm, realm, &storage_key.0, name) {
++                Ok(database) => database,
++                Err(error) => {
++                    call_completion(vm, queue, on_complete, Err(error));
++                    return;
++                }
++            };
++            storage(vm).set_database(vm, &storage_key.0, name, db);
++            let version = maybe_version.unwrap_or_else(|| db.version().max(1));
+ 
+             // 7. If db’s version is greater than version, return a newly created "VersionError" DOMException and abort these steps.
+             if db.version() > version {
+@@ -691,9 +716,16 @@ pub(crate) fn delete_a_database(
+         (realm, queue, NoCells(storage_key), name, request, on_complete),
+         |vm, &(realm, queue, ref storage_key, ref name, request, on_complete), ()| {
+             // 4. Let db be the database named name in storageKey, if one exists. Otherwise, return 0 (zero).
+-            let Some(db) = Database::for_key_and_name(vm, &storage_key.0, name) else {
+-                call_completion(vm, queue, on_complete, Ok(0));
+-                return;
++            let db = match load_database(vm, realm, &storage_key.0, name) {
++                Ok(database) if database.version() > 0 => database,
++                Ok(_) => {
++                    call_completion(vm, queue, on_complete, Ok(0));
++                    return;
++                }
++                Err(error) => {
++                    call_completion(vm, queue, on_complete, Err(error));
++                    return;
++                }
+             };
+ 
+             // 5. Let openConnections be the set of all connections associated with db.
+@@ -766,12 +798,18 @@ pub(crate) fn delete_a_database(
+                         &open_connections.0,
+                         create_function(
+                             vm,
+-                            (queue, db, storage_key.clone(), name.clone(), on_complete),
+-                            |vm, &(queue, db, ref storage_key, ref name, on_complete), ()| {
++                            (realm, queue, db, storage_key.clone(), name.clone(), on_complete),
++                            |vm, &(realm, queue, db, ref storage_key, ref name, on_complete), ()| {
+                                 // 10. Let version be db’s version.
+                                 let version = db.version();
+ 
+                                 // 11. Delete db. If this fails for any reason, return an appropriate error (e.g. a QuotaExceededError, or an "UnknownError" DOMException).
++                                if let Some(revision) = db.disk_revision.get()
++                                    && !crate::indexed_db::cpp::commit_database(realm, name, revision, &[])
++                                {
++                                    call_completion(vm, queue, on_complete, Err(DomException::create("UnknownError", "Could not delete the stored database")));
++                                    return;
++                                }
+                                 Database::delete_for_key_and_name(vm, &storage_key.0, name);
+ 
+                                 // 12. Return version.
+@@ -1133,6 +1171,34 @@ pub(crate) fn create_a_sorted_name_list(vm: &Vm, mut names: Vec<Utf16String>) ->
+     DOMStringList::create(vm, names)
+ }
+ 
++fn persist_transaction(vm: &Vm, transaction: Ref<IDBTransaction>) -> Option<()> {
++    let database = transaction.connection_object().associated_database();
++    let Some(revision) = database.disk_revision.get() else { return Some(()) };
++    let next_revision = revision.checked_add(1)?;
++    let changes = if transaction.is_upgrade_transaction() {
++        super::snapshot::encode_stores(vm, database, &database.object_stores(vm).values(), true)?
++    } else if !database.legacy_snapshot.borrow().is_empty() {
++        // Convert an existing profile once. Other transactions may already have
++        // uncommitted changes in stores outside this transaction's scope.
++        let committed = Database::create(vm, &database.name());
++        super::snapshot::restore(vm, committed, &database.legacy_snapshot.borrow())?;
++        for store in transaction.scope(vm).values().iter() {
++            let old = committed.object_store_with_name(&store.name())?;
++            Database::remove_object_store(committed, vm, old);
++            Database::add_object_store(committed, vm, *store);
++        }
++        super::snapshot::encode_stores(vm, committed, &committed.object_stores(vm).values(), true)?
++    } else {
++        super::snapshot::encode_stores(vm, database, &transaction.scope(vm).values(), false)?
++    };
++    if !crate::indexed_db::cpp::commit_database(transaction.realm(), &database.name(), revision, &changes) {
++        return None;
++    }
++    database.legacy_snapshot.take();
++    database.disk_revision.set(Some(next_revision));
++    Some(())
++}
++
+ // https://w3c.github.io/IndexedDB/#commit-a-transaction
+ pub(crate) fn commit_a_transaction(vm: &Vm, transaction: Ref<IDBTransaction>) {
+     // 1. Set transaction’s state to committing.
+@@ -1153,8 +1219,10 @@ pub(crate) fn commit_a_transaction(vm: &Vm, transaction: Ref<IDBTransaction>) {
+                 return;
+             }
+ 
+-            // FIXME: 3. Attempt to write any outstanding changes made by transaction to the database, considering transaction’s durability hint.
+-            // FIXME: 4. If an error occurs while writing the changes to the database, then run abort a transaction with transaction and an appropriate type for the error, for example a QuotaExceededError or an "UnknownError" DOMException, and terminate these steps.
++            if !transaction.is_readonly() && persist_transaction(vm, transaction).is_none() {
++                abort_a_transaction(vm, transaction, Some(DomException::create("UnknownError", "Could not commit the database transaction")));
++                return;
++            }
+ 
+             // 5. Queue a database task to run these steps:
+             queue_a_database_task(
+diff --git a/Libraries/LibWeb/Bindings/Rust/src/indexed_db/internal/database.rs b/Libraries/LibWeb/Bindings/Rust/src/indexed_db/internal/database.rs
+index f29ffff8d16..975f696cc91 100644
+--- a/Libraries/LibWeb/Bindings/Rust/src/indexed_db/internal/database.rs
++++ b/Libraries/LibWeb/Bindings/Rust/src/indexed_db/internal/database.rs
+@@ -44,6 +44,9 @@ pub(crate) struct Database {
+ 
+     // A database has a version. When a database is first created, its version is 0 (zero).
+     version: Cell<u64>,
++    pub(crate) disk_revision: Cell<Option<i64>>,
++    #[gc(untraced)]
++    pub(crate) legacy_snapshot: RefCell<Vec<u8>>,
+ 
+     // A database has at most one associated upgrade transaction, which is either null or an upgrade transaction, and is initially null.
+     upgrade_transaction: Cell<Option<Ref<IDBTransaction>>>,
+@@ -67,6 +70,8 @@ impl Database {
+             pending_connection_wait: GcRefCell::new(None),
+             name: name.clone(),
+             version: Cell::new(0),
++            disk_revision: Cell::new(None),
++            legacy_snapshot: RefCell::new(Vec::new()),
+             upgrade_transaction: Cell::new(None),
+             object_stores: GcRefCell::new(Vec::new()),
+         })
+@@ -165,12 +170,6 @@ impl Database {
+         storage(vm).database(key, name)
+     }
+ 
+-    pub(crate) fn create_for_key_and_name(vm: &Vm, key: &StorageKey, name: &Utf16String) -> DatabaseRef {
+-        let value = Database::create(vm, name);
+-        storage(vm).set_database(vm, key, name, value);
+-        value
+-    }
+-
+     pub(crate) fn delete_for_key_and_name(vm: &Vm, key: &StorageKey, name: &Utf16String) {
+         storage(vm).remove_database(vm, key, name);
+     }
+diff --git a/Libraries/LibWeb/Bindings/Rust/src/indexed_db/internal/mod.rs b/Libraries/LibWeb/Bindings/Rust/src/indexed_db/internal/mod.rs
+index be74d52d756..21f5e1f452e 100644
+--- a/Libraries/LibWeb/Bindings/Rust/src/indexed_db/internal/mod.rs
++++ b/Libraries/LibWeb/Bindings/Rust/src/indexed_db/internal/mod.rs
+@@ -16,4 +16,5 @@ pub(crate) mod mutation_log;
+ pub(crate) mod object_store;
+ pub(crate) mod record_range;
+ pub(crate) mod request_list;
++pub(crate) mod snapshot;
+ pub(crate) mod storage;
+diff --git a/Libraries/LibWeb/Bindings/Rust/src/indexed_db/internal/snapshot.rs b/Libraries/LibWeb/Bindings/Rust/src/indexed_db/internal/snapshot.rs
+new file mode 100644
+index 00000000000..6a3d1c767a0
+--- /dev/null
++++ b/Libraries/LibWeb/Bindings/Rust/src/indexed_db/internal/snapshot.rs
+@@ -0,0 +1,295 @@
++// SPDX-License-Identifier: BSD-2-Clause
++
++//! Profile format for IndexedDB snapshots. Strings preserve every UTF-16 code unit,
++//! including unpaired surrogates. Values are structured-clone storage records.
++use std::rc::Rc;
++
++use ak::Utf16String;
++use libjs_rust::api::Vm;
++
++use super::algorithms::KeyPath;
++use super::database::DatabaseRef;
++use super::key::{Key, KeyType, KeyValue};
++
++const MAGIC: &[u8] = b"IDB\0\x01";
++const STORE_MAGIC: &[u8] = b"IDB\0\x02";
++pub(crate) fn catalog_entry(bytes: &[u8]) -> Option<(Utf16String, u64)> {
++    let (version, name) = bytes
++        .strip_prefix(MAGIC)
++        .or_else(|| bytes.strip_prefix(STORE_MAGIC))?
++        .split_at_checked(8)?;
++    if !name.len().is_multiple_of(2) {
++        return None;
++    }
++    let units: Vec<_> = name
++        .chunks_exact(2)
++        .map(|unit| u16::from_le_bytes([unit[0], unit[1]]))
++        .collect();
++    Some((
++        Utf16String::from_utf16(&units),
++        u64::from_le_bytes(version.try_into().ok()?),
++    ))
++}
++
++const MAX_KEY_DEPTH: usize = 256;
++
++#[derive(Default)]
++struct Writer(Vec<u8>);
++
++impl Writer {
++    fn count(&mut self, n: usize) -> Option<()> {
++        self.0.extend(u32::try_from(n).ok()?.to_le_bytes());
++        Some(())
++    }
++
++    fn bytes(&mut self, bytes: &[u8]) -> Option<()> {
++        self.count(bytes.len())?;
++        self.0.extend_from_slice(bytes);
++        Some(())
++    }
++
++    fn string(&mut self, value: &Utf16String) -> Option<()> {
++        self.count(value.length_in_code_units())?;
++        for unit in value.to_utf16().iter() {
++            self.0.extend(unit.to_le_bytes());
++        }
++        Some(())
++    }
++
++    fn path(&mut self, path: Option<&KeyPath>) -> Option<()> {
++        match path {
++            None => self.0.push(0),
++            Some(KeyPath::String(name)) => {
++                self.0.push(1);
++                self.string(name)?;
++            }
++            Some(KeyPath::Sequence(names)) => {
++                self.0.push(2);
++                self.count(names.len())?;
++                for name in names {
++                    self.string(name)?;
++                }
++            }
++        }
++        Some(())
++    }
++
++    fn key(&mut self, key: &Key, depth: usize) -> Option<()> {
++        if depth > MAX_KEY_DEPTH {
++            return None;
++        }
++        match key.value() {
++            KeyValue::Double(value) => {
++                self.0.push(match key.r#type() {
++                    KeyType::Number => 0,
++                    KeyType::Date => 1,
++                    _ => return None,
++                });
++                self.0.extend(value.to_le_bytes());
++            }
++            KeyValue::String(value) if key.r#type() == KeyType::String => {
++                self.0.push(2);
++                self.string(value)?;
++            }
++            KeyValue::Bytes(value) => {
++                self.0.push(3);
++                self.bytes(value)?;
++            }
++            KeyValue::Keys(values) => {
++                self.0.push(4);
++                self.count(values.len())?;
++                for value in values {
++                    self.key(value, depth + 1)?;
++                }
++            }
++            _ => return None,
++        }
++        Some(())
++    }
++}
++
++/// The header is stored once; each framed store becomes a separately replaceable SQLite row.
++pub(crate) fn encode_stores(
++    vm: &Vm,
++    database: DatabaseRef,
++    stores: &[super::object_store::ObjectStoreRef],
++    replace_all: bool,
++) -> Option<Vec<u8>> {
++    let mut writer = Writer(STORE_MAGIC.to_vec());
++    writer.0.extend(database.version().to_le_bytes());
++    writer.count(database.object_stores(vm).values().len())?;
++    writer.0.push(u8::from(replace_all));
++    for store in stores {
++        if !replace_all && store.mutation_log_position() == 0 {
++            continue;
++        }
++        let frame = writer.0.len();
++        writer.count(0)?;
++        writer.string(&store.name())?;
++        writer.path(store.key_path())?;
++        let generator = if store.uses_a_key_generator() {
++            store.key_generator().current_number()
++        } else {
++            0
++        };
++        writer.0.extend(generator.to_le_bytes());
++        let records = store.records();
++        writer.count(records.len())?;
++        for record in records.iter() {
++            writer.key(&record.key, 0)?;
++            writer.bytes(&record.value)?;
++        }
++        let indexes = store.indexes(vm);
++        writer.count(indexes.values().len())?;
++        for index in indexes.values().iter() {
++            writer.string(&index.name())?;
++            writer.path(Some(index.key_path()))?;
++            writer
++                .0
++                .push(u8::from(index.unique()) | (u8::from(index.multi_entry()) << 1));
++            let records = index.records();
++            writer.count(records.len())?;
++            for record in records.iter() {
++                writer.key(&record.key, 0)?;
++                writer.key(&record.value, 0)?;
++            }
++        }
++        let length = u32::try_from(writer.0.len() - frame - 4).ok()?;
++        writer.0[frame..frame + 4].copy_from_slice(&length.to_le_bytes());
++    }
++    Some(writer.0)
++}
++
++struct Reader<'a>(&'a [u8]);
++
++impl<'a> Reader<'a> {
++    fn take(&mut self, size: usize) -> Option<&'a [u8]> {
++        let (value, rest) = self.0.split_at_checked(size)?;
++        self.0 = rest;
++        Some(value)
++    }
++
++    fn byte(&mut self) -> Option<u8> {
++        Some(self.take(1)?[0])
++    }
++
++    fn count(&mut self) -> Option<usize> {
++        let n = u32::from_le_bytes(self.take(4)?.try_into().ok()?) as usize;
++        (n <= self.0.len()).then_some(n)
++    }
++
++    fn bytes(&mut self) -> Option<&'a [u8]> {
++        let n = self.count()?;
++        self.take(n)
++    }
++
++    fn string(&mut self) -> Option<Utf16String> {
++        let n = self.count()?;
++        let bytes = self.take(n.checked_mul(2)?)?;
++        let units: Vec<u16> = bytes
++            .chunks_exact(2)
++            .map(|p| u16::from_le_bytes([p[0], p[1]]))
++            .collect();
++        Some(Utf16String::from_utf16(&units))
++    }
++
++    fn key(&mut self, depth: usize) -> Option<Rc<Key>> {
++        if depth > MAX_KEY_DEPTH {
++            return None;
++        }
++        match self.byte()? {
++            tag @ (0 | 1) => {
++                let n = f64::from_le_bytes(self.take(8)?.try_into().ok()?);
++                if n.is_nan() {
++                    return None;
++                }
++                Some(if tag == 0 {
++                    Key::create_number(n)
++                } else {
++                    Key::create_date(n)
++                })
++            }
++            2 => Some(Key::create_string(self.string()?)),
++            3 => Some(Key::create_binary(self.bytes()?.to_vec())),
++            4 => {
++                let n = self.count()?;
++                let keys = (0..n).map(|_| self.key(depth + 1)).collect::<Option<Vec<_>>>()?;
++                Some(Key::create_array(keys))
++            }
++            _ => None,
++        }
++    }
++}
++
++impl Reader<'_> {
++    fn integer(&mut self) -> Option<u64> {
++        Some(u64::from_le_bytes(self.take(8)?.try_into().ok()?))
++    }
++
++    fn path(&mut self) -> Option<Option<KeyPath>> {
++        match self.byte()? {
++            0 => Some(None),
++            1 => Some(Some(KeyPath::String(self.string()?))),
++            2 => {
++                let n = self.count()?;
++                let names = (0..n).map(|_| self.string()).collect::<Option<Vec<_>>>()?;
++                Some(Some(KeyPath::Sequence(names)))
++            }
++            _ => None,
++        }
++    }
++}
++
++/// Populate a newly allocated database. The caller publishes it only after
++/// the complete snapshot has been consumed.
++pub(crate) fn restore(vm: &Vm, database: DatabaseRef, snapshot: &[u8]) -> Option<()> {
++    use super::index::Index;
++    use super::object_store::ObjectStore;
++    use crate::indexed_db::idb_record::{IndexRecord, ObjectStoreRecord};
++
++    let mut reader = Reader(snapshot);
++    let magic = reader.take(MAGIC.len())?;
++    if magic != MAGIC && magic != STORE_MAGIC {
++        return None;
++    }
++    let version = reader.integer()?;
++    for _ in 0..reader.count()? {
++        let name = reader.string()?;
++        if database.object_store_with_name(&name).is_some() {
++            return None;
++        }
++        let key_path = reader.path()?;
++        let generator = reader.integer()?;
++        let store = ObjectStore::create(vm, database, name, generator != 0, key_path);
++        if generator != 0 {
++            store.key_generator().set(generator);
++        }
++        for _ in 0..reader.count()? {
++            let key = reader.key(0)?;
++            let value = Rc::from(reader.bytes()?);
++            store.store_a_record(vm, ObjectStoreRecord { key, value });
++        }
++        for _ in 0..reader.count()? {
++            let name = reader.string()?;
++            if store.index_set_get(&name).is_some() {
++                return None;
++            }
++            let path = reader.path()??;
++            let flags = reader.byte()?;
++            if flags > 3 {
++                return None;
++            }
++            let index = Index::create(vm, store, &name, &path, flags & 1 != 0, flags & 2 != 0);
++            for _ in 0..reader.count()? {
++                let key = reader.key(0)?;
++                let value = reader.key(0)?;
++                Index::store_a_record(index, vm, &IndexRecord { key, value });
++            }
++        }
++    }
++    if !reader.0.is_empty() {
++        return None;
++    }
++    database.set_version(version);
++    Some(())
++}
+diff --git a/Libraries/LibWeb/IndexedDB/RustIntegration.cpp b/Libraries/LibWeb/IndexedDB/RustIntegration.cpp
+index 807e6de45bf..6874ba86d75 100644
+--- a/Libraries/LibWeb/IndexedDB/RustIntegration.cpp
++++ b/Libraries/LibWeb/IndexedDB/RustIntegration.cpp
+@@ -39,6 +39,9 @@ void web_indexed_db_queue_a_database_task(void* cell, void (*steps)(JSVM*, void*
+ void web_indexed_db_run_in_parallel(void* cell, void (*steps)(JSVM*, void*));
+ void* web_indexed_db_current_event_loop();
+ void web_indexed_db_enqueue_check_pending_connection_wait(void* database);
++i64 web_indexed_db_catalog(void* realm, void* target, void (*receive)(void*, ReadonlyBytes));
++i64 web_indexed_db_read(void* realm, ReadonlyBytes name, void* target, void (*receive)(void*, ReadonlyBytes));
++bool web_indexed_db_commit(void* realm, ReadonlyBytes name, i64 revision, ReadonlyBytes snapshot);
+ bool web_indexed_db_devtools_client_is_active(void* realm);
+ IndexedDB::TransactionChanges* web_indexed_db_create_transaction_changes();
+ void web_indexed_db_append_transaction_change(IndexedDB::TransactionChanges*, u8 kind, FlatPtr database_name, FlatPtr object_store_name, JsonValue* key);
+@@ -110,6 +113,48 @@ static GC::Ptr<DOM::Document> responsible_document(void* realm)
+     return HTML::relevant_settings_object(js_realm.global_object()).responsible_document();
+ }
+ 
++i64 web_indexed_db_catalog(void* realm, void* target, void (*receive)(void*, ReadonlyBytes))
++{
++    auto document = responsible_document(realm);
++    if (!document)
++        return -2;
++    auto& environment = HTML::relevant_settings_object(static_cast<JS::Realm*>(realm)->global_object());
++    Vector<ByteBuffer> entries;
++    auto status = document->page().client().indexed_db_catalog(environment.id, entries);
++    for (auto const& entry : entries)
++        receive(target, entry.bytes());
++    return status;
++}
++
++i64 web_indexed_db_read(void* realm, ReadonlyBytes name, void* target, void (*receive)(void*, ReadonlyBytes))
++{
++    auto document = responsible_document(realm);
++    if (!document)
++        return -2;
++    auto& environment = HTML::relevant_settings_object(static_cast<JS::Realm*>(realm)->global_object());
++    auto database_name = ByteBuffer::copy(name);
++    if (database_name.is_error())
++        return -1;
++    ByteBuffer snapshot;
++    auto revision = document->page().client().read_indexed_db(environment.id, database_name.value(), snapshot);
++    if (revision > 0)
++        receive(target, snapshot.bytes());
++    return revision;
++}
++
++bool web_indexed_db_commit(void* realm, ReadonlyBytes name, i64 revision, ReadonlyBytes snapshot)
++{
++    auto document = responsible_document(realm);
++    if (!document)
++        return false;
++    auto& environment = HTML::relevant_settings_object(static_cast<JS::Realm*>(realm)->global_object());
++    auto database_name = ByteBuffer::copy(name);
++    auto data = ByteBuffer::copy(snapshot);
++    if (database_name.is_error() || data.is_error())
++        return false;
++    return document->page().client().commit_indexed_db(environment.id, database_name.value(), revision, data.value());
++}
++
+ bool web_indexed_db_devtools_client_is_active(void* realm)
+ {
+     auto document = responsible_document(realm);
+diff --git a/Libraries/LibWeb/Page/Page.h b/Libraries/LibWeb/Page/Page.h
+index 6d375035ec8..001fd445a15 100644
+--- a/Libraries/LibWeb/Page/Page.h
++++ b/Libraries/LibWeb/Page/Page.h
+@@ -940,6 +940,9 @@ public:
+     virtual void page_did_store_hsts_policy_for_testing(String const&, HTTP::HSTS::ParsedHSTSPolicy const&) { }
+     virtual void page_did_request_clear_storage_for_testing(StorageAPI::StorageEndpointType, HTML::EnvironmentSettingsObject const&) { }
+     virtual bool page_did_is_known_hsts_host(String const&) { return false; }
++    virtual i64 indexed_db_catalog(HTML::EnvironmentId const&, Vector<ByteBuffer>&) { return -2; }
++    virtual i64 read_indexed_db(HTML::EnvironmentId const&, ByteBuffer const&, ByteBuffer&) { return -2; }
++    virtual bool commit_indexed_db(HTML::EnvironmentId const&, ByteBuffer const&, i64, ByteBuffer const&) { return false; }
+     virtual u64 page_did_request_storage_usage([[maybe_unused]] Web::HTML::EnvironmentId const& environment_id) { return {}; }
+ 
+     virtual URL::BlobURLEntry::Token page_did_add_blob_url_entry(HTML::EnvironmentSettingsObject const&, [[maybe_unused]] Utf16String const& url, [[maybe_unused]] FileAPI::SerializedBlobURLEntry const& entry) { return 0; }
+diff --git a/Libraries/LibWebView/StorageJar.cpp b/Libraries/LibWebView/StorageJar.cpp
+index 02a30a10edb..b674c6636d1 100644
+--- a/Libraries/LibWebView/StorageJar.cpp
++++ b/Libraries/LibWebView/StorageJar.cpp
+@@ -34,6 +34,34 @@ ErrorOr<Database::MigrationOutcome> StorageJar::migrate_schema(Database::Databas
+                 );
+             )#"sv,
+         },
++        {
++            .version = 3u,
++            .sql = R"#(
++                CREATE TABLE IndexedDBDatabases (
++                    storage_key TEXT NOT NULL,
++                    database_name BLOB NOT NULL,
++                    revision INTEGER NOT NULL CHECK(revision > 0),
++                    snapshot BLOB NOT NULL,
++                    last_access_time INTEGER NOT NULL,
++                    PRIMARY KEY(storage_key, database_name)
++                ) WITHOUT ROWID;
++            )#"sv,
++        },
++        {
++            .version = 4u,
++            .sql = R"#(
++                ALTER TABLE IndexedDBDatabases ADD COLUMN store_bytes INTEGER NOT NULL DEFAULT 0;
++                -- Keep the lookup index separate from potentially large data blobs.
++                CREATE TABLE IndexedDBStores (
++                    storage_key TEXT NOT NULL, database_name BLOB NOT NULL, name BLOB NOT NULL,
++                    data BLOB NOT NULL, PRIMARY KEY(storage_key, database_name, name)
++                );
++                CREATE TRIGGER indexed_db_clear_stores AFTER UPDATE OF snapshot ON IndexedDBDatabases
++                WHEN length(NEW.snapshot) = 0 BEGIN
++                    DELETE FROM IndexedDBStores WHERE storage_key = NEW.storage_key AND database_name = NEW.database_name;
++                END;
++            )#"sv,
++        },
+     });
+ 
+     return database.migrate("WebStorage"sv, migrations, mode);
+@@ -42,7 +70,19 @@ ErrorOr<Database::MigrationOutcome> StorageJar::migrate_schema(Database::Databas
+ ErrorOr<NonnullOwnPtr<StorageJar>> StorageJar::create(Database::Database& database)
+ {
+     Statements statements {};
++    // Only the format header and committed version are needed for IDBFactory.databases().
++    statements.indexed_db_catalog = TRY(database.prepare_statement("SELECT CAST(substr(snapshot, 1, 13) || database_name AS BLOB) FROM IndexedDBDatabases WHERE storage_key = ? AND length(snapshot) > 0"sv));
++    statements.read_indexed_db = TRY(database.prepare_statement("SELECT d.revision, d.snapshot, s.data FROM IndexedDBDatabases d LEFT JOIN IndexedDBStores s USING(storage_key, database_name) WHERE d.storage_key = ? AND d.database_name = ? ORDER BY s.name"sv));
++    statements.insert_indexed_db = TRY(database.prepare_statement("INSERT INTO IndexedDBDatabases(snapshot, last_access_time, storage_key, database_name, revision) VALUES (?, ?, ?, ?, 1) ON CONFLICT DO NOTHING RETURNING revision"sv));
++    statements.update_indexed_db = TRY(database.prepare_statement("UPDATE IndexedDBDatabases SET snapshot = ?, last_access_time = ?, revision = revision + 1 WHERE storage_key = ? AND database_name = ? AND revision = ? RETURNING revision"sv));
+ 
++    statements.put_indexed_db_store = TRY(database.prepare_statement("INSERT OR REPLACE INTO IndexedDBStores(storage_key, database_name, name, data) VALUES (?, ?, ?, ?)"sv));
++    statements.clear_indexed_db_stores = TRY(database.prepare_statement("DELETE FROM IndexedDBStores WHERE storage_key = ? AND database_name = ?"sv));
++    statements.store_size = TRY(database.prepare_statement("UPDATE IndexedDBDatabases SET store_bytes = (SELECT COALESCE(SUM(length(data)), 0) FROM IndexedDBStores WHERE storage_key = ?1 AND database_name = ?2) WHERE storage_key = ?1 AND database_name = ?2"sv));
++
++    statements.clear_indexed_db_origin = TRY(database.prepare_statement("UPDATE IndexedDBDatabases SET snapshot = zeroblob(0), store_bytes = 0, revision = revision + 1 WHERE storage_key = ? AND length(snapshot) > 0"sv));
++    statements.clear_indexed_db_since = TRY(database.prepare_statement("UPDATE IndexedDBDatabases SET snapshot = zeroblob(0), store_bytes = 0, revision = revision + 1 WHERE last_access_time >= ? AND length(snapshot) > 0"sv));
++    statements.indexed_db_usage = TRY(database.prepare_statement("SELECT COALESCE(SUM(length(snapshot) + store_bytes), 0) FROM IndexedDBDatabases WHERE storage_key = ?"sv));
+     statements.get_item = TRY(database.prepare_statement("SELECT bottle_value FROM WebStorage WHERE storage_endpoint = ? AND storage_key = ? AND bottle_key = ?;"sv));
+     statements.set_item = TRY(database.prepare_statement("INSERT OR REPLACE INTO WebStorage (storage_endpoint, storage_key, bottle_key, bottle_value, last_access_time) VALUES (?, ?, ?, ?, ?);"sv));
+     statements.delete_item = TRY(database.prepare_statement("DELETE FROM WebStorage WHERE storage_endpoint = ? AND storage_key = ? AND bottle_key = ?;"sv));
+@@ -53,9 +93,9 @@ ErrorOr<NonnullOwnPtr<StorageJar>> StorageJar::create(Database::Database& databa
+     statements.get_keys = TRY(database.prepare_statement("SELECT bottle_key FROM WebStorage WHERE storage_endpoint = ? AND storage_key = ?;"sv));
+     statements.get_items = TRY(database.prepare_statement("SELECT bottle_key, bottle_value FROM WebStorage WHERE storage_endpoint = ? AND storage_key = ?;"sv));
+     statements.calculate_size_excluding_bottle_key = TRY(database.prepare_statement("SELECT COALESCE(SUM(OCTET_LENGTH(bottle_key) + OCTET_LENGTH(bottle_value)), 0) FROM WebStorage WHERE storage_endpoint = ? AND storage_key = ? AND bottle_key != ?;"sv));
+-    statements.calculate_size = TRY(database.prepare_statement("SELECT COALESCE(SUM(COALESCE(OCTET_LENGTH(bottle_key), 0) + COALESCE(OCTET_LENGTH(bottle_value), 0)), 0) FROM WebStorage WHERE storage_key = ?;"sv));
++    statements.calculate_size = TRY(database.prepare_statement("SELECT (SELECT COALESCE(SUM(OCTET_LENGTH(bottle_key) + OCTET_LENGTH(bottle_value)), 0) FROM WebStorage WHERE storage_key = ?1) + (SELECT COALESCE(SUM(length(snapshot) + store_bytes), 0) FROM IndexedDBDatabases WHERE storage_key = ?1);"sv));
+     statements.calculate_bottle_size = TRY(database.prepare_statement("SELECT COALESCE(SUM(COALESCE(OCTET_LENGTH(bottle_key), 0) + COALESCE(OCTET_LENGTH(bottle_value), 0)), 0) FROM WebStorage WHERE storage_endpoint = ? AND storage_key = ?;"sv));
+-    statements.estimate_storage_size_accessed_since = TRY(database.prepare_statement("SELECT COALESCE(SUM(COALESCE(OCTET_LENGTH(storage_key), 0) + COALESCE(OCTET_LENGTH(bottle_key), 0) + COALESCE(OCTET_LENGTH(bottle_value), 0)), 0) FROM WebStorage WHERE last_access_time >= ?;"sv));
++    statements.estimate_storage_size_accessed_since = TRY(database.prepare_statement("SELECT (SELECT COALESCE(SUM(OCTET_LENGTH(storage_key) + OCTET_LENGTH(bottle_key) + OCTET_LENGTH(bottle_value)), 0) FROM WebStorage WHERE last_access_time >= ?1) + (SELECT COALESCE(SUM(length(snapshot) + store_bytes), 0) FROM IndexedDBDatabases WHERE last_access_time >= ?1);"sv));
+ 
+     return adopt_own(*new StorageJar { PersistedStorage { database, statements } });
+ }
+@@ -75,6 +115,83 @@ StorageJar::~StorageJar()
+     StorageAreaRegistry::the().remove_areas_of({}, *this);
+ }
+ 
++ErrorOr<Vector<ByteBuffer>> StorageJar::indexed_db_catalog(String const& storage_key)
++{
++    Vector<ByteBuffer> entries;
++    if (m_persisted_storage.has_value()) {
++        auto& storage = *m_persisted_storage;
++        TRY(storage.database->try_execute_statement(storage.statements.indexed_db_catalog, [&](auto id) -> ErrorOr<void> {
++            return entries.try_append(storage.database->result_column<ByteBuffer>(id, 0));
++        }, storage_key));
++    }
++    return entries;
++}
++
++ErrorOr<Optional<StorageJar::IndexedDBSnapshot>> StorageJar::read_indexed_db(String const& storage_key, ReadonlyBytes database_name)
++{
++    Optional<IndexedDBSnapshot> result;
++    if (!m_persisted_storage.has_value())
++        return result;
++    auto& storage = *m_persisted_storage;
++    TRY(storage.database->try_execute_statement(storage.statements.read_indexed_db, [&](auto id) -> ErrorOr<void> {
++        if (!result.has_value())
++            result = IndexedDBSnapshot { storage.database->result_column<i64>(id, 0), storage.database->result_column<ByteBuffer>(id, 1) };
++        auto store = storage.database->result_column<ByteBuffer>(id, 2);
++        TRY(result->bytes.try_append(store.bytes()));
++        return {};
++    }, storage_key, database_name));
++    return result;
++}
++
++ErrorOr<bool> StorageJar::commit_indexed_db(String const& storage_key, ReadonlyBytes database_name, i64 expected_revision, ReadonlyBytes snapshot)
++{
++    if (!m_persisted_storage.has_value())
++        return Error::from_string_literal("IndexedDB persistence requires a disk-backed storage jar");
++    auto& storage = *m_persisted_storage;
++    bool committed = false;
++    auto on_row = [&](auto) -> ErrorOr<void> {
++        committed = true;
++        return {};
++    };
++    auto now = UnixDateTime::now();
++    // Legacy snapshots and deletion tombstones have no framed stores.
++    bool framed = snapshot.size() >= 5 && snapshot.slice(0, 5) == "IDB\0\2"sv.bytes();
++    if (framed && (snapshot.size() < 18 || snapshot[17] > 1))
++        return Error::from_string_literal("Invalid IndexedDB store header");
++    auto header = framed ? snapshot.slice(0, 17) : snapshot;
++    TRY(storage.database->transaction([&]() -> ErrorOr<void> {
++        if (expected_revision == 0)
++            TRY(storage.database->try_execute_statement(storage.statements.insert_indexed_db, move(on_row), header, now, storage_key, database_name));
++        else
++            TRY(storage.database->try_execute_statement(storage.statements.update_indexed_db, move(on_row), header, now, storage_key, database_name, expected_revision));
++        if (!committed)
++            return {};
++        if (!framed || snapshot[17])
++            TRY(storage.database->try_execute_statement(storage.statements.clear_indexed_db_stores, {}, storage_key, database_name));
++        auto frames = framed ? snapshot.slice(18) : ReadonlyBytes {};
++        auto read_length = [](ReadonlyBytes bytes) -> u32 {
++            return u32(bytes[0]) | (u32(bytes[1]) << 8) | (u32(bytes[2]) << 16) | (u32(bytes[3]) << 24);
++        };
++        while (!frames.is_empty()) {
++            if (frames.size() < 4)
++                return Error::from_string_literal("Truncated IndexedDB frame");
++            auto length = read_length(frames);
++            frames = frames.slice(4);
++            if (length < 4 || length > frames.size())
++                return Error::from_string_literal("Invalid IndexedDB store size");
++            auto data = frames.slice(0, length);
++            auto units = read_length(data);
++            if (units > (length - 4) / 2)
++                return Error::from_string_literal("Invalid IndexedDB store name");
++            TRY(storage.database->try_execute_statement(storage.statements.put_indexed_db_store, {}, storage_key, database_name, data.slice(4, units * 2), data));
++            frames = frames.slice(length);
++        }
++        TRY(storage.database->try_execute_statement(storage.statements.store_size, {}, storage_key, database_name));
++        return {};
++    }));
++    return committed;
++}
++
+ void StorageJar::notify(StorageChange const& change)
+ {
+     // The registry hears of every change to every jar, by construction: nothing installed and nothing to forget.
+@@ -139,6 +256,10 @@ void StorageJar::remove_items_accessed_since(UnixDateTime since)
+ 
+ void StorageJar::clear_storage_key(StorageEndpointType storage_endpoint, String const& storage_key)
+ {
++    if (storage_endpoint == StorageEndpointType::IndexedDB && m_persisted_storage.has_value()) {
++        m_persisted_storage->database->execute_statement(m_persisted_storage->statements.clear_indexed_db_origin, {}, storage_key);
++        return;
++    }
+     if (get_all_keys(storage_endpoint, storage_key).is_empty())
+         return;
+ 
+@@ -397,6 +518,7 @@ Vector<StorageBottleLocation> StorageJar::PersistedStorage::delete_items_accesse
+         },
+         since);
+ 
++    database->execute_statement(statements.clear_indexed_db_since, {}, since);
+     database->execute_statement(statements.delete_items_accessed_since, {}, since);
+     return affected_bottles;
+ }
+@@ -414,6 +536,13 @@ void StorageJar::PersistedStorage::mark_accessed(StorageEndpointType storage_end
+ u64 StorageJar::PersistedStorage::bottle_usage(StorageEndpointType storage_endpoint, String const& storage_key)
+ {
+     u64 current_size_in_bytes = 0;
++    if (storage_endpoint == StorageEndpointType::IndexedDB) {
++        database->execute_statement(statements.indexed_db_usage, [&](auto statement_id) -> ErrorOr<void> {
++            current_size_in_bytes = database->result_column<i64>(statement_id, 0);
++            return {};
++        }, storage_key);
++        return current_size_in_bytes;
++    }
+     database->execute_statement(
+         statements.calculate_bottle_size,
+         [&](auto statement_id) -> ErrorOr<void> {
+diff --git a/Libraries/LibWebView/StorageJar.h b/Libraries/LibWebView/StorageJar.h
+index 6c3feb7962f..4ede8dbe79b 100644
+--- a/Libraries/LibWebView/StorageJar.h
++++ b/Libraries/LibWebView/StorageJar.h
+@@ -6,6 +6,7 @@
+ 
+ #pragma once
+ 
++#include <AK/ByteBuffer.h>
+ #include <AK/Function.h>
+ #include <AK/HashMap.h>
+ #include <AK/String.h>
+@@ -92,10 +93,28 @@ public:
+     u64 bottle_usage(StorageEndpointType storage_endpoint, String const& storage_key);
+     Requests::CacheSizes estimate_storage_size_accessed_since(UnixDateTime since) const;
+ 
++    struct IndexedDBSnapshot {
++        i64 revision;
++        ByteBuffer bytes;
++    };
++    ErrorOr<Vector<ByteBuffer>> indexed_db_catalog(String const& storage_key);
++    ErrorOr<Optional<IndexedDBSnapshot>> read_indexed_db(String const& storage_key, ReadonlyBytes database_name);
++    ErrorOr<bool> commit_indexed_db(String const& storage_key, ReadonlyBytes database_name, i64 expected_revision, ReadonlyBytes snapshot);
++
+     void clone_from(StorageJar const&);
+ 
+ private:
+     struct Statements {
++        Database::StatementID indexed_db_catalog { 0 };
++        Database::StatementID read_indexed_db { 0 };
++        Database::StatementID store_size { 0 };
++        Database::StatementID put_indexed_db_store { 0 };
++        Database::StatementID clear_indexed_db_stores { 0 };
++        Database::StatementID insert_indexed_db { 0 };
++        Database::StatementID update_indexed_db { 0 };
++        Database::StatementID clear_indexed_db_origin { 0 };
++        Database::StatementID clear_indexed_db_since { 0 };
++        Database::StatementID indexed_db_usage { 0 };
+         Database::StatementID get_item { 0 };
+         Database::StatementID set_item { 0 };
+         Database::StatementID delete_item { 0 };
+diff --git a/Libraries/LibWebView/WebContentClient.cpp b/Libraries/LibWebView/WebContentClient.cpp
+index 7fcda73fd99..385df38b31a 100644
+--- a/Libraries/LibWebView/WebContentClient.cpp
++++ b/Libraries/LibWebView/WebContentClient.cpp
+@@ -1000,6 +1000,27 @@ Messages::WebContentClient::DidRequestCookieResponse WebContentClient::did_reque
+     return cookie;
+ }
+ 
++Messages::WebContentClient::IndexedDbCatalogResponse WebContentClient::indexed_db_catalog(Web::PageId page_id, Web::HTML::EnvironmentId environment_id)
++{
++    if (auto* page = this->page(page_id))
++        return page->indexed_db_catalog(move(environment_id));
++    return { -1, {} };
++}
++
++Messages::WebContentClient::ReadIndexedDbResponse WebContentClient::read_indexed_db(Web::PageId page_id, Web::HTML::EnvironmentId environment_id, ByteBuffer name)
++{
++    if (auto* page = this->page(page_id))
++        return page->read_indexed_db(move(environment_id), move(name));
++    return { -1, {} };
++}
++
++Messages::WebContentClient::CommitIndexedDbResponse WebContentClient::commit_indexed_db(Web::PageId page_id, Web::HTML::EnvironmentId environment_id, ByteBuffer name, i64 revision, ByteBuffer snapshot)
++{
++    if (auto* page = this->page(page_id))
++        return page->commit_indexed_db(move(environment_id), move(name), revision, move(snapshot));
++    return false;
++}
++
+ Messages::WebContentClient::DidRequestStorageUsageResponse WebContentClient::did_request_storage_usage(Web::PageId page_id, Web::HTML::EnvironmentId environment_id)
+ {
+     if (auto* page = this->page(page_id))
+diff --git a/Libraries/LibWebView/WebContentClient.h b/Libraries/LibWebView/WebContentClient.h
+index 862febb3b16..2a4fc1c1ea2 100644
+--- a/Libraries/LibWebView/WebContentClient.h
++++ b/Libraries/LibWebView/WebContentClient.h
+@@ -247,6 +247,9 @@ private:
+     virtual Messages::WebContentClient::DidRequestNotificationsStateForTestingResponse did_request_notifications_state_for_testing(Web::PageId) override;
+     virtual Messages::WebContentClient::DidRequestCookieResponse did_request_cookie(Web::PageId page_id, Optional<Web::HTML::EnvironmentId>, URL::URL, HTTP::Cookie::Source) override;
+     virtual void did_close_browsing_context(Web::PageId page_id) override;
++    virtual Messages::WebContentClient::IndexedDbCatalogResponse indexed_db_catalog(Web::PageId page_id, Web::HTML::EnvironmentId environment_id) override;
++    virtual Messages::WebContentClient::ReadIndexedDbResponse read_indexed_db(Web::PageId page_id, Web::HTML::EnvironmentId environment_id, ByteBuffer name) override;
++    virtual Messages::WebContentClient::CommitIndexedDbResponse commit_indexed_db(Web::PageId page_id, Web::HTML::EnvironmentId environment_id, ByteBuffer name, i64 revision, ByteBuffer snapshot) override;
+     virtual Messages::WebContentClient::DidRequestStorageUsageResponse did_request_storage_usage(Web::PageId page_id, Web::HTML::EnvironmentId environment_id) override;
+     virtual Messages::WebContentClient::ConnectToStorageAreaResponse connect_to_storage_area(Web::PageId page_id, Web::StorageAPI::StorageEndpointType, Web::HTML::EnvironmentId environment_id) override;
+     virtual void disconnect_from_storage_area(Web::StorageAPI::StorageAreaId) override;
+diff --git a/Libraries/LibWebView/WebContentPage.cpp b/Libraries/LibWebView/WebContentPage.cpp
+index c2f53c52d32..4545e987c7e 100644
+--- a/Libraries/LibWebView/WebContentPage.cpp
++++ b/Libraries/LibWebView/WebContentPage.cpp
+@@ -3717,6 +3717,48 @@ void WebContentPage::register_dedicated_worker(Web::HTML::WorkerAgentStartReques
+     WorkerAgentManager::the().register_dedicated_worker(client(), m_id, outside_settings, move(request), move(worker_transport));
+ }
+ 
++Messages::WebContentClient::IndexedDbCatalogResponse WebContentPage::indexed_db_catalog(Web::HTML::EnvironmentId environment_id)
++{
++    auto key = canonical_storage_key(environment_id);
++    auto* jar = client().session().storage_jar.ptr();
++    if (!key.has_value() || !jar)
++        return { -1, {} };
++    if (client().is_private() == IsPrivate::Yes)
++        return { -2, {} };
++    auto entries = jar->indexed_db_catalog(*key);
++    if (entries.is_error())
++        return { -1, {} };
++    return { 0, entries.release_value() };
++}
++
++Messages::WebContentClient::ReadIndexedDbResponse WebContentPage::read_indexed_db(Web::HTML::EnvironmentId environment_id, ByteBuffer name)
++{
++    auto key = canonical_storage_key(environment_id);
++    auto* jar = client().session().storage_jar.ptr();
++    if (!key.has_value() || !jar)
++        return { -1, {} };
++    if (client().is_private() == IsPrivate::Yes)
++        return { -2, {} };
++    auto value = jar->read_indexed_db(*key, name);
++    if (value.is_error())
++        return { -1, {} };
++    if (!value.value().has_value())
++        return { 0, {} };
++    return { value.value()->revision, move(value.value()->bytes) };
++}
++
++Messages::WebContentClient::CommitIndexedDbResponse WebContentPage::commit_indexed_db(Web::HTML::EnvironmentId environment_id, ByteBuffer name, i64 revision, ByteBuffer snapshot)
++{
++    auto key = canonical_storage_key(environment_id);
++    auto* jar = client().session().storage_jar.ptr();
++    if (!key.has_value() || !jar)
++        return false;
++    if (client().is_private() == IsPrivate::Yes || revision < 0)
++        return false;
++    auto result = jar->commit_indexed_db(*key, name, revision, snapshot);
++    return !result.is_error() && result.value();
++}
++
+ Messages::WebContentClient::DidRequestStorageUsageResponse WebContentPage::did_request_storage_usage(Web::HTML::EnvironmentId environment_id)
+ {
+     auto canonical_key = canonical_storage_key(environment_id);
+diff --git a/Libraries/LibWebView/WebContentPage.h b/Libraries/LibWebView/WebContentPage.h
+index d667300a394..045cd9c6131 100644
+--- a/Libraries/LibWebView/WebContentPage.h
++++ b/Libraries/LibWebView/WebContentPage.h
+@@ -420,6 +420,9 @@ private:
+     virtual void request_unload_check(Web::HTML::CrossProcessId navigable_id, Web::HTML::CrossProcessId check_id) override;
+     Messages::WebContentClient::StartWorkerAgentResponse start_worker_agent(Web::HTML::WorkerAgentStartRequest request);
+     void register_dedicated_worker(Web::HTML::WorkerAgentStartRequest request, IPC::TransportHandle worker_transport);
++    Messages::WebContentClient::IndexedDbCatalogResponse indexed_db_catalog(Web::HTML::EnvironmentId environment_id);
++    Messages::WebContentClient::ReadIndexedDbResponse read_indexed_db(Web::HTML::EnvironmentId environment_id, ByteBuffer name);
++    Messages::WebContentClient::CommitIndexedDbResponse commit_indexed_db(Web::HTML::EnvironmentId environment_id, ByteBuffer name, i64 revision, ByteBuffer snapshot);
+     Messages::WebContentClient::DidRequestStorageUsageResponse did_request_storage_usage(Web::HTML::EnvironmentId environment_id);
+     virtual void did_post_broadcast_channel_message(Web::HTML::PostedBroadcastChannelMessage message) override;
+     Messages::WebContentClient::DidRequestCookieResponse did_request_cookie(Optional<Web::HTML::EnvironmentId> const&, URL::URL, HTTP::Cookie::Source);
+diff --git a/Services/WebContent/PageClient.cpp b/Services/WebContent/PageClient.cpp
+index cd656244dd4..51b82c4ecac 100644
+--- a/Services/WebContent/PageClient.cpp
++++ b/Services/WebContent/PageClient.cpp
+@@ -1835,6 +1835,30 @@ bool PageClient::page_did_is_known_hsts_host(String const& domain)
+     return response->result();
+ }
+ 
++i64 PageClient::indexed_db_catalog(Web::HTML::EnvironmentId const& environment_id, Vector<ByteBuffer>& entries)
++{
++    auto response = client().send_sync_but_allow_failure<Messages::WebContentClient::IndexedDbCatalog>(m_id, environment_id);
++    if (!response)
++        return -1;
++    entries = response->take_entries();
++    return response->status();
++}
++
++i64 PageClient::read_indexed_db(Web::HTML::EnvironmentId const& environment_id, ByteBuffer const& name, ByteBuffer& snapshot)
++{
++    auto response = client().send_sync_but_allow_failure<Messages::WebContentClient::ReadIndexedDb>(m_id, environment_id, name);
++    if (!response)
++        return -1;
++    snapshot = response->take_snapshot();
++    return response->revision();
++}
++
++bool PageClient::commit_indexed_db(Web::HTML::EnvironmentId const& environment_id, ByteBuffer const& name, i64 revision, ByteBuffer const& snapshot)
++{
++    auto response = client().send_sync_but_allow_failure<Messages::WebContentClient::CommitIndexedDb>(m_id, environment_id, name, revision, snapshot);
++    return response && response->committed();
++}
++
+ u64 PageClient::page_did_request_storage_usage(Web::HTML::EnvironmentId const& environment_id)
+ {
+     auto response = client().send_sync_but_allow_failure<Messages::WebContentClient::DidRequestStorageUsage>(m_id, environment_id);
+diff --git a/Services/WebContent/PageClient.h b/Services/WebContent/PageClient.h
+index 7ccec1ee155..3b524f619a3 100644
+--- a/Services/WebContent/PageClient.h
++++ b/Services/WebContent/PageClient.h
+@@ -336,6 +336,9 @@ private:
+     virtual void page_did_store_hsts_policy_for_testing(String const&, HTTP::HSTS::ParsedHSTSPolicy const&) override;
+     virtual void page_did_request_clear_storage_for_testing(Web::StorageAPI::StorageEndpointType, Web::HTML::EnvironmentSettingsObject const&) override;
+     virtual bool page_did_is_known_hsts_host(String const&) override;
++    virtual i64 indexed_db_catalog(Web::HTML::EnvironmentId const&, Vector<ByteBuffer>&) override;
++    virtual i64 read_indexed_db(Web::HTML::EnvironmentId const&, ByteBuffer const&, ByteBuffer&) override;
++    virtual bool commit_indexed_db(Web::HTML::EnvironmentId const&, ByteBuffer const&, i64, ByteBuffer const&) override;
+     virtual u64 page_did_request_storage_usage(Web::HTML::EnvironmentId const& environment_id) override;
+     virtual void page_did_update_indexed_database(String const& url, Web::IndexedDB::TransactionChanges const&) override;
+     virtual void page_did_update_resource_count(i32) override;
+diff --git a/Services/WebContent/WebContentClient.ipc b/Services/WebContent/WebContentClient.ipc
+index ae85ce71127..789d7ead7bf 100644
+--- a/Services/WebContent/WebContentClient.ipc
++++ b/Services/WebContent/WebContentClient.ipc
+@@ -211,6 +211,9 @@ endpoint WebContentClient routed by Web::PageId page_id
+     did_release_image_decoder() =|
+     request_video_presentation_channel() =|
+ 
++    [NotRouted] indexed_db_catalog(Web::PageId page_id, Web::HTML::EnvironmentId environment_id) => (i64 status, Vector<ByteBuffer> entries)
++    [NotRouted] read_indexed_db(Web::PageId page_id, Web::HTML::EnvironmentId environment_id, ByteBuffer name) => (i64 revision, ByteBuffer snapshot)
++    [NotRouted] commit_indexed_db(Web::PageId page_id, Web::HTML::EnvironmentId environment_id, ByteBuffer name, i64 revision, ByteBuffer snapshot) => (bool committed)
+     [NotRouted] did_request_storage_usage(Web::PageId page_id, Web::HTML::EnvironmentId environment_id) => (u64 usage)
+     [NotRouted] connect_to_storage_area(Web::PageId page_id, Web::StorageAPI::StorageEndpointType storage_endpoint, Web::HTML::EnvironmentId environment_id) => (Optional<Web::StorageAPI::StorageAreaId> area_id, Vector<Utf16String> keys, Vector<Utf16String> values, u64 usage)
+     disconnect_from_storage_area(Web::StorageAPI::StorageAreaId area_id) =|
+diff --git a/Tests/LibWebView/TestStorageJar.cpp b/Tests/LibWebView/TestStorageJar.cpp
+index ee07fe5b394..aed0e3073b4 100644
+--- a/Tests/LibWebView/TestStorageJar.cpp
++++ b/Tests/LibWebView/TestStorageJar.cpp
+@@ -28,7 +28,76 @@ TEST_CASE(storage_round_trips_on_fresh_database)
+     jar->set_item(WebView::StorageEndpointType::LocalStorage, "https://example.com"_string, "foo"_utf16, "bar"_utf16);
+     EXPECT_EQ(jar->get_item(WebView::StorageEndpointType::LocalStorage, "https://example.com"_string, "foo"_utf16), Optional<Utf16String> { "bar"_utf16 });
+ 
+-    EXPECT_EQ(TRY_OR_FAIL(database->schema_version("WebStorage"sv)), Optional<u32> { 2u });
++    EXPECT_EQ(TRY_OR_FAIL(database->schema_version("WebStorage"sv)), Optional<u32> { 4u });
++}
++
++TEST_CASE(indexed_db_snapshot_revisions_and_origins)
++{
++    auto database = TRY_OR_FAIL(Database::Database::create_memory_backed());
++    TRY_OR_FAIL(WebView::StorageJar::migrate_schema(*database));
++    auto jar = TRY_OR_FAIL(WebView::StorageJar::create(*database));
++    auto origin = "https://example.com"_string;
++    auto other_origin = "https://other.example"_string;
++    auto name = "session"sv.bytes();
++    auto initial = "first"sv.bytes();
++    auto updated = "second"sv.bytes();
++    EXPECT(TRY_OR_FAIL(jar->commit_indexed_db(origin, name, 0, initial)));
++    EXPECT(!TRY_OR_FAIL(jar->commit_indexed_db(origin, name, 0, updated)));
++    EXPECT(TRY_OR_FAIL(jar->commit_indexed_db(origin, name, 1, updated)));
++    EXPECT(!TRY_OR_FAIL(jar->commit_indexed_db(origin, name, 1, initial)));
++    EXPECT(!TRY_OR_FAIL(jar->read_indexed_db(other_origin, name)).has_value());
++    auto reopened = TRY_OR_FAIL(WebView::StorageJar::create(*database));
++    auto snapshot = TRY_OR_FAIL(reopened->read_indexed_db(origin, name));
++    VERIFY(snapshot.has_value());
++    EXPECT_EQ(snapshot->revision, 2);
++    EXPECT(snapshot->bytes.bytes() == updated);
++    EXPECT_EQ(reopened->usage(origin), updated.size());
++    EXPECT_EQ(reopened->usage(other_origin), 0u);
++    EXPECT_EQ(reopened->bottle_usage(WebView::StorageEndpointType::IndexedDB, origin), updated.size());
++    EXPECT(TRY_OR_FAIL(reopened->commit_indexed_db(other_origin, name, 0, initial)));
++    reopened->clear_storage_key(WebView::StorageEndpointType::IndexedDB, origin);
++    EXPECT_EQ(reopened->usage(origin), 0u);
++    EXPECT_EQ(reopened->usage(other_origin), initial.size());
++    EXPECT(!TRY_OR_FAIL(jar->commit_indexed_db(origin, name, 2, updated)));
++    reopened->remove_items_accessed_since(UnixDateTime::earliest());
++    EXPECT_EQ(reopened->usage(other_origin), 0u);
++}
++
++TEST_CASE(indexed_db_store_replacements_are_atomic)
++{
++    auto database = TRY_OR_FAIL(Database::Database::create_memory_backed());
++    TRY_OR_FAIL(WebView::StorageJar::migrate_schema(*database));
++    auto jar = TRY_OR_FAIL(WebView::StorageJar::create(*database));
++    auto origin = "https://example.com"_string;
++    auto name = "test"sv.bytes();
++    auto header = "IDB\0\2\1\0\0\0\0\0\0\0\2\0\0\0"sv;
++    auto first = "\7\0\0\0\1\0\0\0a\0x"sv;
++    auto second = "\7\0\0\0\1\0\0\0b\0y"sv;
++    auto update = "\7\0\0\0\1\0\0\0a\0z"sv;
++    auto batch = MUST(ByteBuffer::copy(header.bytes()));
++    batch.append(1);
++    batch.append(first.bytes());
++    batch.append(second.bytes());
++    EXPECT(TRY_OR_FAIL(jar->commit_indexed_db(origin, name, 0, batch)));
++    batch.resize(header.length());
++    batch.append(0);
++    batch.append(update.bytes());
++    EXPECT(TRY_OR_FAIL(jar->commit_indexed_db(origin, name, 1, batch)));
++    EXPECT(!TRY_OR_FAIL(jar->commit_indexed_db(origin, name, 1, batch)));
++    batch[17] = 1;
++    batch.append(0xff);
++    EXPECT(jar->commit_indexed_db(origin, name, 2, batch).is_error());
++    auto snapshot = TRY_OR_FAIL(jar->read_indexed_db(origin, name));
++    VERIFY(snapshot.has_value());
++    auto expected = MUST(ByteBuffer::copy(header.bytes()));
++    expected.append(update.bytes().slice(4));
++    expected.append(second.bytes().slice(4));
++    EXPECT_EQ(snapshot->revision, 2);
++    EXPECT(snapshot->bytes == expected);
++    EXPECT_EQ(jar->usage(origin), expected.size());
++    jar->clear_storage_key(WebView::StorageEndpointType::IndexedDB, origin);
++    EXPECT_EQ(jar->usage(origin), 0u);
++    EXPECT(TRY_OR_FAIL(jar->read_indexed_db(origin, name))->bytes.is_empty());
+ }
+ 
+ TEST_CASE(newer_storage_schema_reports_database_too_new)

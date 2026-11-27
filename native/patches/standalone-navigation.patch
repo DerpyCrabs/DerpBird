@@ -1,0 +1,252 @@
+--- a/UI/Qt/WebContentView.h
++++ b/UI/Qt/WebContentView.h
+@@ -117,6 +117,7 @@
+     bool screen_shows_high_dynamic_range { false };
+     Optional<u64> owner_view_id;
+     bool is_tab { true };
++    Optional<URL::URL> app_scope {};
+ };
+ 
+ class WebContentView final
+--- a/Services/Hub/View.h
++++ b/Services/Hub/View.h
+@@ -29,6 +29,7 @@
+         bool websites_prefer_dark { false };
+         // The view of a tab can open others and ask the user about things, unlike that of a Picture-in-Picture window.
+         bool is_tab { true };
++        Optional<URL::URL> app_scope {};
+         bool scales_frames_to_fit { false };
+     };
+ 
+--- a/Services/Hub/HubServer.ipc
++++ b/Services/Hub/HubServer.ipc
+@@ -122,6 +122,7 @@
+     Optional<u64> owner_view_id;
+     bool websites_prefer_dark;
+     bool is_tab;
++    Optional<URL::URL> app_scope;
+ }
+ 
+ // What the UI asks of the Hub.
+--- a/UI/Qt/Tab.cpp
++++ b/UI/Qt/Tab.cpp
+@@ -215,6 +215,7 @@
+         .screen_shows_high_dynamic_range = m_window->screen_shows_high_dynamic_range(),
+         .owner_view_id = {},
+         .is_tab = true,
++        .app_scope = m_window->app_scope(),
+     };
+ 
+     m_view = new WebContentView(this, hub_view_id, AK::move(view_initial_state));
+--- a/UI/Qt/WebContentView.cpp
++++ b/UI/Qt/WebContentView.cpp
+@@ -142,6 +142,7 @@
+                                   .owner_view_id = initial_state.owner_view_id,
+                                   .websites_prefer_dark = websites_prefer_dark(),
+                                   .is_tab = initial_state.is_tab,
++                                  .app_scope = initial_state.app_scope,
+                               })
+ {
+ #ifdef LADYBIRD_HAS_WAYLAND_GPU_QUERY
+--- a/UI/Qt/RemoteView.cpp
++++ b/UI/Qt/RemoteView.cpp
+@@ -52,6 +52,7 @@
+             .owner_view_id = initial_state.owner_view_id,
+             .websites_prefer_dark = initial_state.websites_prefer_dark,
+             .is_tab = initial_state.is_tab,
++            .app_scope = initial_state.app_scope,
+         });
+         m_view_id = view.view_id();
+         m_state = view.take_state();
+--- a/Services/Hub/ConnectionFromUI.cpp
++++ b/Services/Hub/ConnectionFromUI.cpp
+@@ -638,6 +638,7 @@
+         .owner_view_id = request.owner_view_id,
+         .websites_prefer_dark = request.websites_prefer_dark,
+         .is_tab = request.is_tab,
++        .app_scope = request.app_scope,
+     });
+     return { view.view_id(), view.current_state() };
+ }
+--- a/Services/Hub/View.cpp
++++ b/Services/Hub/View.cpp
+@@ -111,6 +111,7 @@
+     m_device_pixel_ratio = initial_state.device_pixel_ratio;
+     m_maximum_frames_per_second = initial_state.maximum_frames_per_second;
+     m_display_id = initial_state.display_id;
++    m_app_scope = move(initial_state.app_scope);
+     m_screen_shows_high_dynamic_range = initial_state.screen_shows_high_dynamic_range;
+     set_scales_frames_to_fit(initial_state.scales_frames_to_fit);
+     m_backing_stores = make<BackingStoresInUI>(*this);
+--- a/Libraries/LibWebView/ViewImplementation.h
++++ b/Libraries/LibWebView/ViewImplementation.h
+@@ -361,6 +361,7 @@
+     Optional<u64> display_id() const { return m_display_id; }
+     double maximum_frames_per_second() const { return m_maximum_frames_per_second; }
+     // Sends the display metadata to every page hosting documents of the tab.
++    bool is_outside_app_scope(URL::URL const&) const;
+     void set_display_metadata(Optional<u64> display_id, double maximum_frames_per_second, bool screen_shows_high_dynamic_range);
+     void set_frame_rate_capped(bool);
+ 
+@@ -1051,6 +1052,7 @@
+     double m_device_pixel_ratio { 1.0 };
+     Optional<u64> m_display_id;
+     double m_maximum_frames_per_second { 60.0 };
++    Optional<URL::URL> m_app_scope;
+     bool m_screen_shows_high_dynamic_range { false };
+     bool m_frame_rate_capped { false };
+     bool m_scales_frames_to_fit { false };
+--- a/Libraries/LibWebView/ViewImplementation.cpp
++++ b/Libraries/LibWebView/ViewImplementation.cpp
+@@ -4275,8 +4275,17 @@
+     return false;
+ }
+ 
++bool ViewImplementation::is_outside_app_scope(URL::URL const& url) const
++{
++    if (!m_app_scope.has_value() || !(url.scheme() == "http"sv || url.scheme() == "https"sv))
++        return false;
++    return !m_app_scope->origin().is_same_origin(url.origin()) || !url.serialize_path().starts_with(m_app_scope->serialize_path());
++}
++
+ void ViewImplementation::prepare_page_for_navigable(WebContentPage& page)
+ {
++    if (m_app_scope.has_value())
++        page.async_set_standalone_display(true);
+     page.async_set_zoom_level(m_zoom_level);
+     if (m_window_position.has_value())
+         page.async_set_window_position(m_window_position->to_type<Web::DevicePixels>());
+--- a/Services/WebContent/WebContentServer.ipc
++++ b/Services/WebContent/WebContentServer.ipc
+@@ -298,6 +298,7 @@
+     set_is_scripting_enabled(Web::PageId page_id, bool is_scripting_enabled) =|
+     set_zoom_level(Web::PageId page_id, double zoom_level) =|
+     set_maximum_frames_per_second(Web::PageId page_id, double maximum_frames_per_second) =|
++    set_standalone_display(Web::PageId page_id, bool standalone) =|
+     set_screen_shows_high_dynamic_range(Web::PageId page_id, bool screen_shows_high_dynamic_range) =|
+     set_frame_rate_capped(Web::PageId page_id, bool capped) =|
+ 
+--- a/Services/WebContent/ConnectionFromClient.h
++++ b/Services/WebContent/ConnectionFromClient.h
+@@ -296,6 +296,7 @@
+     virtual void set_is_scripting_enabled(Web::PageId page_id, bool) override;
+     virtual void set_zoom_level(Web::PageId page_id, double zoom_level) override;
+     virtual void set_maximum_frames_per_second(Web::PageId page_id, double) override;
++    virtual void set_standalone_display(Web::PageId, bool) override;
+     virtual void set_screen_shows_high_dynamic_range(Web::PageId page_id, bool) override;
+     virtual void set_frame_rate_capped(Web::PageId page_id, bool) override;
+     virtual void set_window_position(Web::PageId page_id, Web::DevicePixelPoint) override;
+--- a/Services/WebContent/ConnectionFromClient.cpp
++++ b/Services/WebContent/ConnectionFromClient.cpp
+@@ -3723,6 +3723,12 @@
+         page->set_maximum_frames_per_second(maximum_frames_per_second);
+ }
+ 
++void ConnectionFromClient::set_standalone_display(Web::PageId page_id, bool standalone)
++{
++    if (auto page = this->page(page_id); page.has_value())
++        page->set_standalone_display(standalone);
++}
++
+ void ConnectionFromClient::set_screen_shows_high_dynamic_range(Web::PageId page_id, bool screen_shows_high_dynamic_range)
+ {
+     if (auto page = this->page(page_id); page.has_value())
+--- a/Services/WebContent/PageClient.h
++++ b/Services/WebContent/PageClient.h
+@@ -104,6 +104,7 @@
+     virtual double maximum_frames_per_second() const override { return m_maximum_frames_per_second; }
+     void set_transparent_background(bool);
+     void set_preferred_color_scheme(Web::CSS::PreferredColorScheme);
++    void set_standalone_display(bool);
+     void set_screen_shows_high_dynamic_range(bool);
+     void set_preferred_contrast(Web::CSS::PreferredContrast);
+     void set_preferred_motion(Web::CSS::PreferredMotion);
+@@ -260,6 +261,7 @@
+     virtual size_t screen_count() const override { return m_all_screen_rects.size(); }
+     virtual bool has_transparent_background() const override { return m_transparent_background; }
+     virtual Web::CSS::PreferredColorScheme preferred_color_scheme() const override { return m_preferred_color_scheme; }
++    virtual bool standalone_display() const override { return m_standalone_display; }
+     virtual bool screen_shows_high_dynamic_range() const override { return m_screen_shows_high_dynamic_range; }
+     virtual Web::CSS::PreferredContrast preferred_contrast() const override { return m_preferred_contrast; }
+     virtual Web::CSS::PreferredMotion preferred_motion() const override { return m_preferred_motion; }
+@@ -501,6 +503,7 @@
+ 
+     bool m_transparent_background { false };
+     Web::CSS::PreferredColorScheme m_preferred_color_scheme { Web::CSS::PreferredColorScheme::Auto };
++    bool m_standalone_display { false };
+     bool m_screen_shows_high_dynamic_range { false };
+     Web::CSS::PreferredContrast m_preferred_contrast { Web::CSS::PreferredContrast::NoPreference };
+     Web::CSS::PreferredMotion m_preferred_motion { Web::CSS::PreferredMotion::NoPreference };
+--- a/Services/WebContent/PageClient.cpp
++++ b/Services/WebContent/PageClient.cpp
+@@ -522,6 +522,14 @@
+     page().invalidate_style_for_preference_change();
+ }
+ 
++void PageClient::set_standalone_display(bool standalone)
++{
++    if (m_standalone_display == standalone)
++        return;
++    m_standalone_display = standalone;
++    page().invalidate_style_for_preference_change();
++}
++
+ void PageClient::set_screen_shows_high_dynamic_range(bool screen_shows_high_dynamic_range)
+ {
+     if (m_screen_shows_high_dynamic_range == screen_shows_high_dynamic_range)
+--- a/Libraries/LibWeb/Page/Page.h
++++ b/Libraries/LibWeb/Page/Page.h
+@@ -825,6 +825,7 @@
+     virtual bool has_transparent_background() const { return false; }
+     virtual CSS::PreferredColorScheme preferred_color_scheme() const = 0;
+     // Whether the screen the page is shown on can show colors brighter than SDR white.
++    virtual bool standalone_display() const { return false; }
+     virtual bool screen_shows_high_dynamic_range() const { return false; }
+     virtual CSS::PreferredContrast preferred_contrast() const = 0;
+     virtual CSS::PreferredMotion preferred_motion() const = 0;
+--- a/Libraries/LibWeb/HTML/Window.cpp
++++ b/Libraries/LibWeb/HTML/Window.cpp
+@@ -635,8 +635,9 @@
+     case CSS::MediaFeatureID::DeviceWidth:
+         return length_media_feature_value(page().web_exposed_screen_area().width());
+     case CSS::MediaFeatureID::DisplayMode:
+-        // FIXME: Detect if window is fullscreen
+-        return ident_media_feature_value(CSS::Keyword::Browser);
++        if (associated_document().fullscreen_element())
++            return ident_media_feature_value(CSS::Keyword::Fullscreen);
++        return ident_media_feature_value(page().client().standalone_display() ? CSS::Keyword::Standalone : CSS::Keyword::Browser);
+     case CSS::MediaFeatureID::DynamicRange:
+         return ident_media_feature_value(page().client().screen_shows_high_dynamic_range() ? CSS::Keyword::High : CSS::Keyword::Standard);
+     case CSS::MediaFeatureID::EnvironmentBlending:
+--- a/Libraries/LibWebView/WebContentPage.cpp
++++ b/Libraries/LibWebView/WebContentPage.cpp
+@@ -793,6 +793,12 @@
+     //    3. Set initiatorOriginSnapshot to sourceDocument's origin.
+     navigation.initiator_origin_snapshot = source_document.origin();
+ 
++    if (target->is_top_level_traversable() && view().is_outside_app_scope(navigation.url)
++        && navigation.user_involvement == Web::HTML::UserNavigationInvolvement::Activation
++        && view().take_input_to_open_link_in_new_tab({}, *this)) {
++        view().open_navigation_in_new_tab(move(navigation), Web::HTML::ActivateTab::Yes);
++        return;
++    }
+     target->begin_navigation(move(navigation), move(source_page));
+ }
+ 
+--- a/Libraries/LibWebView/WebContentPage.cpp
++++ b/Libraries/LibWebView/WebContentPage.cpp
+@@ -2829,6 +2829,14 @@
+     }
+ 
+     auto retry = prepare_navigation_to_retry(*start_request);
++    if (target_navigable->is_top_level_traversable() && view().is_outside_app_scope(url)
++        && start_request->csp_navigation_type != Web::ContentSecurityPolicy::Directives::NavigationType::FormSubmission
++        && start_request->user_involvement == Web::HTML::UserNavigationInvolvement::Activation
++        && view().take_input_to_open_link_in_new_tab({}, *this)) {
++        async_cancel_navigation_params_creation(navigable_id, navigation_id);
++        view().open_navigation_in_new_tab(move(retry), Web::HTML::ActivateTab::Yes);
++        return;
++    }
+     target_navigable->set_ongoing_navigation(CanonicalNavigation::Start {
+         .url = move(url),
+         .navigation_id = navigation_id,
