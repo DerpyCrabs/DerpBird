@@ -76,10 +76,14 @@
 @media(max-width:520px){.haz-proposal .address-palette .palette-action{display:none}}
 
 .haz-proposal .address-palette {
+  animation: none;
   inset: clamp(12px, 10vh, 96px) 0 auto;
   margin: 0 auto;
   max-height: calc(100vh - clamp(12px, 10vh, 96px) - 12px);
 }
+.haz-proposal .palette-empty form { border-bottom: 0; }
+.haz-proposal .palette-empty #palette-results,
+.haz-proposal .palette-empty footer { display: none; }
 .haz-proposal #palette-results { box-sizing: border-box; transition: height 160ms ease-out; }
 .haz-proposal #palette-results [role=option] { height: 46px; }
 .haz-proposal #palette-results [role=option]:not([data-current-query=true]) { animation: palette-row-enter 140ms ease-out; }
