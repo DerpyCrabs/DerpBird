@@ -2232,12 +2232,33 @@ void DerpBirdChrome::workspace_tab_changed()
 }
 ErrorOr<void> DerpBirdChrome::workspace_command(JsonObject const& data, StringView type)
 {
-    if (type == "workspace.switch"sv) {
+    if (type.is_one_of("workspace.switch"sv, "workspace.move-tab"sv)) {
         auto id = data.get_string("id"sv);
         if (!id.has_value()) return Error::from_string_literal("Missing workspace");
         auto found = std::find_if(m_workspaces.begin(), m_workspaces.end(), [&](auto const& w) { return ak_string_from_qstring(w.id) == *id; });
         if (found == m_workspaces.end()) return Error::from_string_literal("Unknown workspace");
         if (found->id == m_workspace) return {};
+        if (type == "workspace.move-tab"sv) {
+            auto source_id = data.get_string("tabId"sv);
+            Tab* source = nullptr;
+            Tab* replacement = nullptr;
+            for (int i = 0; i < m_window.tab_count(); ++i) {
+                auto* tab = m_window.tab_at(i);
+                if (tab_workspace(*tab) != m_workspace) continue;
+                if (source_id == tab_id(*tab)) source = tab;
+                else if (!replacement) replacement = tab;
+            }
+            if (!source) return Error::from_string_literal("Unknown workspace tab");
+            TRY(detach_tree_tab(*source));
+            if (source == m_window.current_tab()) {
+                if (replacement) m_window.activate_tab(m_window.tab_index(replacement));
+                else m_window.new_tab_from_url(Application::settings().new_tab_page_url(), Web::HTML::ActivateTab::Yes, BrowserWindow::TabLocation::end());
+            }
+            assign_workspace(*source, found->id);
+            if (!found->last_tab) found->last_tab = source;
+            queue_snapshot();
+            return {};
+        }
         m_workspace = found->id;
         auto* target = found->last_tab.data();
         if (!target) for (int i = 0; i < m_window.tab_count(); ++i) if (tab_workspace(*m_window.tab_at(i)) == m_workspace) { target = m_window.tab_at(i); break; }

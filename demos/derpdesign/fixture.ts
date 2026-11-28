@@ -20,14 +20,14 @@ export function createBirdFixture(layout:'horizontal'|'vertical',canDrop:CanDrop
  const get=(id:string)=>{const tab=tabs.find(t=>t.id===id);if(!tab)throw Error('Unknown fixture tab '+id);return tab;};
  const block=(id:string)=>tabs.filter(t=>t.id===id||t.parentId===id);
  const end=(id:string)=>{let i=tabs.findIndex(t=>t.id===id);while(tabs[i+1]?.parentId===id)i++;return i+1;};
- function remove(ids:Set<string>){
+ function remove(ids:Set<string>, remember=true){
   const activeSplit=activeTabId?pair(activeTabId):undefined;
   if(activeSplit&&activeTabId&&ids.has(activeTabId)){
    const survivor=activeSplit.firstTabId===activeTabId?activeSplit.secondTabId:activeSplit.firstTabId;
    if(!ids.has(survivor))activeTabId=survivor;
   }
   splits=splits.filter(s=>!ids.has(s.firstTabId)&&!ids.has(s.secondTabId));
-  const index=tabs.findIndex(t=>t.id===activeTabId);closed.push(structuredClone(tabs.filter(t=>ids.has(t.id))));tabs=tabs.filter(t=>!ids.has(t.id));
+  const index=tabs.findIndex(t=>t.id===activeTabId);if(remember)closed.push(structuredClone(tabs.filter(t=>ids.has(t.id))));tabs=tabs.filter(t=>!ids.has(t.id));
   tabs.forEach(t=>{if(t.parentId&&ids.has(t.parentId))delete t.parentId;});
   if(!tabs.some(t=>t.id===activeTabId))activeTabId=tabs[Math.min(index,tabs.length-1)]?.id??null;
  }
@@ -131,5 +131,16 @@ export function createBirdFixture(layout:'horizontal'|'vertical',canDrop:CanDrop
  function seedReadingTabs(titles:readonly string[]){
   titles.forEach((title,i)=>{const t=makeTab(`reading-${i+1}`,title,`https://example.test/reading-${i+1}`);tabs.push(t);});publish();
  }
- return {port,snapshot,setDialog(value:BrowserSnapshot['dialog']){dialog=value;publish();},seedReadingTabs,enableWorkspaces,switchWorkspace,createWorkspace,renameWorkspace,workspaces,dispose(){listeners.clear();}};
+ function moveToWorkspace(tabId:string, id:string){
+  const destination=spaces.find(w=>w.id===id);
+  if(!destination||id===workspaceId)return;
+  const tab=get(tabId);
+  remove(new Set([tabId]),false);
+  delete tab.parentId;
+  destination.tabs.push(tab);
+  destination.activeTabId ??= tabId;
+  saveSpace();
+  publish();
+ }
+ return {moveToWorkspace,port,snapshot,setDialog(value:BrowserSnapshot['dialog']){dialog=value;publish();},seedReadingTabs,enableWorkspaces,switchWorkspace,createWorkspace,renameWorkspace,workspaces,dispose(){listeners.clear();}};
 }

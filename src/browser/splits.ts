@@ -67,7 +67,7 @@ type BeginTabDragPreview = (id: string, x: number, y: number) => TabDragPreview 
 /** Own the whole gesture, including grouping, without relying on pointer capture
  * (not implemented by every supported engine). The temporary page overlay gives
  * the shell native input ownership before a pointer leaves the tab strip. */
-export function observeSplitInteractions(document: Document, controller: Pick<ShellController, 'state' | 'send'>, beginPreview?: BeginTabDragPreview) {
+export function observeSplitInteractions(document: Document, controller: Pick<ShellController, 'state' | 'send'>, beginPreview?: BeginTabDragPreview, moveToWorkspace?: (tabId: string, workspaceId: string) => void) {
   const window = document.defaultView!;
   const content = document.getElementById('content-surface');
   const overlay = document.querySelector<HTMLElement>('.split-drag-surface');
@@ -79,7 +79,11 @@ export function observeSplitInteractions(document: Document, controller: Pick<Sh
   let suppressClick = false;
   let frame: number | undefined;
   const clearMarkers = () => document.querySelectorAll('[data-drop]').forEach(node => node.removeAttribute('data-drop'));
+  let openedWorkspaceMenu = false;
   const reset = () => {
+    if (openedWorkspaceMenu)
+      document.querySelector<HTMLButtonElement>('[data-workspace-trigger][aria-expanded="true"]')?.click();
+    openedWorkspaceMenu = false;
     preview?.dispose(); preview = undefined;
     drag = undefined; resize = undefined;
     overlay.hidden = true; overlay.removeAttribute('data-edge'); clearMarkers();
@@ -137,7 +141,16 @@ export function observeSplitInteractions(document: Document, controller: Pick<Sh
     drag.started = true; suppressClick = true; overlay.hidden = false;
     event.preventDefault(); clearMarkers();
     const browser = controller.state().browser;
-    const edge = allowedEdge(event, browser, drag.tabId);
+    const hit = document.elementFromPoint(event.clientX, event.clientY);
+    const trigger = hit?.closest<HTMLButtonElement>('[data-workspace-trigger]');
+    if (moveToWorkspace && trigger && trigger.getAttribute('aria-expanded') !== 'true') {
+      openedWorkspaceMenu = true;
+      trigger.click();
+    }
+    const workspaceTarget = moveToWorkspace && hit?.closest<HTMLElement>('[data-workspace-id]');
+    if (workspaceTarget && workspaceTarget.dataset.workspaceId !== browser.workspaces?.active)
+      workspaceTarget.dataset.drop = 'workspace';
+    const edge = workspaceTarget ? undefined : allowedEdge(event, browser, drag.tabId);
     if (edge) overlay.dataset.edge = edge; else overlay.removeAttribute('data-edge');
     if (preview) { preview.target(event); return; }
     const target = targetAt(event);
@@ -152,6 +165,12 @@ export function observeSplitInteractions(document: Document, controller: Pick<Sh
     if (drag.layout !== layoutKey()) { reset(); return; }
     if (drag.started) {
       const browser = controller.state().browser;
+      const hit = document.elementFromPoint(event.clientX, event.clientY);
+      if (moveToWorkspace && hit?.closest('[data-workspace-trigger], .haz-workspace-menu')) {
+        const id = hit.closest<HTMLElement>('[data-workspace-id]')?.dataset.workspaceId;
+        if (id && id !== browser.workspaces?.active) moveToWorkspace(drag.tabId, id);
+        reset(); return;
+      }
       const edge = allowedEdge(event, browser, drag.tabId);
       const target = preview ? preview.target(event) : targetAt(event);
       if (edge && browser.activeTabId) controller.send({ type: 'tab.split', tabId: drag.tabId, targetId: browser.activeTabId, edge });

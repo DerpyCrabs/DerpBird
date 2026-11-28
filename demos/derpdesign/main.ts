@@ -68,7 +68,7 @@ runScenario(async ({conditions})=>{
  const beginTabDrag = conditions.interactiveTabDrag
   ? (await import('@bird/ui/design/tab-drag')).tabDragPreview(controller)
   : undefined;
- const stopInteractions=observeSplitInteractions(document,controller,beginTabDrag);
+ const stopInteractions=observeSplitInteractions(document,controller,beginTabDrag,fixture.moveToWorkspace);
  const stopResize=observeSidebarResize(document,controller.previewSidebarWidth,controller.setSidebarWidth);
  const stopDismissal=observeShellDismissal({deactivate:()=>controller.blurAddress()});
  const focusKey=(event:KeyboardEvent)=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='l'){event.preventDefault();focusAddress(document,controller);}};

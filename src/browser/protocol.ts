@@ -67,6 +67,7 @@ export type Command =
   | { readonly type: 'dialog.answer'; readonly id: string; readonly accepted: boolean; readonly value: string; readonly block: boolean }
   | { readonly type: 'download.action'; readonly action: 'clear' | 'cancel' | 'pause' | 'resume' | 'open' | 'reveal' | 'thumbnail' | 'drag'; readonly id?: string }
   | { readonly type: 'automation.set-enabled'; readonly enabled: boolean }
+  | { readonly type: 'workspace.move-tab'; readonly id: string; readonly tabId: string }
   | { readonly type: 'workspace.switch'; readonly id: string }
   | ({ readonly type: 'workspace.create' | 'workspace.update' } & WorkspaceDraft)
   | { readonly type: 'browser.suggest'; readonly input: string; readonly query: number }

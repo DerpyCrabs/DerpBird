@@ -20,7 +20,7 @@ export function mountWorkspaceSwitch(controller: ShellController) {
     const spaces = model.spaces;
     const active = spaces?.items.find(space => space.id === spaces?.active);
     return <>
-      <button class="haz-workspace-trigger" type="button" data-workspace-trigger="true"
+      <button class={`haz-workspace-trigger tone-${active?.color ?? 'sage'}`} type="button" data-workspace-trigger="true"
         aria-label={`Switch workspace: ${active?.name ?? 'Default'}`} aria-haspopup="menu" aria-expanded={model.open}
         onClick={() => owner.patch({open: !model.open})}>
         <Layers size={15}/><span>{active?.name ?? 'Default'}</span><ChevronDown size={13}/>
@@ -32,7 +32,7 @@ export function mountWorkspaceSwitch(controller: ShellController) {
           if((event.key==='Enter'||event.key===' ')&&target.matches('button[role^=menuitem]')){event.preventDefault();target.click();}
         }} onDismiss={() => owner.patch({open: false})}>
         {list(spaces?.items ?? [], space => space.id, space => <button type="button" role="menuitemradio"
-          aria-checked={space.id === spaces?.active} onClick={() => {
+          data-workspace-id={space.id} class={`tone-${space.color}`} aria-checked={space.id === spaces?.active} onClick={() => {
             owner.patch({open: false}); controller.switchWorkspace(space.id);
           }}><span>{space.name}</span>{space.id === spaces?.active ? <Check size={15}/> : null}</button>)}
         <hr/>

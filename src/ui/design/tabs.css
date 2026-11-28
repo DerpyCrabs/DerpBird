@@ -1062,3 +1062,13 @@ body.native-shell .shell .content-surface {
 .haz-proposal #content-surface[data-new-tab] {
   background: #303134;
 }
+
+.haz-workspace-trigger svg:first-child { color: var(--badge-color); }
+.haz-workspace-menu [data-workspace-id]::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--badge-color);
+}
+.haz-proposal .haz-workspace-menu [data-drop="workspace"] { background: var(--badge-bg); }
