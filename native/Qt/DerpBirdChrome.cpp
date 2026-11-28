@@ -2212,7 +2212,8 @@ void DerpBirdChrome::workspace_tab_changed()
 {
     auto* tab = m_window.current_tab();
     if (!tab) return;
-    if (tab_workspace(*tab).isEmpty()) assign_workspace(*tab, m_workspace);
+    // The first restored tab becomes current before observe_tab loads its saved workspace.
+    if (tab_workspace(*tab).isEmpty()) return;
     if (tab_workspace(*tab) != m_workspace) {
         auto previous = std::find_if(m_workspaces.begin(), m_workspaces.end(), [&](auto const& w) { return w.id == m_workspace; });
         if (previous != m_workspaces.end() && previous->last_tab && m_window.tab_index(previous->last_tab) < 0) {

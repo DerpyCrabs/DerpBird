@@ -1,0 +1,105 @@
+--- a/UI/Qt/SessionStore.h
++++ b/UI/Qt/SessionStore.h
+@@ -202,4 +202,5 @@
+     // The windows startup recovery kept open, in activation order with the frontmost last. It's handed over once.
+     Vector<RestoredSessionWindow> take_launch_plan();
++    ErrorOr<Optional<RestoredSessionWindow>> resume_last_window();
+ 
+     // A tab's history: the store's own copy if it holds a newer one than the tab's rows, and otherwise the rows'.
+@@ -432,4 +433,5 @@
+         static ErrorOr<PersistedStorage> create(Database::Database&);
+ 
++        ErrorOr<void> reopen_session(SessionWindowId);
+         ErrorOr<void> insert_open_window(SessionWindowId);
+         ErrorOr<void> open_tab(OpenTabWrite const&);
+@@ -471,5 +473,5 @@
+         ErrorOr<void> write_session_geometry(SessionWindowId, SessionWindowGeometry const&);
+         ErrorOr<void> demote_to_startup_recovery_unit(SessionWindowId, UnixDateTime recovered_at, IdAllocator& close_sequence_allocator);
+-        ErrorOr<void> reopen_session(SessionWindowId);
++
+     };
+ 
+@@ -582,4 +584,5 @@
+     u32 m_consecutive_unclean_exits { 0 };
+     bool m_follows_restart { false };
++    Optional<SessionWindowId> m_last_window_to_resume;
+     Vector<RestoredSessionWindow> m_launch_plan;
+ 
+--- a/UI/Qt/SessionStore.cpp
++++ b/UI/Qt/SessionStore.cpp
+@@ -370,5 +370,5 @@
+     statements.clear_restore_at_launch = TRY(database.prepare_statement("UPDATE Sessions SET restore_at_launch = 0 WHERE restore_at_launch != 0;"sv));
+     statements.clear_startup_recovery_origin = TRY(database.prepare_statement("UPDATE Sessions SET origin = :close_action_origin WHERE origin = :startup_recovery_origin;"sv));
+-    statements.reopen_closed_session = TRY(database.prepare_statement("UPDATE Sessions SET kind = :open_window_kind, closed_time = 0, close_sequence = 0, source_window_id = NULL, source_tab_index = NULL, origin = :origin WHERE id = :id;"sv));
++    statements.reopen_closed_session = TRY(database.prepare_statement("UPDATE Sessions SET kind = :open_window_kind, restore_at_launch = 0, closed_time = 0, close_sequence = 0, source_window_id = NULL, source_tab_index = NULL, origin = :origin WHERE id = :id;"sv));
+     statements.recover_open_session = TRY(database.prepare_statement("UPDATE Sessions SET kind = :closed_window_kind, closed_time = :closed_time, close_sequence = :close_sequence, source_window_id = NULL, source_tab_index = NULL, origin = :origin WHERE id = :id;"sv));
+     statements.delete_empty_open_sessions = TRY(database.prepare_statement("DELETE FROM Sessions WHERE kind = :open_window_kind AND NOT EXISTS (SELECT 1 FROM SessionTabs WHERE session_id = Sessions.id);"sv));
+@@ -1751,4 +1751,5 @@
+     for (auto& pending : m_pending_window_closes)
+         pending.restore_at_launch = false;
++    m_last_window_to_resume.clear();
+     m_transient_storage.open_window(window_id);
+     return window_id;
+@@ -2049,5 +2050,5 @@
+     }
+ 
+-    if (pending.members.is_empty() || !any_tab_worth_keeping) {
++    if (pending.members.is_empty() || (!any_tab_worth_keeping && !pending.restore_at_launch)) {
+         if (m_persisted_storage.has_value())
+             TRY(m_persisted_storage->delete_session_rows(pending.window_id));
+@@ -2076,4 +2077,6 @@
+     }
+     append_closed_window_unit(pending);
++    if (pending.restore_at_launch)
++        m_last_window_to_resume = pending.window_id;
+     m_transient_storage.prune_closed_units(UnitKind::ClosedWindow, max_closed_units(UnitKind::ClosedWindow));
+     return {};
+@@ -2370,4 +2373,31 @@
+ }
+ 
++ErrorOr<Optional<RestoredSessionWindow>> SessionStore::resume_last_window()
++{
++    if (!m_last_window_to_resume.has_value() || m_transient_storage.window_count())
++        return Optional<RestoredSessionWindow> {};
++    auto id = *m_last_window_to_resume;
++    auto const& closed = m_transient_storage.closed_units();
++    if (!closed.find_first_index_if([&](auto const& unit) { return unit.session_id == id; }).has_value())
++        return Optional<RestoredSessionWindow> {};
++    if (m_persisted_storage.has_value())
++        TRY(m_persisted_storage->reopen_session(id));
++    auto unit = m_transient_storage.take_closed_unit(id).release_value();
++    m_last_window_to_resume.clear();
++    RestoredSessionWindow restored { .window_id = id, .tabs = {}, .active_tab_index = unit.active_tab_index, .geometry = unit.geometry };
++    m_transient_storage.open_window(id);
++    for (auto& tab : unit.tabs) {
++        restored.tabs.append({ .tab_id = tab.tab_id, .url = tab.active_url, .pinned = tab.pinned });
++        (void)m_transient_storage.open_tab(id, tab.tab_id, OpenTab { .window_id = id, .url = move(tab.active_url), .current_used_step_index = tab.current_used_step_index, .history = move(tab.history), .dirty = false, .pinned = tab.pinned });
++    }
++    if (auto index = index_as_size(unit.active_tab_index); index.has_value() && *index < restored.tabs.size())
++        m_transient_storage.set_active_tab(restored.tabs[*index].tab_id);
++    if (unit.geometry.has_value())
++        m_transient_storage.set_geometry(id, *unit.geometry);
++    if (on_closed_units_changed)
++        on_closed_units_changed();
++    return Optional<RestoredSessionWindow> { move(restored) };
++}
++
+ Vector<RestoredSessionWindow> SessionStore::take_launch_plan()
+ {
+--- a/UI/Qt/Application.cpp
++++ b/UI/Qt/Application.cpp
+@@ -1864,5 +1864,13 @@
+     if (m_deferred_session_directory.has_value())
+         create_session_store(m_deferred_session_directory.release_value(), true);
+-    auto plan = session_store(WebView::IsPrivate::No).take_launch_plan();
++    auto& store = session_store(WebView::IsPrivate::No);
++    auto plan = store.take_launch_plan();
++    if (plan.is_empty() && settings().restore_previous_session()) {
++        auto resumed = store.resume_last_window();
++        if (resumed.is_error())
++            dbgln("Unable to resume the last browser window: {}", resumed.error());
++        else if (resumed.value().has_value())
++            plan.append(resumed.value().release_value());
++    }
+ 
+     BrowserWindow* frontmost_window = nullptr;
