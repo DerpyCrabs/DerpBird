@@ -108,7 +108,7 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
           {pinned.length > 0 ? <div class="pinned-tabs">{list(pinned, unit => unit.id, renderTabUnit)}</div> : null}
           {list(regular, unit => unit.id, renderTabUnit)}
         </div>
-        <Button variant="ghost" class="new-tab" title="New tab (Ctrl+T)" aria-label="New tab" disabled={!model.connected} onClick={() => controller.send({ type: 'tab.create', private: active?.private ?? false })}><Plus size={16}/><span class="new-tab-label">New tab</span></Button>
+        <Button variant="ghost" class="new-tab" title="New tab (Ctrl+T)" aria-label="New tab" disabled={!model.connected} onClick={() => controller.newTab()}><Plus size={16}/><span class="new-tab-label">New tab</span></Button>
         {workspaceControls(model,controller)}
       </aside>
       <div id="sidebar-resize" role="separator" aria-label="Resize tab sidebar" aria-orientation="vertical" aria-valuemin={minimumSidebarWidth} aria-valuemax={600} aria-valuenow={sidebarWidth} tabindex={model.layout === 'vertical' ? 0 : -1} title="Drag to resize · double-click to reset"/>

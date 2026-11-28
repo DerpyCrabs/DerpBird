@@ -77,6 +77,7 @@ export function createWebUIPort(
     const detail = (event as CustomEvent<unknown>).detail;
     if (!detail || typeof detail !== 'object') return;
     const { name, data } = detail as { name?: unknown; data?: unknown };
+    if (name === 'derpbird.new-tab') { window.dispatchEvent(new Event('derpbird-new-tab')); return; }
     if (name === 'derpbird.devtools') { for (const listener of devtoolsListeners) listener(data); return; }
     if (name === 'derpbird.sources-changed') { for (const listener of sourceListeners) listener(); return; }
     if (name === 'derpbird.snapshot') {

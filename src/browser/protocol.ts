@@ -85,6 +85,7 @@ export type Command =
   | { readonly type: 'shell.set-wrap-tabs'; readonly value: boolean }
   | { readonly type: 'browser.open-page'; readonly page: BrowserPage }
   | { readonly type: 'shell.viewport'; readonly captureInput?: boolean; readonly rect: SurfaceRect; readonly overlays: readonly SurfaceRect[] }
+  | { readonly type: 'tab.create-input'; readonly url: string; readonly private: boolean }
   | { readonly type: 'tab.create' | 'window.new'; readonly url?: string; readonly private: boolean }
   | { readonly type: 'tab.activate'; readonly tabId: string; readonly focus?: 'tab' }
   | { readonly type: 'tab.inspect' | 'tab.close' | 'tab.back' | 'tab.forward' | 'tab.reload' | 'tab.stop' | 'tab.duplicate' | 'tab.close-others' | 'tab.close-right' | 'tab.find' | 'tab.bookmark' | 'tab.site-settings' | 'tab.zoom-in' | 'tab.zoom-out' | 'tab.zoom-reset'; readonly tabId: string }

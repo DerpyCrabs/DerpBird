@@ -10,6 +10,7 @@ import { type ChromeLayout, verticalLayout } from './chrome-layout';
 export interface ShellModel {
   readonly workspaceEditor?: WorkspaceDraft | null;
   readonly chromeLayout?: ChromeLayout;
+  readonly paletteNewTab?: boolean;
   readonly paletteFilter?: string;
   readonly addressPaletteOpen?: boolean;
   readonly pageSources?: PageSources;
@@ -157,11 +158,20 @@ export function createController(port?: NativePort) {
       if (item?.source === 'tab') {
         send({type:'tab.activate',tabId:item.id});
         this.dismissAddress();
+      } else if (state.paletteNewTab) {
+        const input = (item?.text ?? state.addressInput ?? '').trim();
+        if (!input) return;
+        send({ type: 'tab.create-input', url: input, private: state.browser.tabs.find(tab => tab.id === state.browser.activeTabId)?.private ?? false });
+        this.dismissAddress();
       } else this.navigate(item?.text ?? state.addressInput ?? '');
     },
-    openAddressPalette() {
-      const input = state.browser.tabs.find(tab => tab.id === state.browser.activeTabId)?.url ?? '';
-      patch({ paletteFilter: input, addressPaletteOpen: true, addressInput: input === 'about:blank' || input === 'about:newtab' ? '' : input, addressSelection: -1, addressSuggestionsOpen: false });
+    newTab() {
+      if (state.chromeLayout?.preset === 'compact') this.openAddressPalette(true);
+      else send({ type: 'tab.create', private: state.browser.tabs.find(tab => tab.id === state.browser.activeTabId)?.private ?? false });
+    },
+    openAddressPalette(newTab = false) {
+      const input = newTab ? '' : state.browser.tabs.find(tab => tab.id === state.browser.activeTabId)?.url ?? '';
+      patch({ paletteNewTab: newTab, paletteFilter: input, addressPaletteOpen: true, addressInput: input === 'about:blank' || input === 'about:newtab' ? '' : input, addressSelection: -1, addressSuggestionsOpen: false });
     },
     blurAddress() {
       patch({ addressSuggestionsOpen: false, addressSelection: -1, addressQuery: state.addressQuery + 1 });

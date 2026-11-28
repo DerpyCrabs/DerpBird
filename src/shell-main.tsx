@@ -195,11 +195,13 @@ const onKey = (event: KeyboardEvent) => {
   if (key === 'h' && !event.shiftKey) { event.preventDefault(); controller.openPage('history'); }
   if (key === 'j' && !event.shiftKey) { event.preventDefault(); controller.openPage('downloads'); }
   if (key === 'l') { event.preventDefault(); focusAddress(document, controller); }
-  if (key === 't') { event.preventDefault(); controller.send(event.shiftKey ? { type: 'tab.reopen' } : { type: 'tab.create', private: controller.state().browser.tabs.find(tab => tab.id === controller.state().browser.activeTabId)?.private ?? false }); }
+  if (key === 't') { event.preventDefault(); if (event.shiftKey) controller.send({ type: 'tab.reopen' }); else controller.newTab(); }
   if (key === 'w' && controller.state().browser.activeTabId) { event.preventDefault(); controller.send({ type: 'tab.close', tabId: controller.state().browser.activeTabId! }); }
   if (key === 'n') { event.preventDefault(); controller.send({ type: 'window.new', private: event.shiftKey }); }
 };
 const stopShellDismissal = observeShellDismissal({ deactivate: () => controller.blurAddress() });
+const onNewTab = () => controller.newTab();
+window.addEventListener('derpbird-new-tab', onNewTab);
 const onFocusAddress = () => focusAddress(document, controller);
 window.addEventListener('derpbird-focus-address', onFocusAddress);
 document.addEventListener('keydown', onKey);
@@ -208,6 +210,7 @@ window.addEventListener('pagehide', () => {
   backgroundSources?.abort();
   clearInterval(updateTimer);
   stopSourceChanges?.();
+  window.removeEventListener('derpbird-new-tab', onNewTab);
   window.removeEventListener('derpbird-focus-address', onFocusAddress);
   document.removeEventListener('keydown', onKey);
   stopShellDismissal();

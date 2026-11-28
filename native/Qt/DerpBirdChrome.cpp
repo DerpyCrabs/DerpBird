@@ -1379,6 +1379,15 @@ bool DerpBirdChrome::eventFilter(QObject* watched, QEvent* event)
     // inside the set shown by the web shell, including when page content owns focus.
     if (event->type() == QEvent::ShortcutOverride || event->type() == QEvent::KeyPress) {
         auto* key = static_cast<QKeyEvent*>(event);
+        auto const& settings = Application::settings().tab_settings();
+        if (settings.vertical_tabs_enabled && settings.everything_in_sidebar && key->modifiers() == Qt::ControlModifier && key->key() == Qt::Key_T) {
+            key->accept();
+            if (event->type() == QEvent::KeyPress) {
+                m_shell->setFocus();
+                m_shell->send_derpbird_shell_message("derpbird.new-tab"_string, JsonObject {});
+            }
+            return true;
+        }
         if (key->modifiers().testFlag(Qt::ControlModifier) && !key->modifiers().testFlag(Qt::AltModifier)
             && (key->key() == Qt::Key_Tab || key->key() == Qt::Key_Backtab || key->key() == Qt::Key_PageUp || key->key() == Qt::Key_PageDown)) {
             key->accept();
@@ -1717,12 +1726,15 @@ ErrorOr<void> DerpBirdChrome::command(JsonValue const& value)
         m_window.new_tab_from_url(url, Web::HTML::ActivateTab::Yes, BrowserWindow::TabLocation::end());
         return {};
     }
-    if (type == "tab.create"sv || type == "window.new"sv) {
+    if (type == "tab.create-input"sv || type == "tab.create"sv || type == "window.new"sv) {
         auto url = data.get_string("url"sv);
         auto is_private = data.get_bool("private"sv);
         if ((data.has("url"sv) && !url.has_value()) || !is_private.has_value())
             return Error::from_string_literal("Invalid new tab");
-        auto parsed = url.has_value() ? URL::Parser::basic_parse(*url) : Optional<URL::URL> { Application::settings().new_tab_page_url() };
+        if (type == "tab.create-input"sv && (!url.has_value() || url->is_empty()))
+            return Error::from_string_literal("Missing address input");
+        auto parsed = type == "tab.create-input"sv ? WebView::sanitize_url(*url, Application::settings().search_engine_settings().engine)
+            : url.has_value() ? URL::Parser::basic_parse(*url) : Optional<URL::URL> { Application::settings().new_tab_page_url() };
         if (!parsed.has_value() || !is_public_navigation_url(*parsed))
             return Error::from_string_literal("Unsupported navigation URL");
         if (type == "window.new"sv || *is_private != (m_window.is_private() == WebView::IsPrivate::Yes)) {
