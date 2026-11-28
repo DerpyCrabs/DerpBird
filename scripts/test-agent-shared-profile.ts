@@ -56,7 +56,7 @@ try {
     const flatten=(node:any):any[]=>[node,...(node.nodes??[]).flatMap(flatten),...(node.floating_nodes??[]).flatMap(flatten)];
     desktopWindows=flatten(tree).filter((w:any)=>w.pid===child.pid&&w.app_id);
     assert.equal(desktopWindows.filter((w:any)=>w.app_id==='org.derpbird.Agent').length,2);
-    assert.equal(desktopWindows.filter((w:any)=>w.app_id==='org.ladybird.Ladybird').length,1);
+    assert.equal(desktopWindows.filter((w:any)=>w.app_id==='derpbird').length,1);
   }
   assert.equal(windows.length,3); assert.equal(windows.filter(w=>w.agentId).length,2);
   assert(windows.every(w=>w.profile===`${profile}/data`&&!w.private));

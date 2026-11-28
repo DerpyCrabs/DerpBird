@@ -51,10 +51,10 @@ index 4d7a344b548..478a1f0cd69 100644
          if (m_browser_options.raw_urls.is_empty())
              m_browser_options.urls = { URL::about_welcome() };
 diff --git a/Libraries/LibWebView/BrowserProcess.cpp b/Libraries/LibWebView/BrowserProcess.cpp
-index 36fc8ca0bbf..2a9bc06e53a 100644
+index 36fc8ca0bbf..bc98c3555fc 100644
 --- a/Libraries/LibWebView/BrowserProcess.cpp
 +++ b/Libraries/LibWebView/BrowserProcess.cpp
-@@ -392,6 +392,9 @@ static BrowserProcess::Handover hand_over(UIProcessClient& client, Vector<ByteSt
+@@ -392,11 +392,14 @@ static BrowserProcess::Handover hand_over(UIProcessClient& client, Vector<ByteSt
      auto deadline = MonotonicTime::now() + timeout;
      bool done = false;
      switch (new_window) {
@@ -64,8 +64,21 @@ index 36fc8ca0bbf..2a9bc06e53a 100644
      case NewWindow::Yes:
          done = client.send_sync_until<Messages::UIProcessServer::CreateNewWindow>(deadline, raw_urls);
          break;
-@@ -495,9 +498,9 @@ void BrowserProcess::accept_transport(NonnullOwnPtr<IPC::Transport> transport)
-             this->on_new_tab(raw_urls);
+     case NewWindow::No:
+-        done = client.send_sync_until<Messages::UIProcessServer::CreateNewTab>(deadline, raw_urls);
++        done = client.send_sync_until<Messages::UIProcessServer::CreateNewTab>(deadline, raw_urls, ByteString { getenv("XDG_ACTIVATION_TOKEN") ?: "" });
+         break;
+     }
+     if (done)
+@@ -490,14 +493,14 @@ ErrorOr<void> BrowserProcess::connect_as_server(ByteString const& socket_path)
+ void BrowserProcess::accept_transport(NonnullOwnPtr<IPC::Transport> transport)
+ {
+     auto client = UIProcessConnectionFromClient::construct(move(transport), ++m_next_client_id);
+-    client->on_new_tab = [this](auto raw_urls) {
++    client->on_new_tab = [this](auto raw_urls, auto const& activation_token) {
+         if (this->on_new_tab)
+-            this->on_new_tab(raw_urls);
++            this->on_new_tab(raw_urls, activation_token);
      };
  
 -    client->on_new_window = [this](auto raw_urls) {
@@ -76,7 +89,18 @@ index 36fc8ca0bbf..2a9bc06e53a 100644
      };
  }
  
-@@ -577,7 +580,13 @@ void UIProcessConnectionFromClient::create_new_tab(Vector<ByteString> urls)
+@@ -568,16 +571,22 @@ void UIProcessConnectionFromClient::die()
+     connections().remove(client_id());
+ }
+ 
+-void UIProcessConnectionFromClient::create_new_tab(Vector<ByteString> urls)
++void UIProcessConnectionFromClient::create_new_tab(Vector<ByteString> urls, ByteString activation_token)
+ {
+     if (on_new_tab)
+-        on_new_tab(sanitize_urls(urls));
++        on_new_tab(sanitize_urls(urls), activation_token);
+ }
+ 
  void UIProcessConnectionFromClient::create_new_window(Vector<ByteString> urls)
  {
      if (on_new_window)
@@ -92,29 +116,34 @@ index 36fc8ca0bbf..2a9bc06e53a 100644
  
  }
 diff --git a/Libraries/LibWebView/BrowserProcess.h b/Libraries/LibWebView/BrowserProcess.h
-index b52a09f39ef..fd041eebbd2 100644
+index b52a09f39ef..f2ca9396827 100644
 --- a/Libraries/LibWebView/BrowserProcess.h
 +++ b/Libraries/LibWebView/BrowserProcess.h
-@@ -32,12 +32,13 @@ public:
+@@ -31,13 +31,14 @@ public:
+ 
      virtual void die() override;
  
-     Function<void(Vector<URL::URL> const&)> on_new_tab;
+-    Function<void(Vector<URL::URL> const&)> on_new_tab;
 -    Function<void(Vector<URL::URL> const&)> on_new_window;
++    Function<void(Vector<URL::URL> const&, ByteString const&)> on_new_tab;
 +    Function<void(Vector<URL::URL> const&, bool app_window)> on_new_window;
  
  private:
      UIProcessConnectionFromClient(NonnullOwnPtr<IPC::Transport>, int client_id);
  
-     virtual void create_new_tab(Vector<ByteString> urls) override;
+-    virtual void create_new_tab(Vector<ByteString> urls) override;
++    virtual void create_new_tab(Vector<ByteString> urls, ByteString activation_token) override;
 +    virtual void create_app_window(Vector<ByteString> urls) override;
      virtual void create_new_window(Vector<ByteString> urls) override;
  };
  
-@@ -75,7 +76,7 @@ public:
+@@ -74,8 +75,8 @@ public:
+     //     at which the user was asked about a browser, so one that started after it is not the one they agreed to end.
      ErrorOr<ProcessDisposition> connect(Vector<ByteString> const& raw_urls, NewWindow new_window, StringView runtime_directory, StringView profile_identity, Optional<pid_t> ui_pid, Optional<UnixDateTime> replace_browser_from_before);
  
-     Function<void(Vector<URL::URL> const&)> on_new_tab;
+-    Function<void(Vector<URL::URL> const&)> on_new_tab;
 -    Function<void(Vector<URL::URL> const&)> on_new_window;
++    Function<void(Vector<URL::URL> const&, ByteString const&)> on_new_tab;
 +    Function<void(Vector<URL::URL> const&, bool app_window)> on_new_window;
  
  private:
@@ -132,29 +161,32 @@ index 84b0d9642f3..aa0baa132f2 100644
  
  enum class AllowPopups {
 diff --git a/Libraries/LibWebView/UIProcessServer.ipc b/Libraries/LibWebView/UIProcessServer.ipc
-index c7508666ad0..5bf7bb16146 100644
+index c7508666ad0..4048ce6f363 100644
 --- a/Libraries/LibWebView/UIProcessServer.ipc
 +++ b/Libraries/LibWebView/UIProcessServer.ipc
 @@ -1,4 +1,5 @@
  endpoint UIProcessServer {
-     create_new_tab(Vector<ByteString> urls) => ()
+-    create_new_tab(Vector<ByteString> urls) => ()
++    create_new_tab(Vector<ByteString> urls, ByteString activation_token) => ()
      create_new_window(Vector<ByteString> urls) => ()
 +    create_app_window(Vector<ByteString> urls) => ()
  }
 diff --git a/Services/Hub/ConnectionFromUI.cpp b/Services/Hub/ConnectionFromUI.cpp
-index c961f5f29d9..b76bf3feb18 100644
+index 6a98e715814..75d04da2812 100644
 --- a/Services/Hub/ConnectionFromUI.cpp
 +++ b/Services/Hub/ConnectionFromUI.cpp
-@@ -53,7 +53,7 @@ ConnectionFromUI::ConnectionFromUI(NonnullOwnPtr<IPC::Transport> transport)
+@@ -52,8 +52,8 @@ ConnectionFromUI::ConnectionFromUI(NonnullOwnPtr<IPC::Transport> transport)
+     (void)WebView::TabPerformanceMonitor::the();
  
      auto& browser_process = Application::the().browser_process();
-     browser_process.on_new_tab = [this](auto const& urls) { async_app_open_new_tab(urls); };
+-    browser_process.on_new_tab = [this](auto const& urls) { async_app_open_new_tab(urls); };
 -    browser_process.on_new_window = [this](auto const& urls) { async_app_open_new_window(urls); };
++    browser_process.on_new_tab = [this](auto const& urls, auto const& activation_token) { async_app_open_new_tab(urls, activation_token); };
 +    browser_process.on_new_window = [this](auto const& urls, bool app_window) { async_app_open_new_window(urls, app_window); };
  }
  
  ConnectionFromUI::~ConnectionFromUI()
-@@ -610,6 +610,7 @@ Messages::HubServer::InitializeResponse ConnectionFromUI::initialize()
+@@ -612,6 +612,7 @@ Messages::HubServer::InitializeResponse ConnectionFromUI::initialize()
      state.downloads = downloads();
      state.urls = options.urls;
      state.raw_urls = options.raw_urls;
@@ -163,10 +195,10 @@ index c961f5f29d9..b76bf3feb18 100644
      state.devtools_port = options.devtools_port;
      auto const& profile = Application::profile();
 diff --git a/Services/Hub/HubClient.ipc b/Services/Hub/HubClient.ipc
-index 2d086bb6577..e39a78ad879 100644
+index f226a365ec0..a4d8f3065cc 100644
 --- a/Services/Hub/HubClient.ipc
 +++ b/Services/Hub/HubClient.ipc
-@@ -159,6 +159,7 @@ struct Hub::InitialState {
+@@ -161,6 +161,7 @@ struct Hub::InitialState {
      Vector<Hub::DownloadState> downloads;
      Vector<URL::URL> urls;
      Vector<ByteString> raw_urls;
@@ -174,20 +206,22 @@ index 2d086bb6577..e39a78ad879 100644
      ByteString crash_report_directory;
      Optional<u16> devtools_port;
      ByteString profile_identifier;
-@@ -248,7 +249,7 @@ endpoint HubClient
+@@ -249,8 +250,8 @@ endpoint HubClient
+ {
      crash_reports_changed() =|
      request_finished(u64 request_id, bool had_network_error, Optional<u32> response_code, Vector<HTTP::Header> response_headers, ByteString body) =|
-     app_open_new_tab(Vector<URL::URL> urls) =|
+-    app_open_new_tab(Vector<URL::URL> urls) =|
 -    app_open_new_window(Vector<URL::URL> urls) =|
++    app_open_new_tab(Vector<URL::URL> urls, ByteString activation_token) =|
 +    app_open_new_window(Vector<URL::URL> urls, bool app_window) =|
      view_selected_text(u64 view_id, u64 request_id, Optional<ByteString> text) =|
      view_close_preflight_finished(u64 view_id, u64 request_id, bool may_close) =|
      view_page_dumps(u64 view_id, u64 request_id, Optional<String> dumps) =|
 diff --git a/UI/Qt/Application.cpp b/UI/Qt/Application.cpp
-index 3e9ba030ff6..3c3278c7033 100644
+index f80beaeb4c5..6c0591ab637 100644
 --- a/UI/Qt/Application.cpp
 +++ b/UI/Qt/Application.cpp
-@@ -1000,6 +1000,8 @@ ErrorOr<void> Application::connect_to_hub(Main::Arguments const& arguments)
+@@ -1002,6 +1002,8 @@ ErrorOr<void> Application::connect_to_hub(Main::Arguments const& arguments)
  
      m_browser_options.urls = move(state.urls);
      m_browser_options.raw_urls = move(state.raw_urls);
@@ -196,7 +230,16 @@ index 3e9ba030ff6..3c3278c7033 100644
      m_browser_options.devtools_port = state.devtools_port;
      if (state.devtools_enabled)
          m_devtools_port = state.devtools_port;
-@@ -1526,19 +1528,23 @@ Optional<String> Application::system_font_family() const
+@@ -1467,7 +1469,7 @@ void Application::will_create_event_loop(Main::Arguments& arguments)
+ #if defined(AK_OS_LINUX)
+     QGuiApplication::setDesktopFileName(qEnvironmentVariable("DERPBIRD_AGENT") == "1"
+             ? QStringLiteral("org.derpbird.Agent")
+-            : QStringLiteral("org.ladybird.Ladybird"));
++            : QStringLiteral("derpbird"));
+     Ladybird::clip_translucent_windows_that_cannot_blend();
+ #endif
+ #if !defined(Q_OS_MACOS) && !defined(Q_OS_WIN)
+@@ -1598,19 +1600,23 @@ Optional<String> Application::system_font_family() const
  
  BrowserWindow& Application::new_window(Vector<URL::URL> const& initial_urls, WindowConfiguration const& configuration, BrowserWindow::IsPopupWindow is_popup_window, WebView::IsPrivate is_private, Optional<u64> hub_view_id, ShowWindow show_window, Optional<Web::HTML::PreparedNavigationDescriptor> initial_navigation, QString agent_id)
  {
@@ -222,7 +265,7 @@ index 3e9ba030ff6..3c3278c7033 100644
      auto should_focus_location_editor = agent_id.isEmpty() && initial_urls.size() == 1 && initial_urls.first() == Application::settings().new_tab_page_url();
      if (should_focus_location_editor) {
          if (auto* tab = window->current_tab())
-@@ -1863,11 +1869,11 @@ void Application::open_startup_tabs(BrowserWindow& window, Vector<URL::URL> cons
+@@ -1943,11 +1949,11 @@ void Application::open_startup_tabs(BrowserWindow& window, Vector<URL::URL> cons
  
  BrowserWindow* Application::non_private_window_if_any() const
  {
@@ -236,7 +279,7 @@ index 3e9ba030ff6..3c3278c7033 100644
              return window;
      }
  
-@@ -2022,7 +2028,7 @@ void Application::focus_location_editor()
+@@ -2102,7 +2108,7 @@ void Application::focus_location_editor()
  
  void Application::reopen_recently_closed_tab(BrowserWindow* target_window, Optional<SessionWindowId> unit_id, ReopenClosedWindow reopen_closed_window)
  {
@@ -245,7 +288,7 @@ index 3e9ba030ff6..3c3278c7033 100644
          return;
      auto is_private = target_window ? target_window->is_private() : WebView::IsPrivate::No;
      auto& session = target_window ? target_window->session() : session_store(WebView::IsPrivate::No);
-@@ -2427,7 +2433,7 @@ Tab* Application::activate_tab_with_url(URL::URL const& url, URL::ExcludeFragmen
+@@ -2525,7 +2531,7 @@ Tab* Application::activate_tab_with_url(URL::URL const& url, URL::ExcludeFragmen
  {
      auto is_private = m_active_window ? m_active_window->is_private() : WebView::IsPrivate::No;
      for (auto* window : visible_browser_windows_active_first(m_active_window)) {
@@ -254,7 +297,7 @@ index 3e9ba030ff6..3c3278c7033 100644
              continue;
  
          auto* tab = window->activate_tab_with_url(url, exclude_fragment);
-@@ -2469,11 +2475,11 @@ BrowserWindow* Application::window_of_view(u64 view_id) const
+@@ -2567,11 +2573,11 @@ BrowserWindow* Application::window_of_view(u64 view_id) const
  BrowserWindow* Application::window_for_new_tab(Optional<u64> source_view_id, WebView::IsPrivate is_private) const
  {
      if (source_view_id.has_value()) {
@@ -268,7 +311,7 @@ index 3e9ba030ff6..3c3278c7033 100644
              return window;
      }
      return nullptr;
-@@ -2505,17 +2511,19 @@ void Application::open_urls_in_new_tabs(ReadonlySpan<URL::URL> urls) const
+@@ -2603,17 +2609,19 @@ void Application::open_urls_in_new_tabs(ReadonlySpan<URL::URL> urls) const
      if (urls.is_empty())
          return;
  
@@ -292,7 +335,7 @@ index 3e9ba030ff6..3c3278c7033 100644
      auto* previous_tab = window.current_tab();
      for (auto const& url : urls) {
 diff --git a/UI/Qt/Application.h b/UI/Qt/Application.h
-index 18f967c7a68..64706bef6a9 100644
+index a0a02c8a721..6cc6ef91903 100644
 --- a/UI/Qt/Application.h
 +++ b/UI/Qt/Application.h
 @@ -53,6 +53,7 @@ struct WindowConfiguration {
@@ -313,7 +356,7 @@ index 18f967c7a68..64706bef6a9 100644
      static Bookmarks& bookmarks() { return *s_the->m_bookmarks; }
      static BookmarkStore& bookmark_store() { return *s_the->m_bookmark_store; }
 diff --git a/UI/Qt/BrowserWindow.cpp b/UI/Qt/BrowserWindow.cpp
-index 62e031666c7..e597b951f4b 100644
+index 147550a7c23..2f0d55f9743 100644
 --- a/UI/Qt/BrowserWindow.cpp
 +++ b/UI/Qt/BrowserWindow.cpp
 @@ -9,6 +9,7 @@
@@ -324,7 +367,7 @@ index 62e031666c7..e597b951f4b 100644
  #include <AK/Platform.h>
  #include <AK/StdLibExtras.h>
  #include <AK/TypeCasts.h>
-@@ -344,12 +345,15 @@ static QIcon const& app_icon(WebView::IsPrivate is_private)
+@@ -345,12 +346,15 @@ static QIcon const& app_icon(WebView::IsPrivate is_private)
      return cached_icon;
  }
  
@@ -341,7 +384,7 @@ index 62e031666c7..e597b951f4b 100644
      if (!agent_id.isEmpty())
          setProperty("derpbirdAgentId", agent_id);
  
-@@ -469,7 +473,12 @@ BrowserWindow::BrowserWindow(Vector<URL::URL> const& initial_urls, IsPopupWindow
+@@ -470,7 +474,12 @@ BrowserWindow::BrowserWindow(Vector<URL::URL> const& initial_urls, IsPopupWindow
      m_devtools_banner->hide();
      main_layout->addWidget(m_devtools_banner);
  
@@ -355,7 +398,7 @@ index 62e031666c7..e597b951f4b 100644
          main_layout->removeWidget(m_tabs_container);
          m_derpbird_chrome = new DerpBirdChrome(*this);
          main_layout->insertWidget(0, m_derpbird_chrome, 1);
-@@ -1402,7 +1410,7 @@ void BrowserWindow::activate_first_unpinned_tab()
+@@ -1418,7 +1427,7 @@ void BrowserWindow::activate_first_unpinned_tab()
  
  void BrowserWindow::register_window_with_session_store()
  {
@@ -364,7 +407,7 @@ index 62e031666c7..e597b951f4b 100644
          return;
      if (auto session_window_id = session().window_opened(); session_window_id.is_error())
          dbgln("Unable to register the new window with the session store: {}", session_window_id.error());
-@@ -1559,7 +1567,7 @@ void BrowserWindow::create_menu_bar_window_controls()
+@@ -1575,7 +1584,7 @@ void BrowserWindow::create_menu_bar_window_controls()
  
  void BrowserWindow::update_menu_bar_visibility()
  {
@@ -373,7 +416,7 @@ index 62e031666c7..e597b951f4b 100644
  
      // Update the controls first so the menu bar measures its corner widgets with the controls visible when shown.
      if (m_menu_bar_window_controls)
-@@ -1840,7 +1848,7 @@ void BrowserWindow::exit_fullscreen()
+@@ -1856,7 +1865,7 @@ void BrowserWindow::exit_fullscreen()
      if (!current_tab())
          return;
  
@@ -383,7 +426,7 @@ index 62e031666c7..e597b951f4b 100644
      // A full-screen window is no longer maximized, so it has to ask to be maximized again. On macOS, the window is
      // zoomed again as it leaves full screen, and asking for the normal state would then unzoom it.
 diff --git a/UI/Qt/BrowserWindow.h b/UI/Qt/BrowserWindow.h
-index ae2449a68b2..e88749a07ce 100644
+index 70321c9d44d..65c5285d1e8 100644
 --- a/UI/Qt/BrowserWindow.h
 +++ b/UI/Qt/BrowserWindow.h
 @@ -155,7 +155,9 @@ public:
@@ -397,7 +440,7 @@ index ae2449a68b2..e88749a07ce 100644
      virtual ~BrowserWindow() override;
  
      DerpBirdChrome* derpbird_chrome() const { return m_derpbird_chrome; }
-@@ -366,6 +368,8 @@ private:
+@@ -369,6 +371,8 @@ private:
      QAction* m_always_on_top_action { nullptr };
      QActionGroup* m_tab_layout_actions { nullptr };
  
@@ -406,12 +449,87 @@ index ae2449a68b2..e88749a07ce 100644
      IsPopupWindow m_is_popup_window { IsPopupWindow::No };
  
      Optional<SessionWindowId> m_session_window_id;
+diff --git a/UI/Qt/ExternalURLActivationToken.cpp b/UI/Qt/ExternalURLActivationToken.cpp
+index 43f4b69478f..4ec6cff806a 100644
+--- a/UI/Qt/ExternalURLActivationToken.cpp
++++ b/UI/Qt/ExternalURLActivationToken.cpp
+@@ -85,6 +85,14 @@ static xdg_activation_v1* wayland_activation()
+ 
+     return activation;
+ }
++
++void activate_external_url_window(QWindow& window, ByteString const& token)
++{
++    if (auto* surface = wayland_surface_for_window(window)) {
++        if (auto* activation = wayland_activation())
++            xdg_activation_v1_activate(activation, token.characters(), surface);
++    }
++}
+ #endif
+ 
+ void request_external_url_activation_token([[maybe_unused]] StringView desktop_id, Function<void(Optional<String>)> callback)
+diff --git a/UI/Qt/ExternalURLActivationToken.h b/UI/Qt/ExternalURLActivationToken.h
+index 353573ca53e..58ec1325f8f 100644
+--- a/UI/Qt/ExternalURLActivationToken.h
++++ b/UI/Qt/ExternalURLActivationToken.h
+@@ -11,8 +11,14 @@
+ #include <AK/String.h>
+ #include <AK/StringView.h>
+ 
++class QWindow;
++
+ namespace Ladybird {
+ 
++#if defined(LADYBIRD_HAS_WAYLAND_ACTIVATION)
++void activate_external_url_window(QWindow&, ByteString const&);
++#endif
++
+ void request_external_url_activation_token(StringView desktop_id, Function<void(Optional<String>)>);
+ 
+ }
+diff --git a/UI/Qt/ExternalURLHandler.cpp b/UI/Qt/ExternalURLHandler.cpp
+index 4cf78aa18e1..480ffdfda07 100644
+--- a/UI/Qt/ExternalURLHandler.cpp
++++ b/UI/Qt/ExternalURLHandler.cpp
+@@ -21,7 +21,7 @@
+ 
+ namespace Ladybird {
+ 
+-static constexpr auto default_ladybird_desktop_id = "org.ladybird.Ladybird.desktop"sv;
++static constexpr auto default_ladybird_desktop_id = "derpbird.desktop"sv;
+ static Core::EventLoop* s_main_thread_event_loop;
+ 
+ struct LadybirdAppLaunchContext {
 diff --git a/UI/Qt/HubConnection.cpp b/UI/Qt/HubConnection.cpp
-index e3b2cff69cc..fdd855975fa 100644
+index e3b2cff69cc..48a08b294d9 100644
 --- a/UI/Qt/HubConnection.cpp
 +++ b/UI/Qt/HubConnection.cpp
-@@ -847,10 +847,10 @@ void HubConnection::app_open_new_tab(Vector<URL::URL> urls)
+@@ -22,6 +22,7 @@
+ #include <UI/Qt/ApplicationActions.h>
+ #include <UI/Qt/Bookmarks.h>
+ #include <UI/Qt/HubConnection.h>
++#include <UI/Qt/ExternalURLActivationToken.h>
+ #include <UI/Qt/RemoteDownloads.h>
+ #include <UI/Qt/RemoteView.h>
+ #include <UI/Qt/Tab.h>
+@@ -841,16 +842,24 @@ void HubConnection::platform_features_description(u64 request_id, ByteString des
+         (*callback)(move(description));
+ }
+ 
+-void HubConnection::app_open_new_tab(Vector<URL::URL> urls)
++void HubConnection::app_open_new_tab(Vector<URL::URL> urls, ByteString activation_token)
+ {
+-    if (auto& application = Application::the(); application.on_new_tab)
++    auto& application = Application::the();
++    if (application.on_new_tab) {
          application.on_new_tab(urls);
++#if defined(LADYBIRD_HAS_WAYLAND_ACTIVATION)
++        if (auto* window = application.non_private_window_if_any(); window && window->windowHandle() && !activation_token.is_empty())
++            activate_external_url_window(*window->windowHandle(), activation_token);
++#else
++        (void)activation_token;
++#endif
++    }
  }
  
 -void HubConnection::app_open_new_window(Vector<URL::URL> urls)
@@ -424,14 +542,16 @@ index e3b2cff69cc..fdd855975fa 100644
  
  void HubConnection::web_ui_opened(u64 web_ui_id, String host, WebView::IsPrivate is_private)
 diff --git a/UI/Qt/HubConnection.h b/UI/Qt/HubConnection.h
-index 47103993e29..89cbd7a4f14 100644
+index 47103993e29..01f21b9c132 100644
 --- a/UI/Qt/HubConnection.h
 +++ b/UI/Qt/HubConnection.h
-@@ -98,7 +98,7 @@ private:
+@@ -97,8 +97,8 @@ private:
+     // ^HubClientEndpoint
      virtual void crash_reports_changed() override;
      virtual void request_finished(u64 request_id, bool had_network_error, Optional<u32> response_code, Vector<HTTP::Header> response_headers, ByteString body) override;
-     virtual void app_open_new_tab(Vector<URL::URL> urls) override;
+-    virtual void app_open_new_tab(Vector<URL::URL> urls) override;
 -    virtual void app_open_new_window(Vector<URL::URL> urls) override;
++    virtual void app_open_new_tab(Vector<URL::URL> urls, ByteString activation_token) override;
 +    virtual void app_open_new_window(Vector<URL::URL> urls, bool app_window) override;
      virtual void view_selected_text(u64 view_id, u64 request_id, Optional<ByteString> text) override;
      virtual void view_close_preflight_finished(u64 view_id, u64 request_id, bool may_close) override;
