@@ -1,0 +1,11 @@
+--- a/UI/Qt/WebContentView.cpp
++++ b/UI/Qt/WebContentView.cpp
+@@ -2676,4 +2676,8 @@
+ void WebContentView::show_context_menu(Menu& menu, Gfx::IntPoint widget_position)
+ {
++    auto const& document_url = url();
++    if (document_url.scheme() == "about"sv && document_url != URL::about_blank() && document_url != URL::about_srcdoc())
++        return;
++
+     auto& context_menu = replace_context_menu(m_context_menu, *this, menu);
+     auto clicked_document = derpbird_context_document();

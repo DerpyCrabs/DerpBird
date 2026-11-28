@@ -15,6 +15,11 @@ export function mountWorkspaceSwitch(controller: ShellController) {
   const props = (state: ReturnType<typeof controller.state>) => ({spaces: state.browser.workspaces, layout: state.layout});
   const owner = modelOwner({open: false, ...props(controller.state())});
   const trigger = () => host.querySelector<HTMLButtonElement>('[data-workspace-trigger]');
+  const edit = (event: Event, id: string) => {
+    event.preventDefault();
+    owner.patch({open: false});
+    controller.openWorkspaceEditor(id);
+  };
   const stop = controller.source.subscribe(state => owner.patch(props(state)));
   const ui = mount(host, view<ReturnType<typeof owner.read>>(model => {
     const spaces = model.spaces;
@@ -22,6 +27,7 @@ export function mountWorkspaceSwitch(controller: ShellController) {
     return <>
       <button class={`haz-workspace-trigger tone-${active?.color ?? 'sage'}`} type="button" data-workspace-trigger="true"
         aria-label={`Switch workspace: ${active?.name ?? 'Default'}`} aria-haspopup="menu" aria-expanded={model.open}
+        onContextMenu={event => { if (active) edit(event, active.id); }}
         onClick={() => owner.patch({open: !model.open})}>
         <Layers size={15}/><span>{active?.name ?? 'Default'}</span><ChevronDown size={13}/>
       </button>
@@ -32,7 +38,7 @@ export function mountWorkspaceSwitch(controller: ShellController) {
           if((event.key==='Enter'||event.key===' ')&&target.matches('button[role^=menuitem]')){event.preventDefault();target.click();}
         }} onDismiss={() => owner.patch({open: false})}>
         {list(spaces?.items ?? [], space => space.id, space => <button type="button" role="menuitemradio"
-          data-workspace-id={space.id} class={`tone-${space.color}`} aria-checked={space.id === spaces?.active} onClick={() => {
+          data-workspace-id={space.id} onContextMenu={event => edit(event, space.id)} class={`tone-${space.color}`} aria-checked={space.id === spaces?.active} onClick={() => {
             owner.patch({open: false}); controller.switchWorkspace(space.id);
           }}><span>{space.name}</span>{space.id === spaces?.active ? <Check size={15}/> : null}</button>)}
         <hr/>

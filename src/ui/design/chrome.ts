@@ -10,6 +10,8 @@ import './toolbar.css';
 
 /** The same chrome lifecycle is used by the native shell and deterministic demos. */
 export function mountBrowserChrome(controller:ShellController){
+ const suppressPageMenu = (event: Event) => event.preventDefault();
+ document.addEventListener("contextmenu", suppressPageMenu);
  const shell=document.querySelector<HTMLElement>('.shell')!;
  const list=shell.querySelector<HTMLElement>('.tab-list')!;
  const tabs=shell.querySelector<HTMLElement>('.tabs')!;
@@ -31,5 +33,5 @@ export function mountBrowserChrome(controller:ShellController){
   if(next===axis)return;axis=next;cancelAnimationFrame(frame);
   frame=requestAnimationFrame(()=>{overflow();overflow=observeOverflow(list,axis);});
  });
- return()=>{cancelAnimationFrame(frame);stop();overflow();contour();spaces();pins();motion();document.body.classList.remove('haz-proposal','preferences-theme','haz-always-close','haz-quiet-close');};
+ return()=>{document.removeEventListener("contextmenu", suppressPageMenu);cancelAnimationFrame(frame);stop();overflow();contour();spaces();pins();motion();document.body.classList.remove('haz-proposal','preferences-theme','haz-always-close','haz-quiet-close');};
 }
