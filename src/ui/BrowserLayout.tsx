@@ -7,7 +7,7 @@ import Globe from '@effectweb/lucide/icons/globe';
 import History from '@effectweb/lucide/icons/history';
 import Bookmark from '@effectweb/lucide/icons/bookmark';
 import type { ChromeLayout, ShellController, ShellModel } from '../browser/controller';
-import { paletteItems } from '../browser/address-palette';
+import { paletteItems, paletteFavicon } from '../browser/address-palette';
 type Props = { model: ShellModel; controller: ShellController };
 const presets = [
   { id: 'classic', title: 'Classic', description: 'Tabs above the address bar.' },
@@ -30,12 +30,13 @@ export function LayoutSettings({ value, onChange }: {value: ChromeLayout; onChan
 export function AddressPalette({ model, controller }: Props) {
   const input = model.addressInput ?? '';
   const items = paletteItems(model);
+  const isPrivate = !!model.browser.tabs.find(tab => tab.id === model.browser.activeTabId)?.private;
   const choose = (index: number) => controller.choosePaletteItem(index);
   return <ShellDialog class="address-palette" aria-label="Search or enter address" trigger={() => document.getElementById('compact-location')} initialFocus={() => document.getElementById('palette-location')} onDismiss={() => controller.dismissAddress()}>
     <form onSubmit={event => { event.preventDefault(); choose(model.addressSelection); }}>
       <Search size={20}/><input id="palette-location" aria-label="Search or enter address" placeholder="Search or enter address" value={input} aria-activedescendant={model.addressSelection >= 0 ? `palette-option-${model.addressSelection}` : undefined} role="combobox" aria-expanded={items.length > 0} aria-controls="palette-results" autocomplete="off" spellcheck={false} onFocus={event => event.currentTarget.select()} onInput={event => { event.currentTarget.removeAttribute('aria-activedescendant'); controller.editAddress(event.currentTarget.value); }} onKeyDown={event => { if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); controller.selectPaletteItem(event.key === 'ArrowDown' ? 1 : -1); } }}/><Button type="button" variant="ghost" size="icon" aria-label="Close address palette" onClick={() => controller.dismissAddress()}><X size={16}/></Button>
     </form>
-    <div id="palette-results" role="listbox" aria-label="Suggestions">{list(items, item => `${item.source}:${item.id}`, (item, index) => <button type="button" role="option" id={`palette-option-${index}`} data-index={index} aria-selected={model.addressSelection === index} onClick={() => choose(index)}><span class="suggestion-icon" aria-hidden="true">{item.favicon ? <img class="suggestion-favicon" src={item.favicon} alt=""/> : item.source === 'history' ? <History size={17}/> : item.source === 'bookmark' ? <Bookmark size={17}/> : item.source === 'search' ? <Search size={17}/> : <Globe size={17}/>}</span><span class="suggestion-copy"><strong>{item.title}</strong><small>{item.detail}</small></span><span class="palette-action">{item.source === 'tab' ? 'Switch to tab' : 'Open'} ↵</span></button>)}</div>
+    <div id="palette-results" style={{height: `${8 + items.length * 46}px`}} role="listbox" aria-label="Suggestions">{list(items, item => item.key, (item, index) => { const favicon = paletteFavicon(item, isPrivate); return <button type="button" role="option" data-current-query={item.key === 'current-query'} id={`palette-option-${index}`} data-index={index} aria-selected={model.addressSelection === index} onClick={() => choose(index)}><span class="suggestion-icon" aria-hidden="true">{favicon ? <img class="suggestion-favicon" src={favicon} alt="" referrerpolicy="no-referrer" onLoad={e => e.currentTarget.dataset.loaded = 'true'} onError={e => delete e.currentTarget.dataset.loaded}/> : null}{item.source === 'history' ? <History size={17}/> : item.source === 'bookmark' ? <Bookmark size={17}/> : item.source === 'search' ? <Search size={17}/> : <Globe size={17}/>}</span><span class="suggestion-copy"><strong>{item.title}</strong><small>{item.detail}</small></span><span class="palette-action">{item.source === 'tab' ? 'Switch to tab' : 'Open'} ↵</span></button>; })}</div>
     <footer><span><kbd>↑ ↓</kbd><span>Navigate</span></span><span><kbd>Enter</kbd><span>Open</span></span><span><kbd>Esc</kbd><span>Close</span></span></footer>
   </ShellDialog>;
 }

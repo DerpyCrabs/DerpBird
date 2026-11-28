@@ -74,3 +74,19 @@
 .haz-proposal .address-palette kbd{color:inherit}
 .haz-proposal .address-palette button:focus-visible{outline:2px solid var(--pref-focus);outline-offset:-2px}
 @media(max-width:520px){.haz-proposal .address-palette .palette-action{display:none}}
+
+.haz-proposal .address-palette {
+  inset: clamp(12px, 10vh, 96px) 0 auto;
+  margin: 0 auto;
+  max-height: calc(100vh - clamp(12px, 10vh, 96px) - 12px);
+}
+.haz-proposal #palette-results { box-sizing: border-box; transition: height 160ms ease-out; }
+.haz-proposal #palette-results [role=option] { height: 46px; }
+.haz-proposal #palette-results [role=option]:not([data-current-query=true]) { animation: palette-row-enter 140ms ease-out; }
+.haz-proposal #palette-results .suggestion-favicon:not([data-loaded]),
+.haz-proposal #palette-results .suggestion-favicon[data-loaded] + svg { display: none; }
+@keyframes palette-row-enter { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .haz-proposal #palette-results { transition: none; }
+  .haz-proposal #palette-results [role=option] { animation: none; }
+}

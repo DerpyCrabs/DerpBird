@@ -10,6 +10,7 @@ import { type ChromeLayout, verticalLayout } from './chrome-layout';
 export interface ShellModel {
   readonly workspaceEditor?: WorkspaceDraft | null;
   readonly chromeLayout?: ChromeLayout;
+  readonly paletteFilter?: string;
   readonly addressPaletteOpen?: boolean;
   readonly pageSources?: PageSources;
   readonly sidebarWidth: number;
@@ -36,6 +37,7 @@ export function createController(port?: NativePort) {
   let resolveReady!: () => void;
   const ready = new Promise<void>(resolve => { resolveReady = resolve; });
   let disposed = false;
+  let paletteTimer: ReturnType<typeof setTimeout> | undefined;
   let pendingNavigation: { tabId: string; previousURL: string } | null = null;
   let unsubscribe: (() => void) | undefined;
   const patch = (value: Partial<ShellModel>) => {
@@ -63,7 +65,7 @@ export function createController(port?: NativePort) {
       if (activeChanged || navigationArrived) {
         pendingNavigation = null;
       }
-      patch({ ...(activeChanged || navigationArrived || layoutChanged ? { addressPaletteOpen: false, addressInput: null, addressSuggestionsOpen: false, addressSelection: -1, addressQuery: state.addressQuery + 1 } : {}), ...next.preferences, chromeLayout: nextLayout, ...(state.sidebarResizeWidth === next.preferences.sidebarWidth ? { sidebarResizeWidth: null } : {}), browser: { ...next, tabs, addressSuggestions: next.addressSuggestions?.query === state.addressQuery ? next.addressSuggestions : state.browser.addressSuggestions }, connected: true, error: null, tabMenu: state.tabMenu && tabs.some(tab => tab.id === state.tabMenu!.tabId) ? state.tabMenu : null });
+      patch({ ...(state.addressPaletteOpen && next.addressSuggestions?.query === state.addressQuery ? {paletteFilter: state.addressInput ?? ''} : {}), ...(activeChanged || navigationArrived || layoutChanged ? { addressPaletteOpen: false, addressInput: null, addressSuggestionsOpen: false, addressSelection: -1, addressQuery: state.addressQuery + 1 } : {}), ...next.preferences, chromeLayout: nextLayout, ...(state.sidebarResizeWidth === next.preferences.sidebarWidth ? { sidebarResizeWidth: null } : {}), browser: { ...next, tabs, addressSuggestions: next.addressSuggestions?.query === state.addressQuery ? next.addressSuggestions : state.browser.addressSuggestions }, connected: true, error: null, tabMenu: state.tabMenu && tabs.some(tab => tab.id === state.tabMenu!.tabId) ? state.tabMenu : null });
     } catch (error) { report(error); }
   };
   const send = (command: Command) => {
@@ -159,7 +161,7 @@ export function createController(port?: NativePort) {
     },
     openAddressPalette() {
       const input = state.browser.tabs.find(tab => tab.id === state.browser.activeTabId)?.url ?? '';
-      patch({ addressPaletteOpen: true, addressInput: input === 'about:blank' || input === 'about:newtab' ? '' : input, addressSelection: -1, addressSuggestionsOpen: false });
+      patch({ paletteFilter: input, addressPaletteOpen: true, addressInput: input === 'about:blank' || input === 'about:newtab' ? '' : input, addressSelection: -1, addressSuggestionsOpen: false });
     },
     blurAddress() {
       patch({ addressSuggestionsOpen: false, addressSelection: -1, addressQuery: state.addressQuery + 1 });
@@ -170,11 +172,16 @@ export function createController(port?: NativePort) {
     editAddress(input: string) {
       pendingNavigation = null;
       const query = state.addressQuery + 1;
-      patch({ addressInput: input, addressSuggestionsOpen: !!input.trim(), addressQuery: query, addressSelection: -1,
+      patch({ ...(!input.trim() ? {paletteFilter: ''} : {}), addressInput: input, addressSuggestionsOpen: !!input.trim(), addressQuery: query, addressSelection: -1,
         // Keep a visible list stable during a new query, but never reopen old results.
         ...(!state.addressSuggestionsOpen ? { browser: { ...state.browser, addressSuggestions: undefined } } : {}) });
-      // Local history must not wait for the engine's separate remote-search debounce.
-      send({ type: 'browser.suggest', input: input.slice(0, 4096), query });
+      clearTimeout(paletteTimer);
+      const request = () => send({ type: 'browser.suggest', input: input.slice(0, 4096), query });
+      if (state.addressPaletteOpen && input.trim()) {
+        paletteTimer = setTimeout(() => {
+          if (state.addressPaletteOpen && state.addressQuery === query) request();
+        }, 160);
+      } else request();
     },
     selectAddress(direction: number) {
       const suggestions = state.browser.addressSuggestions;
@@ -208,6 +215,7 @@ export function createController(port?: NativePort) {
     dismissError: () => patch({ error: null }),
     async close() {
       if (disposed) return;
+      clearTimeout(paletteTimer);
       disposed = true;
       resolveReady();
       unsubscribe?.();
