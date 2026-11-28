@@ -30,5 +30,5 @@ export function createDemoPageSources(controller:ShellController){
    return page();
   }},kind,()=>{popup=undefined},value=>controller.setPageSources(value),()=>manage(kind),()=>controller.send({type:'tab.reload',tabId:controller.state().browser.activeTabId!}));
  };
- return{open,manage,refresh,dispose(){popup?.dispose();manager?.dispose();}};
+ return{open,manage,refresh,closePopup:()=>popup?.close(),dispose(){popup?.dispose();manager?.dispose();}};
 }

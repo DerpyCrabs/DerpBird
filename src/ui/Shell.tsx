@@ -2,12 +2,10 @@ import {isNewTabPage} from '../browser/protocol';
 import { workspaceControls, workspaceEditor } from './Workspaces';
 import { AddressPalette } from './BrowserLayout';
 import { ShellMenu, ShellPopover, ShellDialog } from './Overlay';
-import Palette from '@effectweb/lucide/icons/palette';
-import CodeXml from '@effectweb/lucide/icons/code-xml';
 import type { SourceKind } from '../browser/page-sources';
 import { type tabUnits, shellTabLayout, splitFor } from '../browser/splits';
 import type { CapturedCredential } from '../browser/credential-protocol';
-import { domBinding, list, view } from 'effectweb';
+import { list, view } from 'effectweb';
 import { Button } from './button';
 import ArrowLeft from '@effectweb/lucide/icons/arrow-left';
 import ArrowRight from '@effectweb/lucide/icons/arrow-right';
@@ -26,16 +24,6 @@ import { suggestionDetails } from '../browser/address-suggestions';
 import File from '@effectweb/lucide/icons/file';
 import LoaderCircle from '@effectweb/lucide/icons/loader-circle';
 import type { ShellController, ShellModel } from '../browser/controller';
-
-// Keep the last visible count while the badge fades out.
-function sourceBadge(element: HTMLSpanElement, read: () => number) {
-  const update = () => {
-    const count = read();
-    if (count > 0 && element.textContent !== String(count)) element.textContent = String(count);
-  };
-  update();
-  return { update, dispose: () => { element.textContent = ''; } };
-}
 
 export function shellView(controller: ShellController, openStyles?: () => void, openScripts?: () => void, openCredentials?: (proposal?: CapturedCredential) => void, openImport?: () => void, autofill?: (token: string, id?: string) => void, openProxy?: () => void, openPageSources?: (kind: SourceKind) => void) {
   return view<ShellModel>(model => {
@@ -111,11 +99,6 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
           {!compact && addressSuggestions.length ? <ShellPopover side={bottomAddress ? 'top' : 'bottom'} class="address-suggestions" aria-label="Address suggestions" initialFocus={false} trigger={() => document.getElementById('location')} onDismiss={reason => reason === 'escape-key' ? controller.dismissAddress() : controller.blurAddress()}><div id="address-suggestions" role="listbox">{list(addressSuggestions, item => item.text, (item, index) => <button type="button" role="option" id={`address-option-${index}`} aria-selected={model.addressSelection === index} onPointerDown={event => event.preventDefault()} onClick={() => controller.navigate(item.text)}><span class="suggestion-icon" aria-hidden="true">{item.favicon ? <img class="suggestion-favicon" src={item.favicon} alt=""/> : item.source === 'history' ? <History size={16}/> : item.source === 'bookmark' ? <Bookmark size={16}/> : item.source === 'settings' ? <SlidersHorizontal size={16}/> : item.source === 'search' ? <Search size={16}/> : <Globe size={16}/>}</span><span class="suggestion-copy"><strong>{item.title}</strong><small>{suggestionDetails(item)}</small></span><span class="suggestion-enter" aria-hidden="true">↵</span></button>)}</div></ShellPopover> : null}
         </form>
         {model.browser.credentialProposal && openCredentials ? <Button variant="ghost" class="credential-suggestion" title={`Password for ${model.browser.credentialProposal.origin}`} onClick={() => openCredentials(model.browser.credentialProposal!)}>Save password?</Button> : null}
-        {list(['styles', 'scripts'] as const, kind => {
-          const matches = model.pageSources && model.pageSources.tabId === active?.id && model.pageSources.url === active?.url ? model.pageSources[kind] : [];
-          const count = matches.filter(item => item.enabled).length;
-          return <Button variant="ghost" size="icon" class="page-sources-button" aria-label={kind === 'styles' ? 'Styles on this page' : 'Scripts on this page'} aria-haspopup="dialog" title={`${kind === 'styles' ? 'Styles' : 'Scripts'} · ${count} enabled on this page`} disabled={!model.connected || !openPageSources || !active || !!active.private} onClick={() => { controller.setPanel(null); openPageSources?.(kind); }}>{kind === 'styles' ? <Palette size={17}/> : <CodeXml size={17}/>}<span class="source-count" data-visible={count > 0} aria-hidden="true" use={domBinding(count, sourceBadge)} /></Button>;
-        })}
         <Button variant="ghost" size="icon" class="proxy-switcher-button" aria-label="Proxy switcher" aria-haspopup="dialog" title={`Proxy · ${model.browser.proxyProfile === 'direct' ? 'Direct connection' : model.browser.proxyProfile === 'system' || !model.browser.proxyProfile ? 'System proxy' : model.browser.proxyProfile}`} disabled={!model.connected || !openProxy || !!active?.private} onClick={() => { controller.setPanel(null); openProxy?.(); }}><Globe size={17}/>{model.browser.proxyProfile && !['direct', 'system'].includes(model.browser.proxyProfile) ? <span class="proxy-active-dot"/> : null}</Button>
         <Button variant="ghost" size="icon" aria-label="Menu" aria-controls="browser-menu-popup" aria-expanded={model.panel === 'menu'} onClick={() => controller.setPanel(model.panel ? null : 'menu')}><Menu size={17}/></Button>
         {compact ? <button class="compact-address" id="compact-location" aria-label="Open address palette" title={active?.url || 'Search or enter address'} onClick={() => controller.openAddressPalette()}><Globe size={15}/><span>{active?.url && active.url !== 'about:blank' ? active.url.replace(/^https?:\/\//, '').split('/')[0] : 'Search or enter address'}</span><kbd>Ctrl L</kbd></button> : null}
@@ -175,6 +158,14 @@ export function shellView(controller: ShellController, openStyles?: () => void, 
         <Button role="menuitem" variant="ghost" disabled={!active} onClick={() => { controller.setPanel(null); tabCommand('tab.find'); }}>Find in page <kbd>Ctrl F</kbd></Button>
         <Button role="menuitem" variant="ghost" disabled={!active} onClick={() => { controller.setPanel(null); tabCommand('tab.bookmark'); }}>Bookmark page <kbd>Ctrl D</kbd></Button>
         <Button role="menuitem" variant="ghost" aria-label="Inspect" disabled={!active || !model.connected} onClick={() => { controller.setPanel(null); tabCommand('tab.inspect'); }}>Inspect <kbd>F12</kbd></Button>
+        {list(['styles', 'scripts'] as const, kind => {
+          const page = model.pageSources;
+          const count = page && page.tabId === active?.id && page.url === active?.url ? page[kind].filter(item => item.enabled).length : 0;
+          return <Button role="menuitem" variant="ghost" aria-label={kind === 'styles' ? 'Styles on this page' : 'Scripts on this page'} disabled={!model.connected || !openPageSources || !active || !!active.private}
+            onClick={() => { controller.setPanel(null); openPageSources?.(kind); }}>
+            {kind === 'styles' ? 'Styles on this page' : 'Scripts on this page'}{count > 0 ? <span>{count}</span> : null}
+          </Button>;
+        })}
         <details class="menu-tools"><summary role="menuitem">Content blocking</summary>
         <Button role="menuitem" variant="ghost" disabled={!active || !!active.private} onClick={() => { if (active) { controller.setPanel(null); controller.send({ type: 'blocking.pick', tabId: active.id }); } }}>Block element…</Button>
         <Button role="menuitem" variant="ghost" disabled={!active} onClick={() => { if (active) { controller.setPanel(null); controller.send({ type: 'blocking.zap', tabId: active.id }); } }}>Hide element until reload…</Button>

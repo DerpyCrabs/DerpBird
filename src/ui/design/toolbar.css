@@ -1,8 +1,7 @@
 /* Shared chrome controls and anchored panels. */
-.haz-proposal .navigation :is(.page-sources-button,.proxy-switcher-button,[aria-label=Menu]){display:flex;align-items:center;justify-content:center;width:28px;height:28px;padding:6px;color:var(--pref-muted);border:0;background:transparent}
-.haz-proposal .navigation :is(.page-sources-button,.proxy-switcher-button,[aria-label=Menu]) svg{width:16px;height:16px;flex-shrink:0}
-.haz-proposal .navigation :is(.page-sources-button,.proxy-switcher-button,[aria-label=Menu]):is(:hover,[aria-expanded=true]){background:var(--pref-raised);color:var(--pref-text)}
-.haz-proposal .source-count{background:var(--pref-raised);color:var(--pref-text);border:1px solid var(--pref-line);font-size:8px;line-height:12px;min-width:12px;height:12px;border-radius:6px;right:-2px;top:-2px}
+.haz-proposal .navigation :is(.proxy-switcher-button,[aria-label=Menu]){display:flex;align-items:center;justify-content:center;width:28px;height:28px;padding:6px;color:var(--pref-muted);border:0;background:transparent}
+.haz-proposal .navigation :is(.proxy-switcher-button,[aria-label=Menu]) svg{width:16px;height:16px;flex-shrink:0}
+.haz-proposal .navigation :is(.proxy-switcher-button,[aria-label=Menu]):is(:hover,[aria-expanded=true]){background:var(--pref-raised);color:var(--pref-text)}
 .haz-proposal :is(.proxy-popup,.page-sources-popup,.browser-menu){background:var(--pref-panel);color:var(--pref-text);border:1px solid var(--pref-line);border-radius:10px;box-shadow:0 8px 24px #0003;padding:6px;gap:0;font-size:13px;line-height:20px;max-width:calc(100vw - 16px)}
 .haz-proposal :is(.proxy-popup,.browser-menu){width:320px}
 .haz-proposal .page-sources-popup{width:320px}
@@ -39,7 +38,7 @@
 .haz-proposal .browser-menu details[open]>summary:after{transform:rotate(90deg)}
 .haz-proposal .browser-menu details[open]{border:0}
 .haz-proposal .browser-menu details>button{min-height:34px;padding:7px 10px 7px 20px;font-size:13px;border-radius:6px}
-.haz-proposal .browser-menu .zoom-controls{display:flex;align-items:center;gap:4px;padding:0 10px}
+.haz-proposal .browser-menu .zoom-controls{display:flex;align-items:center;gap:4px;padding:0 0 6px}
 .haz-proposal .browser-menu .zoom-controls button{height:30px;min-height:30px;padding:4px 8px;justify-content:center;border-radius:6px;background:var(--pref-raised)}
 .haz-proposal :is(.proxy-popup,.page-sources-popup,.browser-menu) :focus-visible{outline:2px solid var(--pref-focus);outline-offset:-2px}
 :root[data-input-method=pointer] .haz-proposal :is(.proxy-popup,.page-sources-popup,.browser-menu) :focus{outline:none}

@@ -60,7 +60,8 @@ runScenario(async ({conditions})=>{
  }
  const controller=createController(port);
  const toolStudy=conditions.toolStudy?(await import('./settings-study/sources')).createSourceLibraries(controller):undefined;
- const sources=toolStudy??(conditions.hazProposal?createDemoPageSources(controller):undefined);
+ const sources=toolStudy??createDemoPageSources(controller);
+ const stopMenuWatch=controller.source.subscribe(state=>{if(state.panel==='menu')sources.closePopup();});
  const passwords=conditions.passwordStudy?(await import('./passwords/demo')).passwordStudy():undefined;
  const mounted=mount(document.querySelector('#app')!,shellView(controller,sources?()=>sources.manage('styles'):undefined,sources?()=>sources.manage('scripts'):undefined,passwords?.open,undefined,undefined,show,sources?.open),controller.source);
  await controller.ready;
@@ -87,5 +88,5 @@ runScenario(async ({conditions})=>{
  const stopGallery=typeof conditions.dialogGroup==='string'?(await import('./dialogs/gallery')).mountGallery(conditions.dialogGroup,controller,fixture.setDialog):undefined;
  passwords?.open();
  if(conditions.manager)show();
- return()=>{stopGallery?.();passwords?.dispose();downloads?.dispose();stopSettingsTab?.();sources?.dispose();browserUI();stopInteractions();stopResize();stopDismissal();document.removeEventListener('keydown',focusKey);layoutDemo?.();activityDemo?.();tools?.dispose();splitDemo?.();manager?.dispose();mounted.dispose();void controller.close();fixture.dispose()};
+ return()=>{stopGallery?.();passwords?.dispose();downloads?.dispose();stopSettingsTab?.();stopMenuWatch();sources.dispose();browserUI();stopInteractions();stopResize();stopDismissal();document.removeEventListener('keydown',focusKey);layoutDemo?.();activityDemo?.();tools?.dispose();splitDemo?.();manager?.dispose();mounted.dispose();void controller.close();fixture.dispose()};
 });

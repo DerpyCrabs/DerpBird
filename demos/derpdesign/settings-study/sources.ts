@@ -206,6 +206,7 @@ export function createSourceLibraries(controller: ShellController) {
   };
   return {
     manage,
+    closePopup: () => popup?.close(),
     open,
     refresh,
     dispose() {

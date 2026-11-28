@@ -179,6 +179,7 @@ function updateDownloads() {
   downloads.update((controller.state().browser.downloads ?? []).map(downloadEntry));
 }
 updateDownloads();
+const stopMenuWatch = controller.source.subscribe(state => { if (state.panel === 'menu') pageSourcePopup?.close(); });
 const stopDownloads = controller.source.subscribe(updateDownloads);
 window.addEventListener('derpbird-open-downloads', downloads.open);
 window.addEventListener('derpbird-shell-deactivate', downloads.close);
@@ -212,6 +213,7 @@ window.addEventListener('pagehide', () => {
   stopShellDismissal();
   window.removeEventListener('derpbird-open-downloads', downloads.open);
   window.removeEventListener('derpbird-shell-deactivate', downloads.close);
+  stopMenuWatch();
   stopDownloads();
   downloads.dispose();
   stopDialogs();

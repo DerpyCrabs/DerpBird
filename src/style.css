@@ -425,11 +425,6 @@ p.subtle { font-size: 12px; color: #7e858b; }
 .source-manager .source-origin { display: flex; align-items: center; gap: 7px; font-size: 11px; }
 .source-origin span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .source-manager [role=alert], .source-notice { padding: 10px; background: #382b29; color: #efb8ac; border-radius: 4px; }
-.page-sources-button { position: relative; }
-.source-count { position: absolute; right: -3px; top: -3px; min-width: 13px; height: 13px; padding: 0 2px; border-radius: 5px; color: #17211c; background: #b5c9bd; font: 600 9px/13px Inter,sans-serif; }
-.source-count { opacity: 0; transform: scale(.65); transform-origin: center; pointer-events: none; transition: opacity 160ms ease, transform 180ms ease; }
-.source-count[data-visible=true] { opacity: 1; transform: scale(1); transition-delay: 0s; }
-@media (prefers-reduced-motion: reduce) { .source-count { transition: none; } }
 .page-sources-popup { inset: 44px 10px auto auto; width: min(370px, calc(100vw - 20px)); max-height: calc(100vh - 58px); padding: 0; gap: 0; background: #25272a; color: #dfe4e8; border: 1px solid #42484c; border-radius: 7px; box-shadow: 0 12px 36px #0006; outline: none; font-size: 12px; }
 .horizontal .page-sources-popup { top: 78px; }
 .page-sources-popup header { padding: 15px 16px; border-bottom: 1px solid #383e42; }
@@ -497,8 +492,8 @@ dialog.style-manager::backdrop, dialog.blocking-log::backdrop { background: #000
 .chrome-layout.compact-chrome .navigation { grid-row: 1; grid-column: 1; flex-wrap: wrap; align-content: start; border: 0; padding: 4px; }
 .chrome-layout.compact-chrome.tabs-right .navigation { grid-column: 2; }
 .chrome-layout.compact-chrome .content-surface { grid-row: 1 / -1; }
-.chrome-layout.compact-chrome .navigation > .page-sources-button, .chrome-layout.compact-chrome .proxy-switcher-button { display: inline-flex; }
-.chrome-layout.compact-chrome .navigation > button[aria-label="Styles on this page"] { margin-left: auto; }
+.chrome-layout.compact-chrome .proxy-switcher-button { display: inline-flex; }
+.chrome-layout.compact-chrome .navigation > #downloads-indicator { margin-left: auto; }
 .chrome-layout .navigation > .compact-address { flex: 0 0 calc(100% - 12px); display: flex; align-items: center; gap: 7px; width: calc(100% - 12px); min-width: 0; height: 32px; margin: 4px 6px 2px; padding: 0 10px; font-size: 12px; border: 1px solid transparent; border-radius: 5px; background: #242629; color: #dadcde; }
 .compact-address:hover { background: #303337; }
 .compact-address span { flex: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

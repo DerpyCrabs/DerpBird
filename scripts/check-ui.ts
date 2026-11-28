@@ -359,6 +359,7 @@ assert.deepEqual(lastCommand(), { type: 'split.switch', tabId: 'b' });
 notify?.(state()); await settle();
 assert.equal(document.querySelectorAll('.tab-unit').length, 2);
 assert.equal(document.querySelector('.split-divider'), null);
+button('Menu').click(); await settle();
 button('Styles on this page').click(); await settle();
 const manageStyles = Array.from(document.querySelectorAll('.page-sources-popup button')).find(node => node.textContent === 'Manage styles') as unknown as HTMLButtonElement;
 assert(manageStyles && !manageStyles.disabled); manageStyles.click(); await settle();
